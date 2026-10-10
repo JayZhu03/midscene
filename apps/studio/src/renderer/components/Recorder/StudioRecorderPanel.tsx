@@ -1,6 +1,7 @@
 import type { StudioRecorderCodeType } from '@shared/electron-contract';
 import { App as AntdApp } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import {
   filterStudioRecorderSessionsForTarget,
   isStudioRecorderSessionForTarget,
@@ -39,6 +40,8 @@ export function StudioRecorderPanel({
   onShowMarkdown,
   onShowScreenshots,
 }: StudioRecorderPanelProps = {}) {
+  const uiLanguage = useStudioLanguage();
+
   const { message } = AntdApp.useApp();
   const recorder = useStudioRecorder();
   const {
@@ -83,12 +86,12 @@ export function StudioRecorderPanel({
         return await action();
       } catch (error) {
         message.error(
-          error instanceof Error ? error.message : 'Recorder failed.',
+          error instanceof Error ? error.message : t('Recorder failed.'),
         );
         return undefined;
       }
     },
-    [message],
+    [message, uiLanguage],
   );
 
   const detailSession = useMemo(() => {
@@ -124,18 +127,24 @@ export function StudioRecorderPanel({
     generation.type === activeCodeType;
   const statusText = useMemo(() => {
     if (state.initializing) {
-      return 'Loading recorder...';
+      return t('Loading recorder...');
     }
     if (state.isRecording) {
       return 'Recording';
     }
     if (!canStartRecording) {
-      return 'Connect a device to start recording.';
+      return t('Connect a device to start recording.');
     }
     return currentTarget
       ? `Ready for ${platformLabel(currentTarget.platformId)}`
       : 'Ready';
-  }, [canStartRecording, currentTarget, state.initializing, state.isRecording]);
+  }, [
+    canStartRecording,
+    currentTarget,
+    state.initializing,
+    state.isRecording,
+    uiLanguage,
+  ]);
 
   useEffect(() => {
     if (state.isRecording && currentSession?.id) {
@@ -162,7 +171,7 @@ export function StudioRecorderPanel({
 
   useEffect(() => {
     if (
-      selectedCodeType === 'playwright' &&
+      selectedCodeType.startsWith('playwright') &&
       !isPlaywrightAvailable(detailSession)
     ) {
       setSelectedCodeType('markdown');
@@ -198,7 +207,7 @@ export function StudioRecorderPanel({
           type,
           force,
           language:
-            type !== 'playwright' && selectedLanguage !== 'auto'
+            !type.startsWith('playwright') && selectedLanguage !== 'auto'
               ? selectedLanguage
               : undefined,
           onChunk: (content) => {
@@ -405,7 +414,7 @@ export function StudioRecorderPanel({
       detailSession={detailSession}
       fallback={
         <div className="studio-recorder-empty">
-          Select a recording from history.
+          {t('Select a recording from history.')}
         </div>
       }
       generation={generation}

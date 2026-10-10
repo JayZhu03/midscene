@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import SettingOutlined from '../../icons/setting.svg';
 import { useEnvConfig } from '../../store/store';
 import type { DeviceType } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 import {
   alwaysRefreshScreenInfoTip,
   autoDismissKeyboardTip,
@@ -42,6 +43,8 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
   trigger,
   popupPlacement = 'bottomRight',
 }) => {
+  useUiLanguage();
+
   const forceSameTabNavigation = useEnvConfig(
     (state) => state.forceSameTabNavigation,
   );
@@ -101,7 +104,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
   const configItems: MenuProps['items'] = buildConfigItems();
   const dropdownTrigger = trigger ?? (
     <button
-      aria-label="Open run configuration"
+      aria-label={t('打开执行设置')}
       className="selector-trigger-button"
       type="button"
     >
@@ -134,7 +137,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
             onChange={(e) => setForceSameTabNavigation(e.target.checked)}
             checked={forceSameTabNavigation}
           >
-            {trackingTip}
+            {t(trackingTip)}
           </Checkbox>
         ),
         key: 'track-config',
@@ -150,7 +153,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
             }}
             checked={deepLocate}
           >
-            {deepLocateTip}
+            {t(deepLocateTip)}
           </Checkbox>
         ),
         key: 'deep-locate-config',
@@ -162,18 +165,20 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
         label: (
           <div style={{ padding: '4px 0' }}>
             <div style={{ marginBottom: '4px', fontSize: '14px' }}>
-              {deepThinkTip}
+              {t(deepThinkTip)}
             </div>
             <Radio.Group
               size="small"
               value={deepThink}
               onChange={(e) => setDeepThink(e.target.value)}
             >
-              <Tooltip title="Controlled by MIDSCENE_MODEL_REASONING_ENABLED env variable">
-                <Radio value={'unset'}>Auto</Radio>
+              <Tooltip
+                title={t('由 MIDSCENE_MODEL_REASONING_ENABLED 配置控制')}
+              >
+                <Radio value={'unset'}>{t('自动')}</Radio>
               </Tooltip>
-              <Radio value={true}>On</Radio>
-              <Radio value={false}>Off</Radio>
+              <Radio value={true}>{t('开启')}</Radio>
+              <Radio value={false}>{t('关闭')}</Radio>
             </Radio.Group>
           </div>
         ),
@@ -190,7 +195,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
             }}
             checked={screenshotIncluded}
           >
-            {screenshotIncludedTip}
+            {t(screenshotIncludedTip)}
           </Checkbox>
         ),
         key: 'screenshot-included-config',
@@ -200,16 +205,16 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
         label: (
           <div style={{ padding: '4px 0' }}>
             <div style={{ marginBottom: '4px', fontSize: '14px' }}>
-              {domIncludedTip}
+              {t(domIncludedTip)}
             </div>
             <Radio.Group
               size="small"
               value={domIncluded}
               onChange={(e) => setDomIncluded(e.target.value)}
             >
-              <Radio value={false}>Off</Radio>
-              <Radio value={true}>All</Radio>
-              <Radio value={'visible-only'}>Visible only</Radio>
+              <Radio value={false}>{t('关闭')}</Radio>
+              <Radio value={true}>{t('全部')}</Radio>
+              <Radio value={'visible-only'}>{t('仅可见元素')}</Radio>
             </Radio.Group>
           </div>
         ),
@@ -223,7 +228,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
         label: (
           <div style={{ padding: '4px 0' }}>
             <div style={{ marginBottom: '4px', fontSize: '14px' }}>
-              {imeStrategyTip}
+              {t(imeStrategyTip)}
             </div>
             <Radio.Group
               size="small"
@@ -243,14 +248,14 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
           label: (
             <div style={{ padding: '4px 0' }}>
               <div style={{ marginBottom: '4px', fontSize: '14px' }}>
-                {screenshotStrategyTip}
+                {t(screenshotStrategyTip)}
               </div>
               <Radio.Group
                 size="small"
                 value={screenshotStrategy}
                 onChange={(e) => setScreenshotStrategy(e.target.value)}
               >
-                <Radio value="auto">Auto</Radio>
+                <Radio value="auto">{t('自动')}</Radio>
                 <Radio value="always-yadb">Always YADB</Radio>
               </Radio.Group>
             </div>
@@ -266,7 +271,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
               onChange={(e) => setAutoDismissKeyboard(e.target.checked)}
               checked={autoDismissKeyboard}
             >
-              {autoDismissKeyboardTip}
+              {t(autoDismissKeyboardTip)}
             </Checkbox>
           ),
           key: 'auto-dismiss-keyboard-config',
@@ -278,7 +283,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
           label: (
             <div style={{ padding: '4px 0' }}>
               <div style={{ marginBottom: '4px', fontSize: '14px' }}>
-                {keyboardDismissStrategyTip}
+                {t(keyboardDismissStrategyTip)}
               </div>
               <Radio.Group
                 size="small"
@@ -301,7 +306,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
               onChange={(e) => setAlwaysRefreshScreenInfo(e.target.checked)}
               checked={alwaysRefreshScreenInfo}
             >
-              {alwaysRefreshScreenInfoTip}
+              {t(alwaysRefreshScreenInfoTip)}
             </Checkbox>
           ),
           key: 'always-refresh-screen-info-config',
@@ -319,7 +324,7 @@ export const ConfigSelector: React.FC<ConfigSelectorProps> = ({
             onChange={(e) => setAutoDismissKeyboard(e.target.checked)}
             checked={autoDismissKeyboard}
           >
-            {autoDismissKeyboardTip}
+            {t(autoDismissKeyboardTip)}
           </Checkbox>
         ),
         key: 'auto-dismiss-keyboard-config',

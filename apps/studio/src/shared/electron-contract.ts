@@ -83,10 +83,15 @@ export interface OpenImagePreviewRequest {
   fileName?: string;
 }
 
-export type StudioRecorderCodeType = 'markdown' | 'yaml' | 'playwright';
+export type StudioRecorderCodeType =
+  | 'markdown'
+  | 'yaml'
+  | 'playwright'
+  | 'playwright-native';
 
 export interface GenerateRecorderCodeRequest {
-  type: StudioRecorderCodeType;
+  // Native compilation runs locally and never enters the model IPC route.
+  type: Exclude<StudioRecorderCodeType, 'playwright-native'>;
   input: RecorderYamlGenerationInput;
   modelConfig: IModelConfig;
 }

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   latestReplayPanelProps: null as any,
   playground: null as any,
   recorder: null as any,
+  errorMessage: vi.fn(),
   timelineWrapperState: { empty: true } as { empty: boolean },
 }));
 
@@ -18,7 +19,7 @@ vi.mock('antd', () => ({
   App: {
     useApp: () => ({
       message: {
-        error: vi.fn(),
+        error: mocks.errorMessage,
         info: vi.fn(),
       },
     }),
@@ -475,6 +476,80 @@ describe('Studio Playground imported replay', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('compiles then saves native Playwright from the replay menu without starting AI playback', async () => {
+    const session = {
+      id: 'session-native',
+      name: 'Query',
+      events: [{ type: 'click' }],
+      target,
+      generatedCode: { markdown: '# Query' },
+      status: 'completed',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    mocks.recorder = {
+      ...createRecorder(),
+      exportSessionCode: vi.fn(async () => undefined),
+      state: { isRecording: false, sessions: [session] },
+    };
+    const { root } = await renderPlayground();
+    try {
+      await act(async () => {
+        await mocks.latestReplayPanelProps.onExportPlaywright(session);
+      });
+      expect(mocks.recorder.generateSessionCode).toHaveBeenCalledWith(
+        session.id,
+        { type: 'playwright-native' },
+      );
+      expect(mocks.recorder.exportSessionCode).toHaveBeenCalledWith(
+        session.id,
+        'playwright-native',
+      );
+      expect(mocks.latestExternalRunRequest).toBeNull();
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+    }
+  });
+
+  it('shows a short export error instead of the full list of unresolved steps', async () => {
+    const session = {
+      id: 'session-native-error',
+      name: 'Query',
+      events: [{ type: 'click' }],
+      target,
+      generatedCode: { markdown: '# Query' },
+      status: 'completed',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    mocks.recorder = {
+      ...createRecorder(),
+      generateSessionCode: vi.fn(async () => {
+        throw new Error(
+          '无法导出原生 Playwright：\n第 2 步 (Tap)：缺少录制时的 DOM 定位信息，请重新录制。\n第 3 步 (Input)：缺少定位。',
+        );
+      }),
+      exportSessionCode: vi.fn(),
+      state: { isRecording: false, sessions: [session] },
+    };
+    const { root } = await renderPlayground();
+    try {
+      await act(async () => {
+        await mocks.latestReplayPanelProps.onExportPlaywright(session);
+      });
+      expect(mocks.errorMessage).toHaveBeenCalledWith(
+        'Step 2 cannot be exported. Check the recording.',
+      );
+      expect(mocks.recorder.exportSessionCode).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+    }
   });
 
   it('opens a replay history item as Markdown without starting playback', async () => {

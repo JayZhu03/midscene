@@ -243,7 +243,7 @@ export const optimizeEvent = async (
     const eventWithDescription = { ...event };
 
     // Set initial loading state
-    eventWithDescription.elementDescription = 'AI is analyzing element...';
+    eventWithDescription.elementDescription = 'AI 正在分析元素…';
     eventWithDescription.descriptionLoading = true;
     updateCallback(eventWithDescription);
 

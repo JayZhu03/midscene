@@ -1,4 +1,5 @@
 import type {
+  PlaygroundInteractResult,
   PlaygroundRuntimeInfo,
   PlaygroundSDK,
 } from '@midscene/playground';
@@ -7,6 +8,7 @@ import {
   ScreenshotViewer,
   type ScreenshotViewerMode,
 } from '@midscene/visualizer';
+import { t } from '@midscene/visualizer/ui-language';
 import { WebCodecsVideoDecoder } from '@yume-chan/scrcpy-decoder-webcodecs';
 import { Alert, App as AntdApp, Popover } from 'antd';
 import React, {
@@ -23,6 +25,7 @@ import {
 } from './DeviceInteractionLayer';
 import { type ScrcpyErrorOverlayRenderer, ScrcpyPanel } from './ScrcpyPanel';
 import {
+  ManualControlQueue,
   type ManualDragActionType,
   buildManualDragInteractPayload,
   buildManualScrollInteractPayload,
@@ -87,7 +90,7 @@ export function PreviewRenderer({
   const [actionTypes, setActionTypes] = useState<string[] | null>(null);
   const [scrcpyStatus, setScrcpyStatus] =
     useState<ScrcpyPreviewStatus>('connecting');
-  const manualControlQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const manualControlQueueRef = useRef(new ManualControlQueue());
   const pendingTextInputRef = useRef('');
   const pendingTextInputPointRef = useRef<{ x: number; y: number } | null>(
     null,
@@ -124,12 +127,10 @@ export function PreviewRenderer({
   const manualScrollEnabled = actionTypes?.includes('Scroll') ?? false;
 
   const enqueueManualControl = useCallback(
-    <TResult,>(task: () => Promise<TResult>): Promise<TResult> => {
-      const nextTask = manualControlQueueRef.current.then(task, task);
-      manualControlQueueRef.current = nextTask.catch(() => undefined);
-      return nextTask;
+    (task: () => Promise<PlaygroundInteractResult>) => {
+      return manualControlQueueRef.current.enqueue(task);
     },
-    [message],
+    [],
   );
 
   // Pull device size and actionSpace from /interface-info so the interaction
@@ -223,7 +224,7 @@ export function PreviewRenderer({
     (fallback: string, error?: string) => {
       message.open({
         type: 'error',
-        content: error || fallback,
+        content: t(error || fallback),
         key: 'manual-control-error',
       });
     },

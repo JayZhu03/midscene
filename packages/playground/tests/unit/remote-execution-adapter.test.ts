@@ -1,6 +1,9 @@
 import type { DeviceAction } from '@midscene/core';
 import { beforeEach, describe, expect, it, rs } from '@rstest/core';
-import { RemoteExecutionAdapter } from '../../src/adapters/remote-execution';
+import {
+  MANUAL_INTERACT_TIMEOUT_MS,
+  RemoteExecutionAdapter,
+} from '../../src/adapters/remote-execution';
 import type { ExecutionOptions, FormValue } from '../../src/types';
 
 // Mock fetch
@@ -664,6 +667,30 @@ describe('RemoteExecutionAdapter', () => {
   });
 
   describe('interact', () => {
+    it('aborts a stuck request so manual input cannot wait forever', async () => {
+      rs.useFakeTimers();
+      try {
+        mockFetch.mockImplementationOnce(
+          (_url, init) =>
+            new Promise((_resolve, reject) => {
+              init.signal.addEventListener('abort', () =>
+                reject(new Error('aborted')),
+              );
+            }),
+        );
+        const result = adapter.interact({ actionType: 'Tap', x: 0, y: 0 });
+        await rs.advanceTimersByTimeAsync(MANUAL_INTERACT_TIMEOUT_MS);
+        expect(await result).toEqual({
+          ok: false,
+          error: 'Manual control timed out. Check the browser before retrying.',
+        });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(rs.getTimerCount()).toBe(0);
+      } finally {
+        rs.useRealTimers();
+      }
+    });
+
     it('POSTs JSON to /interact and returns ok', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -682,6 +709,7 @@ describe('RemoteExecutionAdapter', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actionType: 'Tap', x: 100, y: 200 }),
+        signal: expect.any(AbortSignal),
       });
     });
 

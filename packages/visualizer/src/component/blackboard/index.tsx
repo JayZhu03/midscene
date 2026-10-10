@@ -26,7 +26,7 @@ export const Blackboard = (props: {
     return (
       <div className="blackboard">
         <div className="blackboard-main-content" style={{ padding: '20px' }}>
-          No UI context available
+          暂无可用的页面信息
         </div>
       </div>
     );
@@ -54,7 +54,7 @@ export const Blackboard = (props: {
     bottomTipA = (
       <div className="bottom-tip">
         <div className="bottom-tip-item">
-          Element: {JSON.stringify(highlightBoxes[0])}
+          元素： {JSON.stringify(highlightBoxes[0])}
         </div>
       </div>
     );
@@ -62,7 +62,7 @@ export const Blackboard = (props: {
     bottomTipA = (
       <div className="bottom-tip">
         <div className="bottom-tip-item">
-          Element: {JSON.stringify(highlightBoxes)}
+          元素： {JSON.stringify(highlightBoxes)}
         </div>
       </div>
     );
@@ -108,7 +108,7 @@ export const Blackboard = (props: {
                 height: `${(highlightRect.height / screenHeight) * 100}%`,
               }}
             >
-              <span className="blackboard-rect-label">Search Area</span>
+              <span className="blackboard-rect-label">搜索区域</span>
             </div>
           )}
 

@@ -41,7 +41,7 @@ export const getLatestEvents = (sessionId?: string): ChromeRecordedEvent[] => {
   }
 
   // Fallback to live events or provided events
-  throw new Error('No events found');
+  throw new Error('未找到录制操作');
 };
 
 /**
@@ -54,7 +54,7 @@ export const stopRecordingIfActive = async (
 
   if (isRecording && onStopRecording) {
     recordLogger.info('Stopping recording before export operation');
-    message.loading('Stopping recording...', 0);
+    message.loading('正在停止录制…', 0);
     await Promise.resolve(onStopRecording());
     message.destroy();
     recordLogger.success('Recording stopped, proceeding with export operation');

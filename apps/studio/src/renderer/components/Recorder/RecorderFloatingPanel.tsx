@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import type {
   StudioRecordedEvent,
   StudioRecordingSession,
@@ -52,11 +53,13 @@ function RecorderFloatingTimeline({
   events: StudioRecordedEvent[];
   isRecording: boolean;
 }) {
+  useStudioLanguage();
+
   if (events.length === 0 && !isRecording) {
     return (
       <StudioTimelineEmptyState
-        description="The recording progress will be displayed here."
-        title="No tasks available"
+        description={t('The recording progress will be displayed here.')}
+        title={t('No tasks available')}
         variant={StudioModeTab.Record}
       />
     );
@@ -82,6 +85,8 @@ function RecorderFloatingTimeline({
 }
 
 function StudioTimelineEventCopy({ event }: { event: StudioRecordedEvent }) {
+  useStudioLanguage();
+
   const tooltip = getStudioTimelineEventTooltip(event);
   const { ref, truncated } = useTextTruncation<HTMLSpanElement>(
     tooltip,
@@ -99,6 +104,8 @@ function StudioTimelineEventCopy({ event }: { event: StudioRecordedEvent }) {
 }
 
 function StudioTimelineTargetIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <path
@@ -114,6 +121,8 @@ function StudioTimelineTargetIcon() {
 }
 
 function StudioTimelineScrollIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <path
@@ -146,6 +155,8 @@ function getStudioTimelineEventType(event: StudioRecordedEvent) {
 }
 
 function StudioTimelineEventIcon({ event }: { event: StudioRecordedEvent }) {
+  useStudioLanguage();
+
   const eventType = getStudioTimelineEventType(event);
   if (eventType === 'scroll') {
     return (
@@ -167,19 +178,19 @@ function getStudioTimelineEventTitle(event: StudioRecordedEvent) {
   switch (eventType) {
     case 'tap':
     case 'click':
-      return 'Click';
+      return t('Click');
     case 'drag':
       return 'Drag';
     case 'input':
-      return 'Input';
+      return t('Input');
     case 'scroll':
-      return 'Scroll';
+      return t('Scroll');
     case 'navigation':
       return 'Navigate';
     case 'setviewport':
-      return 'Set viewport';
+      return t('Set viewport');
     case 'keydown':
-      return 'Key down';
+      return t('Key down');
     default:
       return event.type || event.actionType || 'Event';
   }
@@ -242,12 +253,14 @@ function getStudioTimelineEventTooltip(event: StudioRecordedEvent) {
   const semantic = getMidsceneRecorderSemantic(event);
   const text =
     description ||
-    (semantic?.status === 'pending' ? 'analyzing target...' : '');
+    (semantic?.status === 'pending' ? t('analyzing target...') : '');
 
   return text ? `${title} - ${text}` : title;
 }
 
 function StudioTimelineEventText({ event }: { event: StudioRecordedEvent }) {
+  useStudioLanguage();
+
   const title = getStudioTimelineEventTitle(event);
   const description = getStudioTimelineEventDescription(event);
   const semantic = getMidsceneRecorderSemantic(event);
@@ -264,7 +277,7 @@ function StudioTimelineEventText({ event }: { event: StudioRecordedEvent }) {
         <>
           <span> - </span>
           <span className="studio-recorder-timeline-analyzing">
-            analyzing target...
+            {t('analyzing target...')}
           </span>
         </>
       ) : null}
@@ -308,32 +321,34 @@ function RecorderFloatingOutputs({
   onShowScreenshots: () => void;
   recorderPanelSession: StudioRecordingSession | null;
 }) {
+  useStudioLanguage();
+
   let markdownOutput: ReactNode = null;
 
   if (isMarkdownGenerating) {
     markdownOutput = (
       <button
-        aria-label="Generating Description"
+        aria-label={t('Generating Description')}
         className="studio-recorder-floating-output studio-recorder-floating-output-generate studio-recorder-floating-output-generating"
         disabled
         type="button"
       >
         <RecorderGenerateNaturalLanguageIcon />
         <span data-text="Generating Description...">
-          Generating Description...
+          {t('Generating Description...')}
         </span>
       </button>
     );
   } else if (canGenerateMarkdown && recorderPanelSession) {
     markdownOutput = (
       <button
-        aria-label="Generate Description"
+        aria-label={t('Generate Description')}
         className="studio-recorder-floating-output studio-recorder-floating-output-generate"
         onClick={onGenerateMarkdown}
         type="button"
       >
         <RecorderGenerateNaturalLanguageIcon />
-        <span>Generate Description</span>
+        <span>{t('Generate Description')}</span>
       </button>
     );
   }
@@ -343,13 +358,13 @@ function RecorderFloatingOutputs({
       <div className="studio-recorder-floating-output-stack">
         {markdownOutput}
         <button
-          aria-label="Show event screenshots"
+          aria-label={t('Show event screenshots')}
           className="studio-recorder-floating-output studio-recorder-floating-output-generate"
           onClick={onShowScreenshots}
           type="button"
         >
           <RecorderScreenshotIcon />
-          <span>Screenshots</span>
+          <span>{t('Screenshots')}</span>
         </button>
       </div>
     );
@@ -378,11 +393,11 @@ function toImagePreviewDataUrl(source: string): Promise<string> {
               resolve(reader.result);
               return;
             }
-            reject(new Error('Screenshot preview data is unavailable.'));
+            reject(new Error(t('Screenshot preview data is unavailable.')));
           };
           reader.onerror = () =>
             reject(
-              reader.error || new Error('Failed to read screenshot data.'),
+              reader.error || new Error(t('Failed to read screenshot data.')),
             );
           reader.readAsDataURL(blob);
         }),
@@ -400,6 +415,8 @@ function RecorderScreenshotCard({
   listRef: RefObject<HTMLDivElement | null>;
   getScreenshotAssetUrl: (assetId: string) => string | null;
 }) {
+  useStudioLanguage();
+
   const cardRef = useRef<HTMLElement | null>(null);
   const inlineScreenshot = getStudioRecorderEventInlineScreenshot(event);
   const assetUrl = event.screenshotAsset
@@ -468,7 +485,7 @@ function RecorderScreenshotCard({
                 )
                 .catch(() => setLoadError(true));
             }}
-            title="Open with system image viewer"
+            title={t('Open with system image viewer')}
             type="button"
           >
             <img
@@ -480,7 +497,7 @@ function RecorderScreenshotCard({
           </button>
         ) : loadError || (shouldLoadAsset && !assetUrl) ? (
           <div className="studio-recorder-screenshot-state">
-            <span>Screenshot unavailable</span>
+            <span>{t('Screenshot unavailable')}</span>
             <button
               onClick={() => {
                 setLoadError(false);
@@ -489,12 +506,12 @@ function RecorderScreenshotCard({
               }}
               type="button"
             >
-              Retry
+              {t('Retry')}
             </button>
           </div>
         ) : (
           <output className="studio-recorder-screenshot-state">
-            Loading screenshot…
+            {t('Loading screenshot…')}
           </output>
         )}
       </div>
@@ -509,6 +526,8 @@ export function RecorderScreenshotDetailView({
   events: StudioRecordedEvent[];
   getScreenshotAssetUrl?: (assetId: string) => string | null;
 }) {
+  useStudioLanguage();
+
   const listRef = useRef<HTMLDivElement | null>(null);
   const screenshotEvents = events
     .map((event, index) => ({ event, index }))
@@ -530,7 +549,7 @@ export function RecorderScreenshotDetailView({
       <header className="studio-recorder-screenshot-detail-header">
         <div className="studio-recorder-screenshot-detail-title">
           <RecorderScreenshotIcon />
-          <span>Screenshots</span>
+          <span>{t('Screenshots')}</span>
         </div>
       </header>
 
@@ -548,7 +567,7 @@ export function RecorderScreenshotDetailView({
         </div>
       ) : (
         <div className="studio-recorder-empty">
-          No screenshots available for this recording.
+          {t('No screenshots available for this recording.')}
         </div>
       )}
     </section>
@@ -573,17 +592,19 @@ export function RecorderFloatingPanel({
   timelineCollapsed,
   statusText,
 }: RecorderFloatingPanelProps) {
+  useStudioLanguage();
+
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const showRecordingVisual = isRecording && !isStoppingRecording;
   const recordingButtonLabel = isStoppingRecording
-    ? 'Stopping recording'
+    ? t('Stopping recording')
     : showRecordingVisual
-      ? 'Stop recording'
-      : 'Start recording';
+      ? t('Stop recording')
+      : t('Start recording');
   const recordingButtonTitle = isStoppingRecording
-    ? 'Stopping recording'
+    ? t('Stopping recording')
     : showRecordingVisual
-      ? 'Stop recording'
+      ? t('Stop recording')
       : statusText;
   const controlCardClassName = [
     'studio-recorder-control-card',
@@ -652,7 +673,7 @@ export function RecorderFloatingPanel({
       <div className={controlCardClassName}>
         <header className="studio-recorder-floating-header">
           <div className="studio-recorder-floating-title">
-            <span>Record</span>
+            <span>{t('Record')}</span>
           </div>
         </header>
 
@@ -668,11 +689,13 @@ export function RecorderFloatingPanel({
                 }
               />
               <span className="studio-recorder-floating-primer-status-copy">
-                Record &amp; Generate Markdown
+                {t('Record & Generate Markdown')}
               </span>
             </div>
             <span className="studio-recorder-floating-primer-description">
-              Record interactions, then generate a natural language description.
+              {t(
+                'Record interactions, then generate a natural language description.',
+              )}
             </span>
           </div>
           <div className="studio-recorder-floating-start-button-shell">
@@ -699,7 +722,9 @@ export function RecorderFloatingPanel({
                 <RecorderButtonIcon />
               )}
               <span>
-                {showRecordingVisual ? 'Stop Recording' : 'Start Recording'}
+                {showRecordingVisual
+                  ? t('Stop Recording')
+                  : t('Start Recording')}
               </span>
             </button>
           </div>

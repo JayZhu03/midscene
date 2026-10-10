@@ -1,6 +1,7 @@
 import { RecordTimeline } from '@midscene/recorder-ui';
 import type { StudioRecorderCodeType } from '@shared/electron-contract';
 import type { ReactNode } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import type { StudioRecordingSession } from '../../recorder/types';
 import {
   ArrowIcon,
@@ -50,6 +51,8 @@ function RecorderGenerationStatus({
   detailSession: StudioRecordingSession | null;
   generation: StudioRecorderGenerationState;
 }) {
+  useStudioLanguage();
+
   if (!detailSession || generation.sessionId !== detailSession.id) {
     return null;
   }
@@ -61,7 +64,9 @@ function RecorderGenerationStatus({
     return (
       <div className="studio-recorder-generating-card">
         <span>{generatingText(generation.type)}</span>
-        <span className="studio-recorder-generating-pill">Analyzing...</span>
+        <span className="studio-recorder-generating-pill">
+          {t('Analyzing...')}
+        </span>
       </div>
     );
   }
@@ -117,6 +122,8 @@ export function RecorderDetailView({
   onTabChange,
   selectedLanguage,
 }: RecorderDetailViewProps) {
+  useStudioLanguage();
+
   if (!detailSession) {
     return fallback;
   }
@@ -127,7 +134,7 @@ export function RecorderDetailView({
         <button
           className="studio-recorder-inline-icon-button"
           onClick={onBackToList}
-          title="Back to recordings"
+          title={t('Back to recordings')}
           type="button"
         >
           <BackIcon />
@@ -138,7 +145,8 @@ export function RecorderDetailView({
           </div>
           <div className="studio-recorder-session-meta">
             {platformLabel(detailSession.target.platformId)} /{' '}
-            {detailSession.target.label} / {detailSession.events.length} events
+            {detailSession.target.label} / {detailSession.events.length}{' '}
+            {t('events')}
           </div>
         </div>
       </div>
@@ -154,7 +162,7 @@ export function RecorderDetailView({
           type="button"
         >
           <TimelineIcon />
-          <span>Record Timeline</span>
+          <span>{t('Record Timeline')}</span>
         </button>
         <span className="studio-recorder-tab-arrow">
           <ArrowIcon />
@@ -169,13 +177,13 @@ export function RecorderDetailView({
           onClick={onCodeTabClick}
           title={
             detailSession.events.length === 0
-              ? 'Record events before generating code'
+              ? t('Record events before generating code')
               : undefined
           }
           type="button"
         >
           <CodeIcon />
-          <span>Generate code</span>
+          <span>{t('Generate code')}</span>
         </button>
       </div>
 
@@ -186,7 +194,9 @@ export function RecorderDetailView({
           </div>
         ) : (
           <div className="studio-recorder-empty">
-            Operate the connected device while recording to capture events.
+            {t(
+              'Operate the connected device while recording to capture events.',
+            )}
           </div>
         )
       ) : (
@@ -211,10 +221,16 @@ export function RecorderDetailView({
                 >
                   Playwright
                 </option>
+                <option
+                  disabled={!isPlaywrightAvailable(detailSession)}
+                  value="playwright-native"
+                >
+                  {t('Native Playwright')}
+                </option>
               </select>
             </label>
 
-            {activeCodeType !== 'playwright' ? (
+            {!activeCodeType.startsWith('playwright') ? (
               <label className="studio-recorder-select-shell studio-recorder-language-select">
                 <select
                   disabled={isGenerating}
@@ -264,21 +280,32 @@ export function RecorderDetailView({
             generation={generation}
           />
 
+          {activeCodeType === 'playwright-native' ? (
+            <div className="studio-recorder-notice">
+              {t(
+                'Use a new manual Web recording to capture DOM locators. Replay needs only @playwright/test. Password values use environment variables; add business assertions to the exported test.',
+              )}
+            </div>
+          ) : null}
+
           {detailSession.events.length === 0 ? (
             <div className="studio-recorder-empty">
-              Record events before generating code.
+              {t('Record events before generating code.')}
             </div>
           ) : generation.status === 'error' &&
             generation.sessionId === detailSession.id &&
             generation.type === activeCodeType ? (
-            <div className="studio-recorder-notice">
+            <div
+              className="studio-recorder-notice"
+              style={{ whiteSpace: 'pre-line' }}
+            >
               {generation.error || `Failed to generate ${codeLabel}.`}
             </div>
           ) : isGenerating ? null : activeCode ? (
             <pre className="studio-recorder-code-block">{activeCode}</pre>
           ) : (
             <div className="studio-recorder-empty">
-              Generated code will appear here.
+              {t('Generated code will appear here.')}
             </div>
           )}
         </div>

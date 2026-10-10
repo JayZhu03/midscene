@@ -76,9 +76,9 @@ export const iconForStatus = (status: string) => {
 // server not ready error message
 export const errorMessageServerNotReady = (
   <span>
-    Don&apos;t worry, just one more step to launch the playground server.
+    启动调试服务后即可继续。
     <br />
-    Please run one of the commands under the midscene project directory:
+    请在 Midscene 项目目录下运行以下任一命令：
     <br />
     a. <strong>npx midscene-playground</strong>
     <br />
@@ -92,7 +92,7 @@ export const serverLaunchTip = (
 ) => (
   <div className="server-tip">
     <Alert
-      message="Playground Server Not Ready"
+      message="调试服务尚未就绪"
       description={notReadyMessage}
       type="warning"
     />
@@ -102,6 +102,6 @@ export const serverLaunchTip = (
 // empty result tip
 export const emptyResultTip = (
   <div className="result-empty-tip" style={{ textAlign: 'center' }}>
-    <ShinyText disabled text="The result will be shown here" />
+    <ShinyText disabled text="执行结果将显示在这里" />
   </div>
 );

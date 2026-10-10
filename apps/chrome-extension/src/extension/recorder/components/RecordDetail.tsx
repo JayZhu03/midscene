@@ -61,8 +61,8 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
     return (
       <div className="record-detail-view">
         <Alert
-          message="Session Not Found"
-          description="The requested session could not be found."
+          message="未找到录制记录"
+          description="请求的录制记录不存在。"
           type="error"
           showIcon
           style={{ marginBottom: '16px' }}
@@ -73,7 +73,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
           onClick={onBack}
           className="back-button"
         >
-          Back to Sessions
+          返回录制列表
         </Button>
       </div>
     );
@@ -108,7 +108,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
                 // Transparent red background
               }}
               onClick={handleStopRecording}
-              title="Click to stop recording"
+              title="点击停止录制"
             >
               <span
                 className="inline-block rec-dot-pulse"
@@ -128,7 +128,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
                   fontWeight: 700,
                 }}
               >
-                REC
+                录制中
               </span>
               <style>{`
                 @keyframes rec-dot-pulse {
@@ -160,7 +160,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
                   fontWeight: 700,
                 }}
               >
-                Ready
+                就绪
               </span>
             </div>
           )}
@@ -184,7 +184,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
             disabled={events.length === 0 || isRecording}
             size="small"
             type="text"
-            title="Clear all events"
+            title="清空全部操作"
             className="text-[#333333]"
           />
           <Button
@@ -192,7 +192,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
             onClick={onClose}
             size="small"
             type="text"
-            title="Close"
+            title="关闭"
             className="text-[#333333]"
           />
         </div>
@@ -224,7 +224,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
             <div className="w-4 h-4 flex items-center justify-center !rounded-none">
               <ControlOutlined />
             </div>
-            Record Timeline
+            操作时间线
           </button>
 
           {/* Divider */}
@@ -244,13 +244,13 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
             }}
             onClick={() => events.length > 0 && handleTabChange('code')}
             disabled={events.length === 0}
-            title={events.length === 0 ? 'Record some events first' : undefined}
+            title={events.length === 0 ? '请先录制一些操作' : undefined}
           >
             {/* Code icon */}
             <div className="w-4 h-4 flex items-center justify-center !rounded-none">
               <CodeOutlined className="!bg-transparent" />
             </div>
-            Generate code
+            生成代码
           </button>
         </div>
       </div>
@@ -259,7 +259,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
       <div className="flex-1 overflow-auto">
         {tab === 'timeline' ? (
           events.length === 0 ? (
-            <Empty description="No events recorded yet" />
+            <Empty description="暂无录制操作" />
           ) : (
             <div className="p-[16px 0]">
               <RecordTimeline events={events} variant="chrome-extension" />
@@ -290,7 +290,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
               className="!fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] !h-[40px] !py-[12px] !px-[12px] !rounded-[48px]"
               style={{ fontFamily: 'Inter, -apple-system, sans-serif' }}
             >
-              {events.length > 0 ? 'Resume Recording' : 'Start Recording'}
+              {events.length > 0 ? '继续录制' : '开始录制'}
             </Button>
           ) : (
             <div
@@ -340,7 +340,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
                       lineHeight: '1.21',
                     }}
                   >
-                    Recording
+                    录制中
                   </span>
                 </div>
 
@@ -375,7 +375,7 @@ export const RecordDetail: React.FC<RecordDetailProps> = ({
                       lineHeight: '1.21',
                     }}
                   >
-                    Stop
+                    停止
                   </span>
                 </button>
               </div>

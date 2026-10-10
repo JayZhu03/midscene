@@ -875,6 +875,11 @@ export class Page<
       await client.send('Page.stopScreencast').catch((error) => {
         debugPage('Page.stopScreencast failed: %s', error);
       });
+      await client
+        .send('Emulation.setFocusEmulationEnabled', { enabled: false })
+        .catch((error) => {
+          debugPage('preview focus emulation reset failed: %s', error);
+        });
       await client.detach().catch((error) => {
         debugPage('CDP screencast session detach failed: %s', error);
       });
@@ -900,6 +905,14 @@ export class Page<
       }
 
       await client.send('Page.enable');
+      // A headed window hidden behind Studio or minimized on Windows may
+      // stop requestAnimationFrame and compositor updates. Keep the remotely
+      // controlled page visible/active while its preview stream is attached.
+      await client
+        .send('Emulation.setFocusEmulationEnabled', { enabled: true })
+        .catch((error) => {
+          debugPage('preview focus emulation unavailable: %s', error);
+        });
       try {
         const { width, height } = await this.size();
         expectedViewportSize = { width, height };

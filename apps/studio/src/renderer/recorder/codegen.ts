@@ -41,7 +41,7 @@ function toSerializableModelConfig(modelConfig: IModelConfig): IModelConfig {
 export async function generateStudioRecorderCodeWithAI(
   session: StudioRecordingSession,
   options: {
-    type?: StudioRecorderCodeType;
+    type?: Exclude<StudioRecorderCodeType, 'playwright-native'>;
     language?: string;
     modelConfig?: IModelConfig;
     onChunk?: (content: string) => void;

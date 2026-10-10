@@ -20,7 +20,7 @@ describe('UniversalPlayground empty state actions', () => {
     expect(
       shouldRenderCustomEmptyState(
         [createMessage({ id: 'welcome' })],
-        'Welcome to Midscene.js Playground!',
+        '欢迎使用 Midscene.js 操作调试！',
       ),
     ).toBe(true);
     expect(shouldShowTimelineActions(true)).toBe(false);

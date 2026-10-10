@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import { MaskedIcon } from '../MaskedIcon';
 
 interface ModelConfigCardProps {
@@ -12,6 +13,8 @@ interface ModelConfigCardProps {
 }
 
 function CheckIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -33,6 +36,8 @@ function CheckIcon() {
 }
 
 function WarningIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -54,6 +59,8 @@ function WarningIcon() {
 }
 
 function ChevronDown({ flipped }: { flipped: boolean }) {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -78,6 +85,8 @@ const ENV_PLACEHOLDER =
   'MIDSCENE_MODEL_BASE_URL=...\nMIDSCENE_MODEL_API_KEY=...\nMIDSCENE_MODEL_NAME=...\nMIDSCENE_MODEL_FAMILY=...';
 
 function EnvTextPreview({ text }: { text: string }) {
+  useStudioLanguage();
+
   // Mirror the env modal's Text tab exactly: show the raw text the user
   // entered (or the same placeholder the modal uses when nothing is set).
   // Both surfaces edit the same config, so the previews must stay in sync.
@@ -99,6 +108,8 @@ export function ModelConfigCard({
   envText,
   onOpen,
 }: ModelConfigCardProps) {
+  useStudioLanguage();
+
   // Default to expanded when env is missing — the user needs to see the
   // template right away. Once the config is complete, default to collapsed
   // so the overview stays compact.
@@ -119,7 +130,7 @@ export function ModelConfigCard({
             />
           </span>
           <span className="text-[14px] font-medium leading-[16px] text-text-primary">
-            Model Config
+            {t('Model Config')}
           </span>
           {complete ? <CheckIcon /> : <WarningIcon />}
         </span>
@@ -139,7 +150,7 @@ export function ModelConfigCard({
               }}
               type="button"
             >
-              {complete ? 'Edit env' : 'Configure'}
+              {complete ? t('Edit env') : t('Configure')}
             </button>
           ) : null}
         </div>

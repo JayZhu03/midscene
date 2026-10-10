@@ -1,3 +1,4 @@
+import { t, useStudioLanguage } from '../../i18n';
 export interface ConnectingPreviewProps {
   className?: string;
   iconSrc: string;
@@ -11,8 +12,10 @@ export default function ConnectingPreview({
   className,
   iconSrc,
   iconVariant = 'desktop',
-  statusLabel = 'Preparing device connection...',
+  statusLabel = t('Preparing device connection...'),
 }: ConnectingPreviewProps) {
+  useStudioLanguage();
+
   const rootClassName = [
     'flex h-full w-full items-center justify-center bg-surface',
     className,

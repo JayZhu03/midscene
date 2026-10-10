@@ -12,6 +12,7 @@ import { usePlaygroundState } from '../../hooks/usePlaygroundState';
 import { useTextTruncation } from '../../hooks/useTextTruncation';
 import { useEnvConfig } from '../../store/store';
 import type { FormValue, UniversalPlaygroundProps } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 import { notifyError } from '../../utils';
 import { ContextPreview } from '../context-preview';
 import { EnvConfigReminder } from '../env-config-reminder';
@@ -60,9 +61,11 @@ function getSDKId(sdk: any): string {
 }
 
 function ErrorMessage({ error }: { error: string }) {
+  useUiLanguage();
+
   if (!error) return null;
   // Ensure only one "Error: " prefix and style it red
-  const cleanError = error.replace(/^(Error:\s*)+/, 'Error: ');
+  const cleanError = error.replace(/^(Error:\s*)+/, t('错误：'));
   return (
     <Alert
       message={<span style={{ color: '#ff4d4f' }}>{cleanError}</span>}
@@ -85,6 +88,8 @@ function ProgressRowContent({
   error?: string | null;
   shouldShowLoading: boolean;
 }) {
+  useUiLanguage();
+
   const { ref, truncated } = useTextTruncation<HTMLDivElement>(
     content,
     'multi-line',
@@ -122,6 +127,8 @@ export function UniversalPlayground({
   dryMode = false,
   showContextPreview = true,
 }: UniversalPlaygroundProps) {
+  const uiLanguage = useUiLanguage();
+
   const [form] = Form.useForm();
   const { config } = useEnvConfig();
   const [sdkReady, setSdkReady] = useState(false);
@@ -307,11 +314,16 @@ export function UniversalPlayground({
       playgroundSDK.overrideConfig(config).catch((error) => {
         console.error('Failed to override SDK config:', error);
         if (!componentConfig.suppressConfigErrorToast) {
-          notifyError(error, { title: 'Failed to apply AI configuration' });
+          notifyError(error, { title: t('应用模型配置失败') });
         }
       });
     }
-  }, [playgroundSDK, config, componentConfig.suppressConfigErrorToast]);
+  }, [
+    playgroundSDK,
+    config,
+    componentConfig.suppressConfigErrorToast,
+    uiLanguage,
+  ]);
 
   // Handle form submission with error handling
   const handleFormRun = useCallback(async () => {
@@ -320,9 +332,9 @@ export function UniversalPlayground({
       await prepareExecution();
       await executeAction(value);
     } catch (error) {
-      notifyError(error, { title: 'Execution failed' });
+      notifyError(error, { title: t('执行失败') });
     }
-  }, [form, executeAction, prepareExecution]);
+  }, [form, executeAction, prepareExecution, uiLanguage]);
 
   useEffect(() => {
     const request = componentConfig.externalRunRequest;
@@ -359,7 +371,7 @@ export function UniversalPlayground({
           : {}),
       });
     })().catch((error) => {
-      notifyError(error, { title: 'Execution failed' });
+      notifyError(error, { title: t('执行失败') });
     });
   }, [
     componentConfig.externalRunRequest,
@@ -367,6 +379,7 @@ export function UniversalPlayground({
     messagesInitialized,
     prepareExecution,
     sdkReady,
+    uiLanguage,
   ]);
 
   // Check if run button should be enabled
@@ -399,7 +412,7 @@ export function UniversalPlayground({
   const deviceType = componentConfig.deviceType;
   const executionFlowConfig = componentConfig.executionFlow ?? {};
   const collapsibleProgressGroup = executionFlowConfig.collapsible === true;
-  const progressGroupLabel = executionFlowConfig.label ?? 'Execution Flow';
+  const progressGroupLabel = executionFlowConfig.label ?? t('执行过程');
 
   // Collapse state for progress groups, keyed by the id of the first progress
   // item of each run. A run is a maximal sequence of consecutive `progress`
@@ -554,6 +567,8 @@ export function UniversalPlayground({
     showClearButton && showTimelineActions ? (
       <div className="clear-button-container">
         <Button
+          aria-label={t('清空执行记录')}
+          title={t('清空执行记录')}
           size="small"
           icon={<ClearOutlined />}
           onClick={handleClearInfoList}
@@ -760,7 +775,7 @@ export function UniversalPlayground({
                                     style={{ fontSize: 20 }}
                                   />
                                   <span className="system-message-title">
-                                    {branding.title || 'Playground'}
+                                    {branding.title || t('操作调试')}
                                   </span>
                                 </div>
                               )}
@@ -823,7 +838,7 @@ export function UniversalPlayground({
                 showScrollToBottomButton &&
                 componentConfig.enableScrollToBottom !== false && (
                   <Button
-                    aria-label="Scroll to latest message"
+                    aria-label={t('滚动到最新消息')}
                     className="scroll-to-bottom-button"
                     shape="circle"
                     icon={<ArrowDownOutlined />}
@@ -844,7 +859,8 @@ export function UniversalPlayground({
         {showVersionInfo && branding.version && (
           <div className="version-info-section">
             <span className="version-text">
-              Midscene.js version: {branding.version}
+              {t('Midscene.js 版本：')}
+              {branding.version}
             </span>
           </div>
         )}

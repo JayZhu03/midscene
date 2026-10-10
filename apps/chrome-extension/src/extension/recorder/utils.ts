@@ -145,7 +145,7 @@ export const injectScript = async (currentTab: chrome.tabs.Tab | null) => {
   }
 
   if (!currentTab?.id) {
-    message.error('No active tab found');
+    message.error('未找到当前网页标签');
     return false;
   }
 
@@ -202,7 +202,7 @@ export const exportEventsToFile = (
   sessionName: string,
 ) => {
   if (events.length === 0) {
-    message.warning('No events to export');
+    message.warning('暂无可导出的操作');
     return;
   }
 

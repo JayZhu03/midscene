@@ -3,6 +3,7 @@ import { Tooltip } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { parseConfig, useEnvConfig } from '../../store/store';
 import type { PlaygroundSDKLike } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 import {
   type CommonAgentOptions,
   ConfigModal,
@@ -40,6 +41,8 @@ export function EnvConfig({
   envTextareaAutoSize,
   envTextareaMinRows,
 }: EnvConfigProps) {
+  useUiLanguage();
+
   const { config, configString, loadConfig, syncFromStorage } = useEnvConfig();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const midsceneModelName = config.MIDSCENE_MODEL_NAME;
@@ -86,7 +89,7 @@ export function EnvConfig({
               : undefined
         }
         placement={tooltipPlacement}
-        title="Please set up your environment variables before using."
+        title={t('请先配置模型地址、API Key 和模型名称，再开始使用。')}
       >
         {mode === 'icon' ? (
           <SettingOutlined onClick={showModal} />
@@ -95,11 +98,13 @@ export function EnvConfig({
             onClick={showModal}
             style={{ color: '#006AFF', cursor: 'pointer' }}
           >
-            set up
+            {t('去配置')}
           </span>
         )}
       </Tooltip>
       <ConfigModal
+        initialTab="form"
+        showEnvStyleSelect
         agentOptionsValue={agentOptions}
         className={configModalClassName}
         envTextareaAutoSize={envTextareaAutoSize}

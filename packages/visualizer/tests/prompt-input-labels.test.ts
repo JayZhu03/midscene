@@ -8,11 +8,11 @@ describe('getPromptInputActionLabel', () => {
   });
 
   test('derives the label from the selected type when no override is given', () => {
-    expect(getPromptInputActionLabel('aiAct')).toBe('Action');
-    expect(getPromptInputActionLabel('aiTap')).toBe('Tap');
+    expect(getPromptInputActionLabel('aiAct')).toBe('自动操作');
+    expect(getPromptInputActionLabel('aiTap')).toBe('点击');
   });
 
-  test('falls back to Action when neither an override nor a usable type exists', () => {
-    expect(getPromptInputActionLabel('')).toBe('Action');
+  test('falls back to the default action label when neither an override nor a usable type exists', () => {
+    expect(getPromptInputActionLabel('')).toBe('自动操作');
   });
 });

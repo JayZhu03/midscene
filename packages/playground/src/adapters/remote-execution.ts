@@ -25,6 +25,8 @@ import type {
 } from '../types';
 import { BasePlaygroundAdapter } from './base';
 
+export const MANUAL_INTERACT_TIMEOUT_MS = 10_000;
+
 export class RemoteExecutionAdapter extends BasePlaygroundAdapter {
   private serverUrl?: string;
   private _id?: string;
@@ -503,16 +505,28 @@ export class RemoteExecutionAdapter extends BasePlaygroundAdapter {
       return { ok: false, error: 'No server URL configured' };
     }
 
+    const controller = new AbortController();
+    const timeoutMs = ['Navigate', 'Reload', 'GoBack', 'GoForward'].includes(
+      payload.actionType,
+    )
+      ? 30_000
+      : MANUAL_INTERACT_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(`${this.serverUrl}/interact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       const data = (await response.json().catch(() => null)) as {
         error?: string;
       } | null;
+
+      if (controller.signal.aborted) {
+        throw new Error('Manual control timed out');
+      }
 
       if (!response.ok) {
         return {
@@ -525,8 +539,14 @@ export class RemoteExecutionAdapter extends BasePlaygroundAdapter {
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: controller.signal.aborted
+          ? 'Manual control timed out. Check the browser before retrying.'
+          : error instanceof Error
+            ? error.message
+            : 'Unknown error',
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

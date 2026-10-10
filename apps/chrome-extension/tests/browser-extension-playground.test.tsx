@@ -175,10 +175,10 @@ describe('BrowserExtensionPlayground', () => {
     });
 
     expect(emptyStateContainer.textContent).toContain(
-      'Welcome to Midscene.js Playground!',
+      '欢迎使用 Midscene.js 操作调试！',
     );
     expect(emptyStateContainer.textContent).toContain(
-      'This is a panel for experimenting and testing Midscene.js features.',
+      '在这里可以体验和测试 Midscene.js',
     );
     expect(emptyStateContainer.querySelector('img')?.getAttribute('src')).toBe(
       'icon128.png',

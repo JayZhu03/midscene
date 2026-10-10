@@ -1,19 +1,20 @@
 import type { InfoListItem, PlaygroundResult } from '../types';
+import { t } from '../ui-language';
 
 // tracking popup tip
-export const trackingTip = 'Limit popup to current tab';
+export const trackingTip = '在当前标签页打开链接';
 
 // deep locate tip
-export const deepLocateTip = 'Deep Locate';
+export const deepLocateTip = '深度定位';
 
 // deep think tip (for aiAct planning)
-export const deepThinkTip = 'Deep Think';
+export const deepThinkTip = '深度思考';
 
 // screenshot included tip
-export const screenshotIncludedTip = 'Include screenshot in request';
+export const screenshotIncludedTip = '请求中包含截图';
 
 // dom included tip
-export const domIncludedTip = 'Include DOM info in request';
+export const domIncludedTip = '请求中包含 DOM 信息';
 
 // Android device options tips
 export const imeStrategyTip = 'IME strategy';
@@ -25,42 +26,39 @@ export const alwaysRefreshScreenInfoTip = 'Always refresh screen info';
 export const apiMetadata = {
   aiAct: {
     group: 'interaction',
-    title: 'Auto Planning: plan the steps and execute',
+    title: '自动规划步骤并执行',
   },
-  aiTap: { group: 'interaction', title: 'Click an element' },
-  aiDoubleClick: { group: 'interaction', title: 'Double-click an element' },
-  aiHover: { group: 'interaction', title: 'Hover over an element' },
-  aiInput: { group: 'interaction', title: 'Input text into an element' },
-  aiRightClick: { group: 'interaction', title: 'Right-click an element' },
-  aiKeyboardPress: { group: 'interaction', title: 'Press keyboard keys' },
-  aiScroll: { group: 'interaction', title: 'Scroll the page or element' },
-  aiLocate: { group: 'interaction', title: 'Locate an element on the page' },
+  aiTap: { group: 'interaction', title: '点击元素' },
+  aiDoubleClick: { group: 'interaction', title: '双击元素' },
+  aiHover: { group: 'interaction', title: '悬停在元素上' },
+  aiInput: { group: 'interaction', title: '向元素输入文字' },
+  aiRightClick: { group: 'interaction', title: '右键点击元素' },
+  aiKeyboardPress: { group: 'interaction', title: '按下键盘按键' },
+  aiScroll: { group: 'interaction', title: '滚动页面或元素' },
+  aiLocate: { group: 'interaction', title: '定位页面元素' },
   aiQuery: {
     group: 'extraction',
-    title: 'Extract data directly from the UI',
+    title: '直接从界面提取信息',
   },
-  aiBoolean: { group: 'extraction', title: 'Get true/false answer' },
-  aiNumber: { group: 'extraction', title: 'Extract numeric value' },
-  aiString: { group: 'extraction', title: 'Extract text value' },
-  aiAsk: { group: 'extraction', title: 'Ask a question about the UI' },
-  aiAssert: { group: 'validation', title: 'Assert a condition is true' },
-  aiWaitFor: { group: 'validation', title: 'Wait for a condition to be met' },
+  aiBoolean: { group: 'extraction', title: '判断条件是否成立' },
+  aiNumber: { group: 'extraction', title: '提取数值' },
+  aiString: { group: 'extraction', title: '提取文字' },
+  aiAsk: { group: 'extraction', title: '询问当前界面的信息' },
+  aiAssert: { group: 'validation', title: '验证条件是否成立' },
+  aiWaitFor: { group: 'validation', title: '等待条件满足' },
 };
 
 export const defaultMainButtons = ['aiAct', 'aiTap', 'aiQuery', 'aiAssert'];
 
 // welcome message template
 export const getWelcomeMessageTemplate = (
-  targetName = 'web page',
+  targetName = t('网页'),
 ): Omit<InfoListItem, 'id' | 'timestamp'> => ({
   type: 'system',
-  content: `
-      Welcome to Midscene.js Playground!
-
-      This is a panel for experimenting and testing Midscene.js features. You can use natural language instructions to operate the ${targetName}, such as clicking buttons, filling in forms, querying information, etc.
-
-      Please enter your instructions in the input box below to start experiencing.
-    `,
+  content: t(
+    'Welcome to Midscene.js Playground!\n\nOperate {target} using natural language: click buttons, fill forms and extract information.\n\nEnter your instructions below to get started.',
+    { target: targetName },
+  ),
   loading: false,
   result: undefined,
   replayScriptsInfo: null,

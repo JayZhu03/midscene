@@ -8,6 +8,7 @@ import HistoryOutlined from '../../icons/history.svg';
 import MagnifyingGlass from '../../icons/magnifying-glass.svg';
 import { useHistoryStore } from '../../store/history';
 import type { HistoryItem } from '../../store/history';
+import { t, useUiLanguage } from '../../ui-language';
 import './index.less';
 
 const { Text } = Typography;
@@ -48,12 +49,12 @@ export const HistorySelector: React.FC<HistorySelectorProps> = ({
   currentType,
   trigger,
   popupPlacement = 'bottom',
-  title = 'History',
+  title = t('指令历史'),
   showClear = true,
   onClear,
-  searchPlaceholder = 'Search',
-  emptyText = 'No history record',
-  noMatchText = 'No matching history record',
+  searchPlaceholder = t('搜索'),
+  emptyText = t('暂无历史记录'),
+  noMatchText = t('没有匹配的历史记录'),
   renderItemActions,
   renderItemLabel,
   overlayClassName,
@@ -61,6 +62,8 @@ export const HistorySelector: React.FC<HistorySelectorProps> = ({
   popupHeight = HISTORY_MODAL_HEIGHT,
   portalContainerSelector,
 }) => {
+  useUiLanguage();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [scrollVersion, setScrollVersion] = useState(0);
@@ -294,7 +297,7 @@ export const HistorySelector: React.FC<HistorySelectorProps> = ({
                       className="clear-button"
                       disabled={history.length === 0}
                     >
-                      Clear
+                      {t('清空')}
                     </Button>
                   ) : null}
                 </div>
@@ -315,14 +318,14 @@ export const HistorySelector: React.FC<HistorySelectorProps> = ({
                 ) : (
                   <>
                     {renderHistoryGroup(
-                      'Last 7 days',
+                      t('最近 7 天'),
                       groupedHistory.recent7Days,
                     )}
                     {renderHistoryGroup(
-                      'Last 1 year',
+                      t('最近 1 年'),
                       groupedHistory.recent1Year,
                     )}
-                    {renderHistoryGroup('Earlier', groupedHistory.older)}
+                    {renderHistoryGroup(t('更早'), groupedHistory.older)}
 
                     {/* no search result */}
                     {searchText &&

@@ -81,6 +81,7 @@ export class MjpegStreamHandler {
   private nativeAvailable: boolean | null = null;
   private nativeFailedAt: number | null = null;
   private lastPollingFrame?: string;
+  private lastPollingFrameAt?: number;
   private readonly interfaceMjpegHub: InterfaceMjpegHub =
     createInterfaceMjpegHub({
       initialFrameTimeoutMs: INTERFACE_MJPEG_INITIAL_FRAME_TIMEOUT_MS,
@@ -95,6 +96,7 @@ export class MjpegStreamHandler {
     this.nativeAvailable = null;
     this.nativeFailedAt = null;
     this.lastPollingFrame = undefined;
+    this.lastPollingFrameAt = undefined;
     this.interfaceMjpegHub.stopProducer();
   }
 
@@ -102,15 +104,19 @@ export class MjpegStreamHandler {
     this.interfaceMjpegHub.shutdown();
   }
 
-  getLastFrameBase64(): string | undefined {
-    const interfaceFrame = this.interfaceMjpegHub.getLastFrame();
+  getLastFrameBase64(maxAgeMs?: number): string | undefined {
+    const interfaceFrame = this.interfaceMjpegHub.getLastFrame(maxAgeMs);
     if (interfaceFrame) {
       return toMjpegFrameDataUrl(
         interfaceFrame.data,
         interfaceFrame.contentType,
       );
     }
-    return this.lastPollingFrame
+    const pollingFrameIsFresh =
+      maxAgeMs === undefined ||
+      (this.lastPollingFrameAt !== undefined &&
+        Date.now() - this.lastPollingFrameAt <= maxAgeMs);
+    return this.lastPollingFrame && pollingFrameIsFresh
       ? toMjpegFrameDataUrl(this.lastPollingFrame)
       : undefined;
   }
@@ -286,6 +292,7 @@ export class MjpegStreamHandler {
         if (stopped) break;
         consecutiveErrors = 0;
         this.lastPollingFrame = base64;
+        this.lastPollingFrameAt = Date.now();
 
         writeMjpegFrame(res, boundary, {
           data: base64,

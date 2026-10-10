@@ -12,6 +12,7 @@ export interface EnvEntry {
 
 export interface ModelEnvField {
   key: string;
+  label?: string;
   placeholder: string;
 }
 
@@ -24,18 +25,22 @@ export interface ModelEnvField {
 export const FIXED_MODEL_ENV_FIELDS: readonly ModelEnvField[] = [
   {
     key: 'MIDSCENE_MODEL_BASE_URL',
+    label: 'Model endpoint',
     placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
   {
     key: 'MIDSCENE_MODEL_API_KEY',
+    label: 'API Key',
     placeholder: 'sk-...',
   },
   {
     key: 'MIDSCENE_MODEL_NAME',
+    label: 'Model name',
     placeholder: 'qwen3-vl-plus',
   },
   {
     key: 'MIDSCENE_MODEL_FAMILY',
+    label: 'Model family',
     placeholder: 'qwen3-vl',
   },
 ] as const;

@@ -2,6 +2,7 @@ import type { AgentOpt, ConnectivityTestResult } from '@midscene/core';
 import { Alert, Button, Divider, Input, Modal, Select, Typography } from 'antd';
 import type { ModalProps } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { t, useUiLanguage } from '../../ui-language';
 import './index.less';
 
 const { TextArea } = Input;
@@ -19,6 +20,7 @@ export type ConfigModalTab = 'text' | 'form';
 
 export interface ConfigModalEnvField {
   key: string;
+  label?: string;
   placeholder: string;
 }
 
@@ -52,11 +54,16 @@ const TEXT_PLACEHOLDER =
 const DEFAULT_ENV_FIELDS: readonly ConfigModalEnvField[] = [
   {
     key: 'MIDSCENE_MODEL_BASE_URL',
+    label: '模型服务地址',
     placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
-  { key: 'MIDSCENE_MODEL_API_KEY', placeholder: 'sk-...' },
-  { key: 'MIDSCENE_MODEL_NAME', placeholder: 'qwen3-vl-plus' },
-  { key: 'MIDSCENE_MODEL_FAMILY', placeholder: 'qwen3-vl' },
+  { key: 'MIDSCENE_MODEL_API_KEY', label: 'API Key', placeholder: 'sk-...' },
+  {
+    key: 'MIDSCENE_MODEL_NAME',
+    label: '模型名称',
+    placeholder: 'qwen3-vl-plus',
+  },
+  { key: 'MIDSCENE_MODEL_FAMILY', label: '模型系列', placeholder: 'qwen3-vl' },
 ];
 
 const OPTION_FIELDS: Array<{
@@ -66,18 +73,18 @@ const OPTION_FIELDS: Array<{
 }> = [
   {
     key: 'replanningCycleLimit',
-    label: 'Replanning Cycle Limit',
-    placeholder: 'Model default',
+    label: '重新规划次数上限',
+    placeholder: '模型默认值',
   },
   {
     key: 'waitAfterAction',
-    label: 'Wait After Action (ms)',
-    placeholder: 'Default: 300',
+    label: '操作后等待时间（毫秒）',
+    placeholder: '默认：300',
   },
   {
     key: 'screenshotShrinkFactor',
-    label: 'Screenshot Shrink Factor',
-    placeholder: 'Default: 1',
+    label: '截图缩小倍数',
+    placeholder: '默认：1',
   },
 ];
 
@@ -106,8 +113,7 @@ export function parseAgentOptionFormValues(
     if (!Number.isInteger(value) || value < 0) {
       return {
         options: null,
-        error:
-          'Replanning cycle limit must be an integer greater than or equal to 0.',
+        error: t('重新规划次数上限必须是大于或等于 0 的整数。'),
       };
     }
     options.replanningCycleLimit = value;
@@ -118,7 +124,7 @@ export function parseAgentOptionFormValues(
     if (!Number.isFinite(value) || value < 0) {
       return {
         options: null,
-        error: 'Wait after action must be a number greater than or equal to 0.',
+        error: t('操作后等待时间必须是大于或等于 0 的数字。'),
       };
     }
     options.waitAfterAction = value;
@@ -129,8 +135,7 @@ export function parseAgentOptionFormValues(
     if (!Number.isFinite(value) || value < 1) {
       return {
         options: null,
-        error:
-          'Screenshot shrink factor must be a number greater than or equal to 1.',
+        error: t('截图缩小倍数必须是大于或等于 1 的数字。'),
       };
     }
     options.screenshotShrinkFactor = value;
@@ -167,6 +172,8 @@ function defaultSetEnvFieldValue(text: string, key: string, value: string) {
 }
 
 function VerifyPlayIcon() {
+  useUiLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -186,6 +193,8 @@ function VerifyPlayIcon() {
 }
 
 function VerifyButtonIcon({ isLoading }: { isLoading: boolean }) {
+  useUiLanguage();
+
   return (
     <span className="midscene-config-modal-verify-icon">
       {isLoading ? (
@@ -230,6 +239,8 @@ export function ConfigModal({
   onSave,
   onVerify,
 }: ConfigModalProps) {
+  useUiLanguage();
+
   const [tab, setTab] = useState<ConfigModalTab>(initialTab);
   const [text, setText] = useState(textValue);
   const [agentOptionValues, setAgentOptionValues] =
@@ -288,7 +299,7 @@ export function ConfigModal({
       }
       setTestStatus({
         kind: 'error',
-        message: result.message || 'Connectivity test failed without details.',
+        message: result.message || t('模型连接验证失败，服务未返回详细原因。'),
       });
     } catch (error) {
       if (testRunIdRef.current !== testRunId) return;
@@ -326,44 +337,44 @@ export function ConfigModal({
       destroyOnClose
       footer={
         <div className="midscene-config-modal-footer-actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('取消')}</Button>
           <Button
             disabled={!parsedAgentOptions.options}
             loading={isSaving}
             onClick={() => void handleSave()}
             type="primary"
           >
-            Save
+            {t('保存')}
           </Button>
         </div>
       }
       maskClosable
       onCancel={onClose}
       open={open}
-      title="Config"
+      title={t('设置')}
       width={width}
     >
       <div className="midscene-config-modal-body-content">
         <section className="midscene-config-modal-env-section">
           <div className="midscene-config-modal-section-heading">
             <div className="midscene-config-modal-heading-copy">
-              <Typography.Text strong>Model Env Config</Typography.Text>
+              <Typography.Text strong>{t('模型配置')}</Typography.Text>
               <Typography.Text type="secondary">
-                The format is KEY=VALUE and separated by new lines. These data
-                will be saved <strong>locally in your browser</strong>.
+                {t('填写模型服务的连接信息，配置仅保存在')}
+                <strong>{t('当前浏览器本地')}</strong>。
               </Typography.Text>
             </div>
             {showEnvStyleSelect ? (
               <Select
-                aria-label="Model env config style"
+                aria-label={t('模型配置方式')}
                 className="midscene-config-modal-env-style-select"
                 onChange={(value) => {
                   resetFeedback();
                   setTab(value);
                 }}
                 options={[
-                  { label: '.env Style', value: 'text' },
-                  { label: 'Form Style', value: 'form' },
+                  { label: t('.env 文本'), value: 'text' },
+                  { label: t('表单填写'), value: 'form' },
                 ]}
                 value={tab}
               />
@@ -378,10 +389,12 @@ export function ConfigModal({
                   key={field.key}
                 >
                   <label htmlFor={`config-modal-${field.key}`}>
-                    <Typography.Text>{field.key}</Typography.Text>
+                    <Typography.Text title={field.key}>
+                      {t(field.label ?? field.key)}
+                    </Typography.Text>
                   </label>
                   <Input
-                    aria-label={`${field.key} value`}
+                    aria-label={t(field.label ?? field.key)}
                     id={`config-modal-${field.key}`}
                     onChange={(event) => {
                       resetFeedback();
@@ -389,7 +402,7 @@ export function ConfigModal({
                         setEnvFieldValue(text, field.key, event.target.value),
                       );
                     }}
-                    placeholder={field.placeholder}
+                    placeholder={t(field.placeholder ?? '')}
                     value={envValues[field.key] ?? ''}
                   />
                 </div>
@@ -397,7 +410,7 @@ export function ConfigModal({
             </div>
           ) : (
             <TextArea
-              aria-label="Model environment configuration"
+              aria-label={t('模型环境配置')}
               className="midscene-config-modal-env-textarea"
               onChange={(event) => {
                 resetFeedback();
@@ -421,7 +434,7 @@ export function ConfigModal({
             {testStatus.kind === 'success' ? (
               <Alert
                 className="midscene-config-modal-verify-alert"
-                message="Verified"
+                message={t('连接验证成功')}
                 showIcon
                 type="success"
               />
@@ -444,7 +457,7 @@ export function ConfigModal({
                 }
                 onClick={() => void handleVerify()}
               >
-                {testStatus.kind === 'running' ? 'Verifying' : 'Verify'}
+                {testStatus.kind === 'running' ? t('验证中') : t('验证连接')}
               </Button>
             ) : null}
           </div>
@@ -454,10 +467,9 @@ export function ConfigModal({
           <section className="midscene-config-modal-agent-options">
             <Divider />
             <div className="midscene-config-modal-heading-copy">
-              <Typography.Text strong>Agent Option Config</Typography.Text>
+              <Typography.Text strong>{t('Agent 执行设置')}</Typography.Text>
               <Typography.Text type="secondary">
-                Leave a field empty to use the default value. Changes apply on
-                the next Agent connection.
+                {t('留空则使用默认值，修改将在下一次创建 Agent 时生效。')}
               </Typography.Text>
             </div>
             <div className="midscene-config-modal-option-fields">
@@ -467,10 +479,10 @@ export function ConfigModal({
                   key={field.key}
                 >
                   <label htmlFor={`config-modal-${field.key}`}>
-                    <Typography.Text>{field.label}</Typography.Text>
+                    <Typography.Text>{t(field.label)}</Typography.Text>
                   </label>
                   <Input
-                    aria-label={field.label}
+                    aria-label={t(field.label)}
                     id={`config-modal-${field.key}`}
                     min={field.key === 'screenshotShrinkFactor' ? 1 : 0}
                     onChange={(event) => {
@@ -480,7 +492,7 @@ export function ConfigModal({
                         [field.key]: event.target.value,
                       }));
                     }}
-                    placeholder={field.placeholder}
+                    placeholder={t(field.placeholder ?? '')}
                     type="number"
                     value={agentOptionValues[field.key]}
                   />

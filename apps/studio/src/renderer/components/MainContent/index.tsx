@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react';
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import {
   type StudioPreviewConnectionState,
   shouldPauseDiscoveryPollingDuringPreview,
@@ -92,6 +93,8 @@ export interface MainContentProps {
 }
 
 function RefreshIcon({ spinning }: { spinning?: boolean }) {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -119,6 +122,8 @@ function RefreshIcon({ spinning }: { spinning?: boolean }) {
 }
 
 function BackIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -139,6 +144,8 @@ function BackIcon() {
 }
 
 function ForwardIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -159,6 +166,8 @@ function ForwardIcon() {
 }
 
 function StopIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -200,34 +209,34 @@ function resolvePlatformLogo(platform?: string): string {
 function getPreviewConnectingLabel(platform?: string): string {
   switch (platform) {
     case 'web':
-      return 'Opening Web page…';
+      return t('Opening Web page…');
     case 'computer':
-      return 'Preparing computer connection…';
+      return t('Preparing computer connection…');
     case 'ios':
-      return 'Preparing iOS device connection…';
+      return t('Preparing iOS device connection…');
     case 'harmony':
-      return 'Preparing HarmonyOS device connection…';
+      return t('Preparing HarmonyOS device connection…');
     case 'android':
-      return 'Preparing Android device connection…';
+      return t('Preparing Android device connection…');
     default:
-      return 'Preparing device connection…';
+      return t('Preparing device connection…');
   }
 }
 
 function getDisconnectedPreviewTitle(platform?: string): string {
   switch (platform) {
     case 'web':
-      return 'Open Web Page';
+      return t('Open Web Page');
     case 'computer':
-      return 'Connect Computer';
+      return t('Connect Computer');
     case 'ios':
-      return 'Connect iOS Device';
+      return t('Connect iOS Device');
     case 'harmony':
-      return 'Connect HarmonyOS Device';
+      return t('Connect HarmonyOS Device');
     case 'android':
-      return 'Connect Android Device';
+      return t('Connect Android Device');
     default:
-      return 'Connect Device';
+      return t('Connect Device');
   }
 }
 
@@ -242,6 +251,8 @@ function PreviewToolbarIcon({
   selected?: boolean;
   children: ReactNode;
 }) {
+  useStudioLanguage();
+
   const backgroundClassName = selected
     ? 'bg-[#EAEAEB] dark:bg-white/[0.12]'
     : 'bg-transparent hover:bg-surface-hover';
@@ -275,6 +286,8 @@ function WebNavigationButton({
   onClick: () => void;
   children: ReactNode;
 }) {
+  useStudioLanguage();
+
   return (
     <button
       aria-label={ariaLabel}
@@ -292,10 +305,14 @@ function WebNavigationButton({
 function OverviewToolbar({
   onRefresh,
   refreshing,
+  titlebarInsetRight,
 }: {
   onRefresh: () => void;
   refreshing: boolean;
+  titlebarInsetRight: number;
 }) {
+  useStudioLanguage();
+
   // Vertically centered in the 52px drag header strip so the button lines
   // up with the sidebar collapse toggle on the opposite side. The
   // surrounding header is `-webkit-app-region: drag`, so the button must
@@ -304,9 +321,10 @@ function OverviewToolbar({
   return (
     <>
       <button
-        aria-label="Refresh devices"
+        aria-label={t('Refresh devices')}
         className="app-no-drag absolute right-[16px] top-[10px] z-10 flex h-[32px] w-[32px] cursor-pointer items-center justify-center rounded-[8px] border border-border-subtle bg-transparent text-text-secondary transition-colors hover:bg-surface-hover-strong hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
         disabled={refreshing}
+        style={{ right: Math.max(16, titlebarInsetRight) }}
         onClick={onRefresh}
         type="button"
       >
@@ -333,6 +351,8 @@ export default function MainContent({
   titlebarInsetLeft = 0,
   titlebarInsetRight = 0,
 }: MainContentProps) {
+  useStudioLanguage();
+
   const studioPlayground = useStudioPlayground();
   const recorder = useOptionalStudioRecorder();
   const [previewStatus, setPreviewStatus] =
@@ -424,12 +444,12 @@ export default function MainContent({
   }
   const deviceLabel =
     studioPlayground.phase === 'error'
-      ? 'Runtime Error'
+      ? t('Runtime Error')
       : isReady
         ? resolvedDeviceLabel ||
           lastKnownDeviceLabelRef.current ||
-          'No device selected'
-        : 'Playground starting';
+          t('No device selected')
+        : t('Playground starting');
   const shouldFrameMobilePreview = shouldEnableMobilePreviewFrame(
     runtimeInfo,
     previewFormValues,
@@ -506,7 +526,7 @@ export default function MainContent({
     });
   }
   const pillStatusLabel: Record<ConnectionStatus, string> = {
-    connected: 'Live',
+    connected: t('Live'),
     connecting: 'Loading',
     disconnected: 'Idle',
     recovering: 'Recovering',
@@ -547,19 +567,19 @@ export default function MainContent({
     {
       icon: <RecorderModeIcon />,
       key: StudioModeTab.Record,
-      label: 'Record',
+      label: t('Record'),
       mode: StudioModeTab.Record,
     },
     {
       icon: <ReplayModeIcon />,
       key: StudioModeTab.Replay,
-      label: 'Replay',
+      label: t('Replay'),
       mode: StudioModeTab.Replay,
     },
     {
       icon: <ApiPlaygroundModeIcon />,
       key: StudioModeTab.Playground,
-      label: 'API Playground',
+      label: t('API Playground'),
       mode: StudioModeTab.Playground,
     },
   ];
@@ -587,7 +607,7 @@ export default function MainContent({
   const liveStatusPill = (
     <div className="app-no-drag group/disconnect-pill relative flex shrink-0 items-center">
       <button
-        aria-label="Disconnect"
+        aria-label={t('Disconnect')}
         className="inline-flex h-[17px] items-center gap-[5.742px] rounded-[11.483px] border-0 px-[6px] py-[4px] text-[11px] font-medium leading-[8.613px] transition-[filter,opacity] duration-150 disabled:cursor-not-allowed disabled:opacity-60 hover:[&:not(:disabled)]:brightness-95"
         disabled={disconnectDisabled}
         onClick={() => {
@@ -637,7 +657,7 @@ export default function MainContent({
             className="whitespace-nowrap rounded-[4px] px-[12px] py-[8px] text-[12px] leading-[20px] font-medium text-white"
             style={{ backgroundColor: '#000000' }}
           >
-            Disconnect
+            {t('Disconnect')}
           </span>
         </div>
       ) : null}
@@ -739,7 +759,7 @@ export default function MainContent({
         debugWebNavigation(
           'failed to run web navigation action "%s": %s',
           actionType,
-          result.error || 'Unknown error',
+          result.error || t('Unknown error'),
         );
       } else {
         setWebIsLoading(false);
@@ -815,6 +835,7 @@ export default function MainContent({
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-surface">
         <div className="app-drag absolute left-0 right-0 top-0 z-0 h-[48px]" />
         <OverviewToolbar
+          titlebarInsetRight={titlebarInsetRight}
           onRefresh={async () => {
             if (!isReady || overviewRefreshing) {
               return;
@@ -1024,11 +1045,11 @@ export default function MainContent({
           </div>
           {showWebNavigation ? (
             <div
-              aria-label="Web navigation"
+              aria-label={t('Web navigation')}
               className="app-no-drag ml-[10px] flex h-[32px] items-center gap-[2px] rounded-[8px] bg-transparent px-[2px]"
             >
               <WebNavigationButton
-                aria-label="Go back"
+                aria-label={t('Go back')}
                 disabled={webNavigationBusyAction !== null}
                 onClick={() => {
                   void runWebNavigationAction('GoBack');
@@ -1037,7 +1058,7 @@ export default function MainContent({
                 <BackIcon />
               </WebNavigationButton>
               <WebNavigationButton
-                aria-label="Go forward"
+                aria-label={t('Go forward')}
                 disabled={webNavigationBusyAction !== null}
                 onClick={() => {
                   void runWebNavigationAction('GoForward');
@@ -1047,7 +1068,7 @@ export default function MainContent({
               </WebNavigationButton>
               {webIsLoading ? (
                 <WebNavigationButton
-                  aria-label="Stop loading"
+                  aria-label={t('Stop loading')}
                   disabled={webNavigationBusyAction !== null}
                   onClick={() => {
                     void runWebNavigationAction('Stop');
@@ -1057,7 +1078,7 @@ export default function MainContent({
                 </WebNavigationButton>
               ) : (
                 <WebNavigationButton
-                  aria-label="Reload page"
+                  aria-label={t('Reload page')}
                   disabled={webNavigationBusyAction !== null}
                   onClick={() => {
                     void runWebNavigationAction('Reload');
@@ -1107,7 +1128,7 @@ export default function MainContent({
           >
             {studioPlayground.phase === 'booting' ? (
               <div className="flex h-full items-center justify-center px-6 text-[14px] text-text-tertiary">
-                Playground starting...
+                {t('Playground starting...')}
               </div>
             ) : studioPlayground.phase === 'error' ? (
               <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
@@ -1121,13 +1142,13 @@ export default function MainContent({
                   }}
                   type="button"
                 >
-                  Retry runtime
+                  {t('Retry runtime')}
                 </button>
               </div>
             ) : !studioPlayground.controller.state.serverOnline &&
               activeStudioMode !== StudioModeTab.Replay ? (
               <div className="flex h-full items-center justify-center px-8 text-center text-[14px] leading-[22px] text-text-tertiary">
-                Playground server is offline.
+                {t('Playground server is offline.')}
               </div>
             ) : isPreviewConnecting ? (
               <ConnectingPreview

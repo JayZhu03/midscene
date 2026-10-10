@@ -14,10 +14,12 @@ export function StudioActionMenu({
   ariaLabel,
   items,
   triggerClassName,
+  width = 160,
 }: {
   ariaLabel: string;
   items: StudioActionMenuItem[];
   triggerClassName?: string;
+  width?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{
@@ -39,7 +41,10 @@ export function StudioActionMenu({
       }
 
       setMenuPosition({
-        left: triggerRect.right - 160,
+        left: Math.max(
+          8,
+          Math.min(triggerRect.right - width, window.innerWidth - width - 8),
+        ),
         top: triggerRect.bottom + 8,
       });
     };
@@ -70,7 +75,7 @@ export function StudioActionMenu({
       window.removeEventListener('resize', updateMenuPosition);
       window.removeEventListener('scroll', updateMenuPosition, true);
     };
-  }, [open]);
+  }, [open, width]);
 
   const menu =
     open && menuPosition
@@ -79,7 +84,7 @@ export function StudioActionMenu({
             className="studio-action-menu"
             ref={menuRef}
             role="menu"
-            style={menuPosition}
+            style={{ ...menuPosition, width }}
           >
             {items.map((item) => (
               <button

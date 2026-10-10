@@ -1,7 +1,10 @@
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import { MaskedIcon } from '../MaskedIcon';
 
 function EnvIcon({ alert }: { alert?: boolean }) {
+  useStudioLanguage();
+
   // Use the same env.svg asset that the ModelConfigCard header in the
   // middle area renders, so both surfaces speak the same visual language.
   return (
@@ -12,7 +15,7 @@ function EnvIcon({ alert }: { alert?: boolean }) {
       />
       {alert ? (
         <span
-          aria-label="Model config incomplete"
+          aria-label={t('Model config incomplete')}
           className="pointer-events-none absolute -right-[2px] -top-[2px] flex h-[8px] w-[8px] items-center justify-center rounded-full border border-surface-elevated bg-[#e13e37]"
           role="img"
         />
@@ -38,6 +41,8 @@ function DockRow({
   onClick,
   title,
 }: DockRowProps) {
+  useStudioLanguage();
+
   return (
     <button
       aria-expanded={ariaExpanded}
@@ -73,11 +78,13 @@ export default function SettingsDock({
   onToggleSettings,
   settingsOpen,
 }: SettingsDockProps) {
+  useStudioLanguage();
+
   return (
     <div className="flex flex-col gap-[2px]">
       <DockRow
         icon={<EnvIcon alert={envAlert} />}
-        label="Config"
+        label={t('Config')}
         onClick={onEnvClick}
       />
       <DockRow
@@ -89,9 +96,9 @@ export default function SettingsDock({
             src={assetUrls.sidebar.settings}
           />
         }
-        label="Settings"
+        label={t('Settings')}
         onClick={onToggleSettings}
-        title="Settings"
+        title={t('Settings')}
       />
     </div>
   );

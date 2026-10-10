@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import './playground-shell-skin.css';
 
 export interface PlaygroundShellModeMenuItem {
@@ -25,8 +26,10 @@ export function PlaygroundShell({
   children,
   modeMenu,
   showHeader = true,
-  title = 'API Playground',
+  title = t('API Playground'),
 }: PlaygroundShellProps) {
+  useStudioLanguage();
+
   const selectedItem = modeMenu?.items.find(
     (item) => item.key === modeMenu.selectedKey,
   );
@@ -51,7 +54,7 @@ export function PlaygroundShell({
               </div>
             ) : null}
             <span className="truncate text-[13px] leading-[22.1px] font-medium text-text-primary">
-              {selectedItem?.label || title}
+              {t(selectedItem?.label || title)}
             </span>
           </div>
           {actions ? (

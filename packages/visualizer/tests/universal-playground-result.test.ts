@@ -92,7 +92,7 @@ describe('UniversalPlayground result display policy', () => {
 
       expect(html).toContain('REPORT_PLAYER');
       expect(html.includes('API_RETURN_VALUE')).toBe(showOutput);
-      expect(html.includes('Output:')).toBe(showOutput);
+      expect(html.includes('输出：')).toBe(showOutput);
       if (showOutput) {
         expect(html.indexOf('API_RETURN_VALUE')).toBeLessThan(
           html.indexOf('REPORT_PLAYER'),

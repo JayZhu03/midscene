@@ -102,6 +102,9 @@ describe('Page startMjpegStream', () => {
 
     expect(mockPage.bringToFront).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith('Page.enable');
+    expect(send).toHaveBeenCalledWith('Emulation.setFocusEmulationEnabled', {
+      enabled: true,
+    });
     expect(send).toHaveBeenCalledWith('Emulation.setVisibleSize', {
       width: 1280,
       height: 768,
@@ -223,10 +226,11 @@ describe('Page startMjpegStream', () => {
     });
     controller.abort();
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await rs.waitFor(() => expect(detach).toHaveBeenCalledTimes(1));
     expect(send).toHaveBeenCalledWith('Page.stopScreencast');
-    expect(detach).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith('Emulation.setFocusEmulationEnabled', {
+      enabled: false,
+    });
   });
 
   it('can push a screenshot frame to refresh keyboard-only visual changes', async () => {

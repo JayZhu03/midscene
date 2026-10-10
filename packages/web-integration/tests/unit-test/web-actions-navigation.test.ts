@@ -24,6 +24,39 @@ describe('commonWebActionsForWebPage navigation actions', () => {
 });
 
 describe('commonWebActionsForWebPage visual refresh', () => {
+  it('skips scroll settling for manual controls but retains the default AI wait', async () => {
+    rs.useFakeTimers();
+    try {
+      const page = {
+        scrollDown: rs.fn(async () => undefined),
+        schedulePendingVisualUpdate: rs.fn(),
+      };
+      const scroll = commonWebActionsForWebPage(page as any).find(
+        (action) => action.name === 'Scroll',
+      )!;
+      await scroll.call(
+        { direction: 'down', scrollType: 'singleAction' },
+        {
+          ...mockExecutorContext,
+          skipDefaultWait: true,
+        },
+      );
+      expect(rs.getTimerCount()).toBe(0);
+      expect(page.schedulePendingVisualUpdate).toHaveBeenCalledTimes(1);
+      const settled = scroll.call(
+        { direction: 'down', scrollType: 'singleAction' },
+        mockExecutorContext,
+      );
+      await Promise.resolve();
+      expect(page.schedulePendingVisualUpdate).toHaveBeenCalledTimes(1);
+      await rs.advanceTimersByTimeAsync(500);
+      await settled;
+      expect(page.schedulePendingVisualUpdate).toHaveBeenCalledTimes(2);
+    } finally {
+      rs.useRealTimers();
+    }
+  });
+
   it('schedules the preview refresh after tap actions', async () => {
     const page = {
       mouse: {

@@ -50,7 +50,7 @@ export const RecordList: React.FC<RecordListProps> = ({
       {/* Export All Events Button */}
       {hasEventsToExport && (
         <div className="h-[30px] font-bold text-[14px] p-[5px]">
-          <span>Record All</span>
+          <span>录制列表</span>
           <DownloadOutlined
             onClick={onExportAllEvents}
             className="cursor-pointer float-right"
@@ -60,8 +60,8 @@ export const RecordList: React.FC<RecordListProps> = ({
 
       {!isExtensionMode && (
         <Alert
-          message="Limited Functionality"
-          description="Recording features require Chrome extension environment. Only session management and event viewing are available."
+          message="当前环境功能受限"
+          description="录制功能需要在 Chrome 插件中使用，当前环境仅支持管理录制记录和查看操作。"
           type="info"
           showIcon
           className="mb-4"
@@ -74,7 +74,7 @@ export const RecordList: React.FC<RecordListProps> = ({
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
             <span className="record-list-empty-description">
-              Start your first recording
+              开始你的第一次录制
             </span>
           }
         />
@@ -145,8 +145,8 @@ export const RecordList: React.FC<RecordListProps> = ({
                   <div className="w-px h-5 bg-[rgba(0, 0, 0, 0.04)]" />
                   <div className="flex items-center justify-center flex-1">
                     <Popconfirm
-                      title="Delete session"
-                      description="Are you sure you want to delete this session?"
+                      title="删除录制"
+                      description="确定删除这条录制记录吗？"
                       onConfirm={(e) => {
                         e?.stopPropagation();
                         onDeleteSession(session.id);
@@ -178,7 +178,7 @@ export const RecordList: React.FC<RecordListProps> = ({
         icon={<PlusOutlined className="stroke-[2]" />}
         onClick={handleCreateNewSession}
       >
-        New Recording
+        新建录制
       </Button>
     </div>
   );

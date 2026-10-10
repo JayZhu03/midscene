@@ -26,6 +26,7 @@ import {
   isZodObjectSchema,
   unwrapZodType,
 } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 import { getPromptInputActionLabel } from '../../utils/action-label';
 import { apiMetadata, defaultMainButtons } from '../../utils/constants';
 import { hasDeviceSpecificConfig } from '../../utils/device-capabilities';
@@ -62,6 +63,8 @@ const STUDIO_MINIMAL_PROMPT_ICONS = {
 } as const;
 
 function PromptStopSquareIcon() {
+  useUiLanguage();
+
   return <span aria-hidden="true" className="prompt-stop-square-icon" />;
 }
 
@@ -98,6 +101,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   deviceType,
   chrome,
 }) => {
+  const uiLanguage = useUiLanguage();
+
   const [hoveringSettings, setHoveringSettings] = useState(false);
   const [promptValue, setPromptValue] = useState('');
   const placeholder = getPlaceholderForType(selectedType);
@@ -293,39 +298,39 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     () => [
       {
         key: 'interaction-group',
-        label: 'Interaction APIs',
+        label: t('交互操作'),
         match: (api: string) =>
           apiMetadata[api as keyof typeof apiMetadata]?.group === 'interaction',
       },
       {
         key: 'extraction-group',
-        label: 'Data Extraction APIs',
+        label: t('信息提取'),
         match: (api: string) =>
           apiMetadata[api as keyof typeof apiMetadata]?.group === 'extraction',
       },
       {
         key: 'validation-group',
-        label: 'Validation APIs',
+        label: t('断言与等待'),
         match: (api: string) =>
           apiMetadata[api as keyof typeof apiMetadata]?.group === 'validation',
       },
       {
         key: 'device-specific-group',
-        label: 'Device-Specific APIs',
+        label: t('设备专用操作'),
         match: (api: string) => !apiMetadata[api as keyof typeof apiMetadata],
       },
     ],
-    [],
+    [uiLanguage],
   );
 
   const buildApiMenuItem = useCallback(
     (api: string) => ({
       key: api,
       label: actionNameForType(api),
-      title: apiMetadata[api as keyof typeof apiMetadata]?.title || '',
+      title: t(apiMetadata[api as keyof typeof apiMetadata]?.title || ''),
       onClick: () => handleTypeSelect(api),
     }),
-    [handleTypeSelect],
+    [handleTypeSelect, uiLanguage],
   );
 
   const hiddenApiGroupItems = useMemo<NonNullable<MenuProps['items']>>(() => {
@@ -352,13 +357,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       items.push({
         key: 'primary-group',
         type: 'group',
-        label: 'Primary APIs',
+        label: t('常用操作'),
         children: primaryActions.map(buildApiMenuItem),
       });
     }
     items.push(...hiddenApiGroupItems);
     return { items };
-  }, [availableDropdownMethods, buildApiMenuItem, hiddenApiGroupItems]);
+  }, [
+    availableDropdownMethods,
+    buildApiMenuItem,
+    hiddenApiGroupItems,
+    uiLanguage,
+  ]);
 
   const moreApisDropdownMenu = useMemo<MenuProps>(
     () => ({ items: hiddenApiGroupItems }),
@@ -797,10 +807,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
             // Fallback to default placeholders
             if (isLocateFieldFlag) {
-              return 'Describe the element you want to interact with';
+              return t('用自然语言描述要操作的元素');
             } else {
-              if (key === 'keyName') return 'Enter key name or text to type';
-              if (key === 'value') return 'Enter text to input';
+              if (key === 'keyName') return t('输入按键名称或要输入的文字');
+              if (key === 'value') return t('输入要填写的文字');
               return `Enter ${key}`;
             }
           })();
@@ -879,7 +889,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
             // For locate fields, provide a default placeholder
             if (isLocateFieldFlag) {
-              return 'Describe the element you want to interact with';
+              return t('用自然语言描述要操作的元素');
             }
 
             return undefined;
@@ -955,6 +965,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     actionSpace,
     selectedAction,
     handleStructuredKeyDown,
+    uiLanguage,
   ]);
 
   // Handle settings hover state
@@ -983,11 +994,11 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
     if (dryMode) {
       return selectedType === 'aiAct' ? (
-        <Tooltip title="Start executing until some interaction actions need to be performed. You can see the process of planning and locating.">
-          {runButton('Dry Run')}
+        <Tooltip title={t('仅运行规划和定位过程，在执行实际交互前停止。')}>
+          {runButton(t('试运行'))}
         </Tooltip>
       ) : (
-        runButton('Run')
+        runButton(t('执行'))
       );
     }
 
@@ -999,12 +1010,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           onClick={onStop}
           style={{ borderRadius: 20, zIndex: 999 }}
         >
-          Stop
+          {t('停止')}
         </Button>
       );
     }
 
-    return runButton('Run');
+    return runButton(t('执行'));
   }, [
     dryMode,
     loading,
@@ -1013,6 +1024,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     isRunButtonEnabled,
     selectedType,
     stoppable,
+    uiLanguage,
   ]);
 
   const renderMinimalActionButton = useCallback(() => {
@@ -1030,18 +1042,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
     if (dryMode) {
       return selectedType === 'aiAct' ? (
-        <Tooltip title="Start executing until some interaction actions need to be performed. You can see the process of planning and locating.">
-          {runButton('Dry run')}
+        <Tooltip title={t('仅运行规划和定位过程，在执行实际交互前停止。')}>
+          {runButton(t('试运行'))}
         </Tooltip>
       ) : (
-        runButton('Run')
+        runButton(t('执行'))
       );
     }
 
     if (stoppable) {
       return (
         <Button
-          aria-label="Stop running"
+          aria-label={t('停止执行')}
           className="minimal-run-trigger minimal-run-trigger-stop prompt-stop-button"
           icon={<PromptStopSquareIcon />}
           onClick={onStop}
@@ -1049,7 +1061,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       );
     }
 
-    return runButton('Run');
+    return runButton(t('执行'));
   }, [
     dryMode,
     loading,
@@ -1058,6 +1070,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     onStop,
     selectedType,
     stoppable,
+    uiLanguage,
   ]);
 
   const minimalActionIconSrc =
@@ -1092,7 +1105,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           popupPlacement="topLeft"
           trigger={
             <button
-              aria-label="Open run configuration"
+              aria-label={t('打开执行设置')}
               className="input-icon-trigger"
               type="button"
             >
@@ -1119,6 +1132,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     showDataExtractionOptions,
     showDeepLocateOption,
     showDeepThinkOption,
+    uiLanguage,
   ]);
 
   const inputContent = needsAnyInput ? (
@@ -1164,7 +1178,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     )
   ) : (
     <div className="no-input-method">
-      Click "Run" to execute {actionNameForType(selectedType)}
+      {t('点击「执行」运行')}
+      {actionNameForType(selectedType)}
     </div>
   );
   if (isMinimalChrome) {
@@ -1228,7 +1243,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 popupPlacement="top"
                 trigger={
                   <button
-                    aria-label="Open prompt history"
+                    aria-label={t('打开指令历史')}
                     className="minimal-icon-trigger"
                     type="button"
                   >
@@ -1269,7 +1284,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     popupPlacement="topRight"
                     trigger={
                       <button
-                        aria-label="Open run configuration"
+                        aria-label={t('打开执行设置')}
                         className="minimal-icon-trigger"
                         type="button"
                       >
@@ -1329,7 +1344,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
             >
               {selectedType && !defaultMainButtons.includes(selectedType)
                 ? actionNameForType(selectedType)
-                : 'more'}
+                : t('更多')}
               <DownOutlined style={{ fontSize: '10px', marginLeft: '2px' }} />
             </Button>
           </Dropdown>

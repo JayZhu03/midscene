@@ -3,13 +3,13 @@ import { getPreferredLanguage } from '@midscene/shared/env';
 export const YAML_LANGUAGE_STORAGE_KEY = 'midscene-yaml-language';
 
 export const YAML_LANGUAGE_SUGGESTIONS = [
-  { label: 'Auto', value: 'auto' },
-  { label: 'English', value: 'English' },
-  { label: 'Chinese', value: 'Chinese' },
-  { label: 'Japanese', value: 'Japanese' },
-  { label: 'Korean', value: 'Korean' },
-  { label: 'French', value: 'French' },
-  { label: 'Spanish', value: 'Spanish' },
+  { label: '自动', value: 'auto' },
+  { label: '英语', value: 'English' },
+  { label: '中文', value: 'Chinese' },
+  { label: '日语', value: 'Japanese' },
+  { label: '韩语', value: 'Korean' },
+  { label: '法语', value: 'French' },
+  { label: '西班牙语', value: 'Spanish' },
 ];
 
 export type YamlLanguagePreference = string;

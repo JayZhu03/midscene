@@ -593,7 +593,7 @@ export function createWebInputPrimitives(
       },
     },
     scroll: {
-      scroll: async (param) => {
+      scroll: async (param, opts) => {
         const element = param.locate;
         const startingPoint = element
           ? {
@@ -622,7 +622,9 @@ export function createWebInputPrimitives(
           } else {
             throw new Error(`Unknown scroll direction: ${param.direction}`);
           }
-          await sleep(500);
+          if (!opts?.skipDefaultWait) {
+            await sleep(500);
+          }
         } else {
           throw new Error(
             `Unknown scroll event type: ${scrollToEventName}, param: ${JSON.stringify(

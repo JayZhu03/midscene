@@ -27,9 +27,7 @@ describe('studio sidebar settings entrypoints', () => {
       createElement(ThemeProvider, null, createElement(SettingsPanel, {})),
     );
 
-    // Language is intentionally hidden until i18n ships (storage hook
-    // still runs in the background).
-    expect(html).not.toContain('Language');
+    expect(html).toContain('Language');
     expect(html).toContain('Theme');
     expect(html).toContain('GitHub');
     expect(html).toContain('Website');

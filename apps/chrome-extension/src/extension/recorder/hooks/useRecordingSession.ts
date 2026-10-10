@@ -178,8 +178,8 @@ export const useRecordingSession = (currentTab: chrome.tabs.Tab | null) => {
         ? session
         : await dbManager.getSession(session.id);
     if (!fullSession || fullSession.events.length === 0) {
-      recordLogger.warn('No events to export', { sessionId: session.id });
-      message.warning('No events to export in this session');
+      recordLogger.warn('暂无可导出的操作', { sessionId: session.id });
+      message.warning('本条录制暂无可导出的操作');
       return;
     }
 
@@ -195,16 +195,13 @@ export const useRecordingSession = (currentTab: chrome.tabs.Tab | null) => {
     recordLogger.info('Exporting all events', {
       sessionsCount: sessions.length,
     });
-    const hideLoading = message.loading(
-      'Exporting all events to ZIP file...',
-      0,
-    );
+    const hideLoading = message.loading('正在将全部操作导出为 ZIP…', 0);
     try {
       const fullSessions = await dbManager.getAllSessions();
       await exportAllEventsToZip(fullSessions);
-      message.success('Export all events to ZIP file successfully');
+      message.success('全部操作已成功导出为 ZIP');
     } catch (error) {
-      message.error('Failed to export all events to ZIP file');
+      message.error('导出全部操作为 ZIP 失败');
       throw error;
     } finally {
       hideLoading();

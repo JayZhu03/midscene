@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { STUDIO_EXTERNAL_LINKS } from '../../../shared/external-links';
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import type {
   DiscoveryErrorsByPlatform,
   StudioAndroidDeviceItem,
@@ -62,6 +63,8 @@ const PLATFORM_CONFIGS: PlatformConfig[] = [
 ];
 
 function LinkIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -93,6 +96,8 @@ function LinkIcon() {
 }
 
 function SpinnerIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -121,22 +126,26 @@ function SpinnerIcon() {
 }
 
 function LiveBadge() {
+  useStudioLanguage();
+
   return (
     <span className="inline-flex h-[17px] shrink-0 items-center gap-[6px] rounded-[12px] bg-status-success-bg px-[6px]">
       <span className="h-[6px] w-[6px] rounded-full bg-status-success shadow-[0_0_0_1.4px_rgba(66,181,108,0.25)]" />
       <span className="font-sans text-[11px] font-medium leading-[12px] text-status-success-fg">
-        Live
+        {t('Live')}
       </span>
     </span>
   );
 }
 
 function ConnectingBadge() {
+  useStudioLanguage();
+
   return (
     <span className="inline-flex h-[17px] shrink-0 items-center gap-[6px] rounded-[12px] bg-status-info-bg px-[6px]">
       <span className="h-[6px] w-[6px] rounded-full bg-status-info" />
       <span className="font-sans text-[11px] font-medium leading-[12px] text-status-info">
-        Connecting
+        {t('Connecting')}
       </span>
     </span>
   );
@@ -194,6 +203,8 @@ function ToolchainMissingTile({
   href: string;
   label: string;
 }) {
+  useStudioLanguage();
+
   return (
     <button
       className="flex h-[66px] w-[704px] cursor-pointer items-center justify-center rounded-[8px] border border-dashed border-border-subtle bg-transparent px-[16px] font-sans text-[12px] text-text-secondary underline-offset-2 transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text-primary hover:underline"
@@ -220,6 +231,8 @@ function DeviceCardBody({
   status: DeviceConnectionState;
   trailingSlot: ReactNode;
 }) {
+  useStudioLanguage();
+
   // device.description carries the platform-native identifier (ADB serial,
   // udid, display index…). Fall back to id when it equals the label so the
   // row still has a meta line.
@@ -275,6 +288,8 @@ function DeviceCard({
   onConnect?: () => void | Promise<void>;
   onDisconnect?: () => void | Promise<void>;
 }) {
+  useStudioLanguage();
+
   const isConnecting = status === 'connecting';
   const isLive = status === 'live';
   // Live cards stay clickable so the user can jump back into the device
@@ -318,13 +333,13 @@ function DeviceCard({
         trailingSlot={
           isLive ? (
             <button
-              aria-label="Disconnect"
+              aria-label={t('Disconnect')}
               className="flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent p-0 text-status-success-fg transition-colors hover:bg-status-error-bg hover:text-status-error"
               onClick={(event) => {
                 event.stopPropagation();
                 void onDisconnect?.();
               }}
-              title="Disconnect"
+              title={t('Disconnect')}
               type="button"
             >
               <LinkIcon />
@@ -357,6 +372,8 @@ export function DeviceList({
   onOpenEnvModal,
   sessionMutating,
 }: DeviceListProps) {
+  useStudioLanguage();
+
   const sections = PLATFORM_CONFIGS.map((config) => ({
     ...config,
     devices: buckets[config.key],
@@ -395,10 +412,12 @@ export function DeviceList({
           className="m-0 text-[24px] font-medium not-italic leading-[32px] tracking-[0] text-[#0D0D0D] dark:text-text-primary"
           style={{ fontFamily: 'Inter, sans-serif' }}
         >
-          Overview
+          {t('Overview')}
         </h1>
         <p className="m-0 mt-[4px] font-sans text-[12px] font-normal leading-[18px] text-text-secondary">
-          Manage models and devices, and let Midscene connect your devices.
+          {t(
+            'Manage models and devices, and let Midscene connect your devices.',
+          )}
         </p>
       </div>
       <div className="flex w-[704px] flex-col gap-[32px]">
@@ -455,7 +474,7 @@ export function DeviceList({
                   />
                 ) : (
                   <div className="flex h-[66px] w-[704px] items-center justify-center font-sans text-[12px] text-text-tertiary">
-                    No device. Please plug in the device and check.
+                    {t('No device. Please plug in the device and check.')}
                   </div>
                 )}
               </div>

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import type { StudioRecordingSession } from '../../recorder/types';
 import { DownloadIcon, EditIcon, TrashIcon } from './assets/recorder-icons';
 import type { StudioRecorderTab } from './recorder-panel-utils';
@@ -60,6 +61,8 @@ function RecorderHistoryActions({
   scrollVersion: number;
   session: StudioRecordingSession;
 }) {
+  useStudioLanguage();
+
   const [open, setOpen] = useState(false);
   const deleteDisabled = isRecording && session.id === currentSessionId;
   const hasAiMarkdown = Boolean(session.generatedCode?.markdown);
@@ -83,13 +86,13 @@ function RecorderHistoryActions({
             }}
             title={
               hasAiMarkdown
-                ? 'Download Markdown replay'
-                : 'Generate AI Markdown before downloading'
+                ? t('Download Markdown replay')
+                : t('Generate AI Markdown before downloading')
             }
             type="button"
           >
             <DownloadIcon />
-            <span>download</span>
+            <span>{t('download')}</span>
           </button>
           <button
             onClick={(event) => {
@@ -100,7 +103,7 @@ function RecorderHistoryActions({
             type="button"
           >
             <EditIcon />
-            <span>edit</span>
+            <span>{t('edit')}</span>
           </button>
           <button
             disabled={deleteDisabled}
@@ -112,7 +115,7 @@ function RecorderHistoryActions({
             type="button"
           >
             <TrashIcon />
-            <span>delete</span>
+            <span>{t('delete')}</span>
           </button>
         </div>
       }
@@ -148,6 +151,8 @@ function RecorderHistoryNameEditor({
   onChange: (name: string) => void;
   onCommit: () => void;
 }) {
+  useStudioLanguage();
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -157,7 +162,7 @@ function RecorderHistoryNameEditor({
 
   return (
     <input
-      aria-label="Recording name"
+      aria-label={t('Recording name')}
       className="studio-recorder-history-name-input"
       onBlur={onCommit}
       onChange={(event) => onChange(event.target.value)}
@@ -190,6 +195,8 @@ export function RecorderHistoryList({
   sessions,
   trigger,
 }: RecorderHistoryListProps) {
+  useStudioLanguage();
+
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
@@ -296,7 +303,7 @@ export function RecorderHistoryList({
       }}
       searchPlaceholder="search"
       showClear={false}
-      title="History"
+      title={t('History')}
       trigger={trigger}
     />
   );

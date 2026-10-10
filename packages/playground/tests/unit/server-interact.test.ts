@@ -883,6 +883,7 @@ describe('PlaygroundServer manual interaction APIs', () => {
         }),
       },
       {
+        skipDefaultWait: true,
         task: expect.objectContaining({
           type: 'Action Space',
           subType: 'Tap',
@@ -2098,6 +2099,84 @@ describe('PlaygroundServer manual interaction APIs', () => {
     ).not.toHaveProperty('descriptionSource');
   });
 
+  test('does not merge input into different DOM targets or discontinuous selections', () => {
+    const server = new PlaygroundServer({ interface: {} } as any) as any;
+    const current = {
+      value: 'ab',
+      nativeTarget: {
+        locator: { selector: 'input[name="username"]' },
+        selection: { start: 0, end: 0 },
+      },
+      rawPayload: {},
+    };
+    const next = {
+      ...current,
+      value: 'c',
+      nativeTarget: {
+        ...current.nativeTarget,
+        selection: { start: 2, end: 2 },
+      },
+    };
+    expect(server.canCoalesceDeferredTypeOnlyRecorderInput(current, next)).toBe(
+      true,
+    );
+    expect(
+      server.mergeDeferredTypeOnlyRecorderInput(current, next).nativeTarget
+        .selection,
+    ).toEqual({ start: 0, end: 0 });
+    expect(
+      server.canCoalesceDeferredTypeOnlyRecorderInput(current, {
+        ...next,
+        nativeTarget: {
+          ...next.nativeTarget,
+          locator: { selector: 'input[name="password"]' },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      server.canCoalesceDeferredTypeOnlyRecorderInput(current, {
+        ...next,
+        nativeTarget: { ...next.nativeTarget, selection: { start: 0, end: 1 } },
+      }),
+    ).toBe(false);
+  });
+
+  test('keeps rich-text selection changes separate while coalescing contiguous typing', () => {
+    const server = new PlaygroundServer({} as any) as any;
+    const current = {
+      value: 'ab',
+      nativeTarget: {
+        locator: { selector: '#notes' },
+        contentEditableSelection: { start: 1, end: 4 },
+      },
+    };
+    const next = {
+      value: 'c',
+      nativeTarget: {
+        locator: { selector: '#notes' },
+        contentEditableSelection: { start: 3, end: 3 },
+      },
+    };
+    expect(server.canCoalesceDeferredTypeOnlyRecorderInput(current, next)).toBe(
+      true,
+    );
+    expect(
+      server.canCoalesceDeferredTypeOnlyRecorderInput(current, {
+        ...next,
+        nativeTarget: {
+          ...next.nativeTarget,
+          contentEditableSelection: { start: 1, end: 2 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      server.canCoalesceDeferredTypeOnlyRecorderInput(current, {
+        ...next,
+        nativeTarget: { locator: { selector: '#notes' } },
+      }),
+    ).toBe(false);
+  });
+
   test('recorder saves one navigation state when preview interaction changes web URL', async () => {
     let currentUrl = 'https://example.com/start';
     let currentScreenshot = VALID_PNG_BASE64;
@@ -2122,8 +2201,18 @@ describe('PlaygroundServer manual interaction APIs', () => {
         screenshotBase64: async () => currentScreenshot,
         size: async () => ({ width: 1280, height: 720 }),
         url: async () => currentUrl,
-        evaluateJavaScript: async () =>
-          currentUrl.endsWith('/next') ? 'Next page' : 'Start page',
+        evaluateJavaScript: async (script: string) =>
+          script.includes('captureRecorderNativeTarget')
+            ? {
+                locator: {
+                  selector: currentUrl.endsWith('/start')
+                    ? 'button[data-testid="before-navigation"]'
+                    : 'button[data-testid="next-page"]',
+                },
+              }
+            : currentUrl.endsWith('/next')
+              ? 'Next page'
+              : 'Start page',
       },
     } as any);
 
@@ -2168,6 +2257,14 @@ describe('PlaygroundServer manual interaction APIs', () => {
       }),
     ]);
     const recorderEvents = latestRecorderEventsBody(eventsResponse.body);
+    expect(
+      recorderEvents.events
+        .filter((event: any) => event.type === 'click')
+        .map((event: any) => event.nativeTarget?.locator?.selector),
+    ).toEqual([
+      'button[data-testid="before-navigation"]',
+      'button[data-testid="next-page"]',
+    ]);
     expect(recorderEvents).toMatchObject({
       events: [
         {

@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UpdateStatus } from '../../../shared/updater-contract';
 import {
+  type StudioLanguage,
+  setStudioLanguage,
+  t,
+  useStudioLanguage,
+} from '../../i18n';
+import {
   type StudioThemeMode,
   useStudioTheme,
 } from '../../theme/ThemeProvider';
 import SettingItem from './SettingItem';
 import UpdaterSection from './UpdaterSection';
 
-const LANGUAGE_STORAGE_KEY = 'studio.language';
-const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+const LANGUAGE_OPTIONS: { value: StudioLanguage; label: string }[] = [
   { value: 'en', label: 'English' },
   { value: 'zh', label: '中文' },
 ];
@@ -122,7 +127,7 @@ function OptionList<T extends string>({
             type="button"
           >
             <span className="overflow-hidden whitespace-nowrap font-sans text-[13px] leading-[22px] text-text-secondary">
-              {option.label}
+              {t(option.label)}
             </span>
             {isSelected ? <CheckIcon /> : null}
           </button>
@@ -130,16 +135,6 @@ function OptionList<T extends string>({
       })}
     </div>
   );
-}
-
-function readStoredLanguage(): string {
-  if (typeof window === 'undefined') {
-    return LANGUAGE_OPTIONS[0].value;
-  }
-  const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return LANGUAGE_OPTIONS.some((option) => option.value === stored)
-    ? (stored as string)
-    : LANGUAGE_OPTIONS[0].value;
 }
 
 export interface SettingsPanelProps {
@@ -167,11 +162,10 @@ export default function SettingsPanel({
   updater,
 }: SettingsPanelProps) {
   const { mode, setMode } = useStudioTheme();
-  // Language preference is persisted but not surfaced yet; the row is
-  // hidden until i18n actually ships. Keep the storage hook so a stored
-  // value survives the round-trip when the row returns.
-  const [language] = useState<string>(() => readStoredLanguage());
-  const [openPopover, setOpenPopover] = useState<'theme' | null>(null);
+  const language = useStudioLanguage();
+  const [openPopover, setOpenPopover] = useState<'theme' | 'language' | null>(
+    null,
+  );
   const popoverWrapperRef = useRef<HTMLDivElement | null>(null);
   // The Theme popover is hover-driven now. A 4px gap separates the trigger
   // row from the floating option list, so we use a short grace period
@@ -194,13 +188,6 @@ export default function SettingsPanel({
   }, [cancelScheduledClose]);
 
   useEffect(() => () => cancelScheduledClose(), [cancelScheduledClose]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
-  }, [language]);
 
   useEffect(() => {
     if (!openPopover) {
@@ -228,14 +215,30 @@ export default function SettingsPanel({
       <div className="flex w-[244px] flex-col rounded-[12px] border border-border-subtle bg-surface-elevated p-[6px] shadow-lg">
         <div className="flex flex-col">
           <SettingItem
-            label="Theme"
+            label={t('Theme')}
+            onClick={() =>
+              setOpenPopover(openPopover === 'theme' ? null : 'theme')
+            }
             onMouseEnter={() => {
               cancelScheduledClose();
               setOpenPopover('theme');
             }}
             onMouseLeave={scheduleClose}
             trailingIcon={<ChevronIcon />}
-            value={THEME_LABELS[mode]}
+            value={t(THEME_LABELS[mode])}
+          />
+          <SettingItem
+            label={t('Language')}
+            onClick={() =>
+              setOpenPopover(openPopover === 'language' ? null : 'language')
+            }
+            onMouseEnter={() => {
+              cancelScheduledClose();
+              setOpenPopover('language');
+            }}
+            onMouseLeave={scheduleClose}
+            trailingIcon={<ChevronIcon />}
+            value={language === 'zh' ? '中文' : 'English'}
           />
         </div>
 
@@ -248,7 +251,7 @@ export default function SettingsPanel({
             trailingIcon={<ExternalLinkIcon />}
           />
           <SettingItem
-            label="Website"
+            label={t('Website')}
             onClick={onWebsiteClick}
             trailingIcon={<ExternalLinkIcon />}
           />
@@ -283,6 +286,22 @@ export default function SettingsPanel({
             }}
             options={THEME_OPTIONS}
             selected={mode}
+          />
+        </div>
+      ) : null}
+      {openPopover === 'language' ? (
+        <div
+          className="absolute left-[calc(100%+4px)] top-[38px] z-50"
+          onMouseEnter={cancelScheduledClose}
+          onMouseLeave={scheduleClose}
+        >
+          <OptionList
+            onSelect={(value) => {
+              setStudioLanguage(value);
+              setOpenPopover(null);
+            }}
+            options={LANGUAGE_OPTIONS}
+            selected={language}
           />
         </div>
       ) : null}

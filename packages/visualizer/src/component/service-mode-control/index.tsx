@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { safeOverrideAIConfig } from '../../hooks/useSafeOverrideAIConfig';
 import { useServerValid } from '../../hooks/useServerValid';
 import { useEnvConfig } from '../../store/store';
+import { t, useUiLanguage } from '../../ui-language';
 import { notifyError } from '../../utils';
 import { EnvConfig } from '../env-config';
 import { iconForStatus } from '../misc';
@@ -26,6 +27,8 @@ const SWITCH_BUTTON_TEXT = {
 export const ServiceModeControl: React.FC<ServiceModeControlProps> = ({
   serviceMode,
 }) => {
+  useUiLanguage();
+
   const { setServiceMode, config } = useEnvConfig();
   const serverValid = useServerValid(serviceMode === 'Server');
 
@@ -39,7 +42,7 @@ export const ServiceModeControl: React.FC<ServiceModeControlProps> = ({
       );
     }
     return (
-      <Tooltip title="Connection failed">
+      <Tooltip title={t('Connection failed')}>
         <div className="server-tip">{iconForStatus('failed')}</div>
       </Tooltip>
     );

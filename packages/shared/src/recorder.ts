@@ -52,6 +52,8 @@ export interface MidsceneRecorderEvent {
   source?: MidsceneRecorderSourceKind;
   actionType?: string;
   rawPayload?: Record<string, unknown>;
+  /** Captured before dispatch; never inferred from an AI description. */
+  nativeTarget?: MidsceneRecorderNativeTarget;
   url?: string;
   title?: string;
   value?: string;
@@ -120,7 +122,39 @@ export interface MidsceneRecorderGeneratedCode {
   markdown?: string;
   yaml?: string;
   playwright?: string;
+  'playwright-native'?: string;
   updatedAt?: number;
+}
+
+export interface MidsceneRecorderNativeLocator {
+  selector: string;
+  text?: string;
+  visible?: boolean;
+  /** Locate inside a semantic container, such as a labelled field or keyed row. */
+  scope?: MidsceneRecorderNativeLocator;
+  /** Require a descendant label; evaluated relative to each candidate. */
+  has?: MidsceneRecorderNativeLocator;
+}
+
+export interface MidsceneRecorderNativeTarget {
+  locator?: MidsceneRecorderNativeLocator;
+  strategy?:
+    | 'attribute'
+    | 'text'
+    | 'context'
+    | 'structure'
+    | 'playwright'
+    | 'playwright-structure';
+  /** Guard the candidate set before using a generated positional selector. */
+  guards?: Array<{ selector: string; count: number }>;
+  /** Drag position as a fraction of the element's padding box. */
+  position?: { x: number; y: number };
+  dropTarget?: MidsceneRecorderNativeTarget;
+  contentEditableSelection?: { start: number; end: number };
+  error?: string;
+  sensitive?: boolean;
+  editable?: boolean;
+  selection?: { start: number; end: number; valueLength?: number };
 }
 
 export interface MidsceneRecorderMarkdownScreenshotAsset {

@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type { UpdateStatus } from '../../../shared/updater-contract';
+import { t, useStudioLanguage } from '../../i18n';
 
 const VERSION_CLICKS_TO_OPEN_RUN_DIRECTORY = 5;
 
@@ -25,6 +26,8 @@ function InlineUpdateButton({
   onClick: () => void;
   disabled?: boolean;
 }) {
+  useStudioLanguage();
+
   const base =
     'inline-flex h-[20px] min-w-[48px] cursor-pointer items-center justify-center rounded-[5px] border-0 px-[7px] font-sans text-[12px] font-semibold leading-none transition-colors disabled:cursor-default disabled:opacity-70';
   const tone = 'bg-surface-hover text-text-secondary hover:bg-surface-active';
@@ -51,6 +54,8 @@ export default function UpdaterSection({
   onOpenDownloadPage,
   onOpenRunDirectory,
 }: UpdaterSectionProps) {
+  useStudioLanguage();
+
   const versionClickCountRef = useRef(0);
   const versionLabel = appVersion ? `v${appVersion}` : '—';
   const externalDownloadOnly =
@@ -58,7 +63,7 @@ export default function UpdaterSection({
   const updateAction =
     status.state === 'available' ? (
       <InlineUpdateButton
-        label="update"
+        label={t('update')}
         onClick={
           externalDownloadOnly && onOpenDownloadPage
             ? onOpenDownloadPage
@@ -66,7 +71,7 @@ export default function UpdaterSection({
         }
       />
     ) : status.state === 'downloaded' ? (
-      <InlineUpdateButton label="restart" onClick={onInstall} />
+      <InlineUpdateButton label={t('restart')} onClick={onInstall} />
     ) : status.state === 'downloading' ? (
       <InlineUpdateButton
         disabled
@@ -94,7 +99,7 @@ export default function UpdaterSection({
     >
       <div className="flex min-h-[22px] w-full items-center justify-between gap-[12px]">
         <span className="shrink-0 font-sans text-[13px] leading-[22px] text-text-secondary">
-          Version
+          {t('Version')}
         </span>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-[8px]">
           {updateAction}

@@ -1,7 +1,8 @@
 import { useTextTruncation } from '@midscene/visualizer';
+import { t, useStudioLanguage } from '../../i18n';
 import type { StudioRecordingSession } from '../../recorder/types';
 import { StudioActionMenu } from '../StudioActionMenu';
-import { DownloadIcon, TrashIcon } from './assets/recorder-icons';
+import { CodeIcon, DownloadIcon, TrashIcon } from './assets/recorder-icons';
 import './studio-recorder-panel.css';
 
 interface StudioReplayPanelProps {
@@ -9,6 +10,7 @@ interface StudioReplayPanelProps {
   activeSessionStoppable?: boolean;
   onDeleteSession?: (session: StudioRecordingSession) => void | Promise<void>;
   onDownloadSession?: (session: StudioRecordingSession) => void;
+  onExportPlaywright?: (session: StudioRecordingSession) => void;
   onReplaySession: (session: StudioRecordingSession) => void;
   onSelectSession: (session: StudioRecordingSession) => void;
   onStopActiveSession?: () => void;
@@ -17,6 +19,8 @@ interface StudioReplayPanelProps {
 }
 
 function ReplayPanelFileIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <path
@@ -44,6 +48,8 @@ function ReplayPanelFileIcon() {
 }
 
 function ReplayPanelPlayIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <path
@@ -57,6 +63,8 @@ function ReplayPanelPlayIcon() {
 }
 
 function ReplayPanelLoadingIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <circle
@@ -78,19 +86,25 @@ function ReplayPanelLoadingIcon() {
 }
 
 function ReplayPanelStopIcon() {
+  useStudioLanguage();
+
   return <span aria-hidden="true" className="studio-replay-panel-stop-icon" />;
 }
 
 function ReplayPanelMoreActions({
   onDeleteSession,
   onDownloadSession,
+  onExportPlaywright,
   session,
 }: {
   onDeleteSession?: (session: StudioRecordingSession) => void | Promise<void>;
   onDownloadSession?: (session: StudioRecordingSession) => void;
+  onExportPlaywright?: (session: StudioRecordingSession) => void;
   session: StudioRecordingSession;
 }) {
-  if (!onDownloadSession && !onDeleteSession) {
+  useStudioLanguage();
+
+  if (!onDownloadSession && !onDeleteSession && !onExportPlaywright) {
     return null;
   }
 
@@ -103,8 +117,17 @@ function ReplayPanelMoreActions({
             ? [
                 {
                   icon: <DownloadIcon />,
-                  label: 'Download',
+                  label: t('Download'),
                   onClick: () => onDownloadSession(session),
+                },
+              ]
+            : []),
+          ...(onExportPlaywright && session.target.platformId === 'web'
+            ? [
+                {
+                  icon: <CodeIcon />,
+                  label: t('Export Playwright'),
+                  onClick: () => onExportPlaywright(session),
                 },
               ]
             : []),
@@ -113,13 +136,14 @@ function ReplayPanelMoreActions({
                 {
                   danger: true,
                   icon: <TrashIcon />,
-                  label: 'Delete',
+                  label: t('Delete'),
                   onClick: () => onDeleteSession(session),
                 },
               ]
             : []),
         ]}
         triggerClassName="studio-replay-panel-more-button"
+        width={240}
       />
     </div>
   );
@@ -131,6 +155,7 @@ function ReplayPanelSessionItem({
   isSelected,
   onDeleteSession,
   onDownloadSession,
+  onExportPlaywright,
   onReplaySession,
   onSelectSession,
   onStopActiveSession,
@@ -141,11 +166,14 @@ function ReplayPanelSessionItem({
   isSelected: boolean;
   onDeleteSession?: (session: StudioRecordingSession) => void;
   onDownloadSession?: (session: StudioRecordingSession) => void;
+  onExportPlaywright?: (session: StudioRecordingSession) => void;
   onReplaySession: (session: StudioRecordingSession) => void;
   onSelectSession: (session: StudioRecordingSession) => void;
   onStopActiveSession?: () => void;
   session: StudioRecordingSession;
 }) {
+  useStudioLanguage();
+
   const { ref, truncated } = useTextTruncation<HTMLSpanElement>(
     session.name,
     'single-line',
@@ -179,6 +207,7 @@ function ReplayPanelSessionItem({
       <ReplayPanelMoreActions
         onDeleteSession={onDeleteSession}
         onDownloadSession={onDownloadSession}
+        onExportPlaywright={onExportPlaywright}
         session={session}
       />
       {isActive && activeSessionStoppable ? (
@@ -221,16 +250,19 @@ export function StudioReplayPanel({
   activeSessionStoppable = false,
   onDeleteSession,
   onDownloadSession,
+  onExportPlaywright,
   onReplaySession,
   onSelectSession,
   onStopActiveSession,
   selectedSessionId,
   sessions,
 }: StudioReplayPanelProps) {
+  useStudioLanguage();
+
   return (
     <section className="studio-replay-panel">
       <header className="studio-replay-panel-header">
-        <div className="studio-replay-panel-title">Replay</div>
+        <div className="studio-replay-panel-title">{t('Replay')}</div>
       </header>
       <div className="studio-replay-panel-body">
         {sessions.length > 0 ? (
@@ -246,6 +278,7 @@ export function StudioReplayPanel({
                   key={session.id}
                   onDeleteSession={onDeleteSession}
                   onDownloadSession={onDownloadSession}
+                  onExportPlaywright={onExportPlaywright}
                   onReplaySession={onReplaySession}
                   onSelectSession={onSelectSession}
                   onStopActiveSession={onStopActiveSession}
@@ -257,10 +290,12 @@ export function StudioReplayPanel({
         ) : (
           <div className="studio-replay-panel-empty">
             <div className="studio-replay-panel-empty-title">
-              No recording history available yet
+              {t('No recording history available yet')}
             </div>
             <div className="studio-replay-panel-empty-description">
-              Generate Markdown from a completed recording to add it here.
+              {t(
+                'Generate Markdown from a completed recording to add it here.',
+              )}
             </div>
           </div>
         )}

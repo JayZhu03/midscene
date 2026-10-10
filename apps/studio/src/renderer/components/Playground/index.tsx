@@ -4,6 +4,7 @@ import type {
 } from '@midscene/visualizer';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { createStudioRecorderTargetSignature } from '../../recorder/selectors';
 import { StudioModeTab } from '../../recorder/types';
@@ -42,6 +43,8 @@ export default function Playground({
   onHeaderChange,
   playground,
 }: PlaygroundProps) {
+  const uiLanguage = useStudioLanguage();
+
   const hookPlayground = useStudioPlayground();
   const studioPlayground = playground ?? hookPlayground;
   const recorder = useStudioRecorder();
@@ -59,8 +62,8 @@ export default function Playground({
       createStudioTimelineConfig({
         emptyState: (
           <StudioTimelineEmptyState
-            description="The mission progress will be displayed here."
-            title="No execution yet"
+            description={t('The mission progress will be displayed here.')}
+            title={t('No execution yet')}
             variant={StudioModeTab.Playground}
           />
         ),
@@ -87,20 +90,21 @@ export default function Playground({
       onExecutionStatusChange,
       storageNamespace,
       timelineCollapsed,
+      uiLanguage,
     ],
   );
   const renderOwnHeader = !onHeaderChange;
 
   useEffect(() => {
-    onHeaderChange?.({ title: 'API Playground' });
-  }, [onHeaderChange]);
+    onHeaderChange?.({ title: t('API Playground') });
+  }, [onHeaderChange, uiLanguage]);
 
   return (
-    <PlaygroundShell showHeader={renderOwnHeader} title="API Playground">
+    <PlaygroundShell showHeader={renderOwnHeader} title={t('API Playground')}>
       <div className="min-h-0 h-full flex-1 overflow-hidden">
         {studioPlayground.phase === 'booting' ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-[14px] leading-[22px] text-text-tertiary">
-            Playground starting...
+            {t('Playground starting...')}
           </div>
         ) : studioPlayground.phase === 'error' ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
@@ -114,7 +118,7 @@ export default function Playground({
               }}
               type="button"
             >
-              Retry runtime
+              {t('Retry runtime')}
             </button>
           </div>
         ) : (
@@ -130,7 +134,7 @@ export default function Playground({
               .filter(Boolean)
               .join(' ')}
             playgroundConfig={playgroundConfig}
-            title="Playground"
+            title={t('Playground')}
           />
         )}
       </div>

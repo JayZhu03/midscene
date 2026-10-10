@@ -110,7 +110,7 @@ export const useTabMonitoring = () => {
             });
             setCurrentTab(tabs[0]);
           } else {
-            recordLogger.warn('No active tab found');
+            recordLogger.warn('未找到当前网页标签');
             setCurrentTab(null);
           }
         },

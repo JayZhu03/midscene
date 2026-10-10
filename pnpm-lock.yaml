@@ -1208,6 +1208,9 @@ importers:
       open:
         specifier: 10.1.0
         version: 10.1.0
+      playwright-core:
+        specifier: 1.58.1
+        version: 1.58.1
       uuid:
         specifier: 11.1.0
         version: 11.1.0

@@ -1,4 +1,5 @@
 import type { StudioRecorderCodeType } from '@shared/electron-contract';
+import { t } from '../../i18n';
 import type {
   StudioRecordedEvent,
   StudioRecorderGenerationProgress,
@@ -59,7 +60,8 @@ export function readPersistedCodeType(): StudioRecorderCodeType {
   const storedType = window.localStorage.getItem(CODE_TYPE_STORAGE_KEY);
   return storedType === 'markdown' ||
     storedType === 'yaml' ||
-    storedType === 'playwright'
+    storedType === 'playwright' ||
+    storedType === 'playwright-native'
     ? storedType
     : 'markdown';
 }
@@ -83,7 +85,9 @@ export function getSessionTargetText(session: StudioRecordingSession) {
 }
 
 export function getSessionTargetLabel(session: StudioRecordingSession) {
-  return session.url || session.target.platformId === 'web' ? 'URL' : 'Target';
+  return session.url || session.target.platformId === 'web'
+    ? t('URL')
+    : 'Target';
 }
 
 export function isPlaywrightAvailable(session: StudioRecordingSession | null) {
@@ -94,7 +98,10 @@ export function getAvailableCodeType(
   session: StudioRecordingSession | null,
   preferredType: StudioRecorderCodeType,
 ): StudioRecorderCodeType {
-  if (preferredType === 'playwright' && !isPlaywrightAvailable(session)) {
+  if (
+    preferredType.startsWith('playwright') &&
+    !isPlaywrightAvailable(session)
+  ) {
     return 'markdown';
   }
   return preferredType;
@@ -102,6 +109,8 @@ export function getAvailableCodeType(
 
 export function codeTypeLabel(type: StudioRecorderCodeType) {
   switch (type) {
+    case 'playwright-native':
+      return t('Native Playwright');
     case 'markdown':
       return 'Markdown';
     case 'playwright':
@@ -113,12 +122,14 @@ export function codeTypeLabel(type: StudioRecorderCodeType) {
 
 export function generatingText(type: StudioRecorderCodeType) {
   switch (type) {
+    case 'playwright-native':
+      return t('Compiling native Playwright...');
     case 'markdown':
-      return 'Generating markdown...';
+      return t('Generating markdown...');
     case 'playwright':
-      return 'Generating Playwright...';
+      return t('Generating Playwright...');
     default:
-      return 'Generating YAML...';
+      return t('Generating YAML...');
   }
 }
 
@@ -139,7 +150,7 @@ export function getMarkdownOutputLabel(
     return firstHeading.replace(/^#\s+/, '');
   }
 
-  return 'Markdown replay';
+  return t('Markdown replay');
 }
 
 export function createInitialGenerationSteps(): StudioRecorderGenerationStepState {
@@ -183,25 +194,30 @@ export function getGenerationSteps(
   const label = codeTypeLabel(type);
   return [
     {
-      title: 'Prepare Recorded Events',
-      description: 'Collecting timeline events and target metadata',
+      title: t('Prepare Recorded Events'),
+      description: t('Collecting timeline events and target metadata'),
       details: steps.prepare.details,
       state: getGenerationStepState(steps.prepare.status),
     },
     {
-      title: 'Generate Title & Description',
-      description: 'Creating session title and description using AI',
+      title:
+        type === 'playwright-native'
+          ? t('Validate DOM locators')
+          : t('Generate Title & Description'),
+      description:
+        type === 'playwright-native'
+          ? t('Compile recorded DOM actions without a model')
+          : t('Creating session title and description using AI'),
       details: steps.metadata.details,
       state: getGenerationStepState(steps.metadata.status),
     },
     {
       title: `Generate ${label}`,
-      description:
-        type === 'playwright'
-          ? 'Creating executable Playwright test code'
-          : type === 'markdown'
-            ? 'Creating Midscene Markdown replay script'
-            : 'Creating YAML configuration',
+      description: type.startsWith('playwright')
+        ? t('Creating executable Playwright test code')
+        : type === 'markdown'
+          ? t('Creating Midscene Markdown replay script')
+          : t('Creating YAML configuration'),
       details: steps.code.details,
       state: getGenerationStepState(steps.code.status),
     },

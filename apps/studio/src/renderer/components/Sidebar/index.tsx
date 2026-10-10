@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import {
   buildDeviceSelectionFormValues,
   buildStudioSidebarDeviceBuckets,
@@ -46,6 +47,8 @@ function SectionHeader({
   iconSrc?: string;
   label: string;
 }) {
+  useStudioLanguage();
+
   return (
     <div className="mb-[2px] flex h-8 w-full items-center justify-between rounded-[8px] px-[12px] py-[5px] text-left">
       <div className="flex min-w-0 items-center gap-[6px]">
@@ -57,7 +60,7 @@ function SectionHeader({
           )}
         </span>
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-[#474848] dark:text-text-secondary">
-          {label}
+          {t(label)}
         </span>
       </div>
       <span className="size-4 shrink-0" aria-hidden="true" />
@@ -73,6 +76,8 @@ function DeviceRow({
 }: DeviceItem & {
   selected: boolean;
 }) {
+  useStudioLanguage();
+
   return (
     <button
       className={`flex h-8 w-full cursor-pointer appearance-none items-center gap-[6px] rounded-[10px] border-0 px-[12px] text-left outline-none transition-colors focus-visible:bg-surface-hover-strong dark:focus-visible:bg-white/[0.18] ${
@@ -91,7 +96,7 @@ function DeviceRow({
             : 'font-normal text-text-secondary'
         }`}
       >
-        {label}
+        {t(label)}
       </span>
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
         <span
@@ -108,11 +113,13 @@ function DeviceRow({
 }
 
 function EmptyDeviceRow() {
+  useStudioLanguage();
+
   return (
     <div className="flex h-8 w-full items-center gap-[6px] rounded-lg px-[12px]">
       <div className="h-8 w-[22px] shrink-0" />
       <span className="flex-1 overflow-hidden whitespace-nowrap font-sans text-[13px] font-normal leading-[13px] text-text-tertiary">
-        No devices
+        {t('No devices')}
       </span>
     </div>
   );
@@ -134,6 +141,8 @@ export default function Sidebar({
   onSelectDevice,
   onPendingCreatePlatform,
 }: SidebarProps) {
+  useStudioLanguage();
+
   const studioPlayground = useStudioPlayground();
   // Sticky record of the user's most recent click. Kept locally so the
   // highlight survives any transient form-state churn during the
@@ -320,7 +329,7 @@ export default function Sidebar({
           />
         </span>
         <span className="flex-1 overflow-hidden whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-text-secondary">
-          Overview
+          {t('Overview')}
         </span>
         <span className="flex h-4 w-4 shrink-0 items-center justify-center font-sans text-[11px] font-normal leading-none text-text-tertiary">
           {totalDeviceCount}
@@ -330,7 +339,7 @@ export default function Sidebar({
       <div className="mt-1 flex flex-col">
         <div className="flex h-8 w-full items-center pl-[12px]">
           <span className="overflow-hidden whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-text-placeholder">
-            Platform
+            {t('Platform')}
           </span>
         </div>
 
@@ -414,6 +423,8 @@ export function SidebarFooter({
   onToggleSettings,
   onEnvClick,
 }: SidebarFooterProps) {
+  useStudioLanguage();
+
   return (
     <SettingsDock
       envAlert={envAlert}

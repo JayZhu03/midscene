@@ -7,6 +7,7 @@ import { type DebugFunction, getDebug } from '@midscene/shared/logger';
 import type { Request, Response } from 'express';
 
 const DATA_URL_BASE64_PREFIX = /^data:image\/\w+;base64,/;
+const startedResponses = new WeakSet<Response>();
 
 const noopDebug: DebugFunction = () => {};
 
@@ -19,6 +20,7 @@ interface InternalProducer {
   controller: AbortController;
   handle?: MjpegStreamHandle;
   lastFrame?: MjpegStreamFrame;
+  lastFrameAt?: number;
   startupError?: unknown;
   firstFrameReady: Promise<boolean>;
   subscribers: Set<Subscriber>;
@@ -65,16 +67,18 @@ export function writeMjpegFrame(
   const raw = frame.data.replace(DATA_URL_BASE64_PREFIX, '');
   const buf = Buffer.from(raw, 'base64');
 
-  // Each `res.write` returns false when the kernel buffer is full. We
-  // surface the worst result so the caller can react to backpressure on the
-  // first chunk that exceeds the high water mark.
-  let writable = res.write(`--${boundary}\r\n`);
-  writable =
-    res.write(`Content-Type: ${frame.contentType || 'image/jpeg'}\r\n`) &&
-    writable;
-  writable = res.write(`Content-Length: ${buf.length}\r\n\r\n`) && writable;
+  // Complete the NEXT part's headers immediately. Chromium otherwise holds
+  // the current JPEG until another frame arrives, leaving idle pages one
+  // frame behind. A stream uses a consistent image content type; omitting
+  // Content-Length lets the next boundary delimit the current JPEG.
+  const partHeader = `--${boundary}\r\nContent-Type: ${frame.contentType || 'image/jpeg'}\r\n\r\n`;
+  let writable = true;
+  if (!startedResponses.has(res)) {
+    startedResponses.add(res);
+    writable = res.write(partHeader);
+  }
   writable = res.write(buf) && writable;
-  writable = res.write('\r\n') && writable;
+  writable = res.write(`\r\n${partHeader}`) && writable;
   return writable;
 }
 
@@ -156,7 +160,14 @@ export class InterfaceMjpegHub {
     this.stopProducerInternal(producer);
   }
 
-  getLastFrame(): MjpegStreamFrame | undefined {
+  getLastFrame(maxAgeMs?: number): MjpegStreamFrame | undefined {
+    if (
+      maxAgeMs !== undefined &&
+      (this.producer?.lastFrameAt === undefined ||
+        Date.now() - this.producer.lastFrameAt > maxAgeMs)
+    ) {
+      return undefined;
+    }
     return this.producer?.lastFrame;
   }
 
@@ -271,39 +282,9 @@ export class InterfaceMjpegHub {
     );
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Connection', 'keep-alive');
-    this.flushInitialFrame(subscriber, producer.lastFrame as MjpegStreamFrame);
+    subscriber(producer.lastFrame as MjpegStreamFrame);
 
     this.debug('streaming via shared interface frame producer');
-  }
-
-  /**
-   * Push the producer's cached frame to a freshly-attached subscriber.
-   *
-   * Why two writes:
-   *
-   * Chromium's `<img>` with `multipart/x-mixed-replace` only commits a part
-   * to display once it sees the *next* part's boundary delimiter — the
-   * boundary is what tells the decoder that the previous part's body is
-   * complete. When the CDP screencast is idle (page is past
-   * `waitForNetworkIdle`, no animation) the producer only ever pushes one
-   * frame: the cached `lastFrame`. With a single write, the browser holds
-   * onto the bytes but never paints them (`<img>.naturalWidth === 0`) — a
-   * permanent blank canvas while waiting for a frame that never arrives.
-   *
-   * The duplicate write below is a sentinel: the second part's leading
-   * boundary is exactly what unblocks the first part's commit. The second
-   * part itself never gets displayed (multipart only ever shows the latest
-   * committed part, and any subsequent real CDP frame overrides it), so
-   * the cost is one extra frame on the wire per subscriber attach. Without
-   * this, Overview → Device re-entry consistently leaves the user staring
-   * at white.
-   */
-  private flushInitialFrame(
-    subscriber: Subscriber,
-    lastFrame: MjpegStreamFrame,
-  ): void {
-    subscriber(lastFrame);
-    subscriber(lastFrame);
   }
 
   private getOrCreateProducer(
@@ -360,6 +341,7 @@ export class InterfaceMjpegHub {
             onFrame: (frame) => {
               if (controller.signal.aborted) return;
               producer.lastFrame = frame;
+              producer.lastFrameAt = Date.now();
               resolveInitialFrameOnce(true);
               for (const subscriber of producer.subscribers) {
                 subscriber(frame);

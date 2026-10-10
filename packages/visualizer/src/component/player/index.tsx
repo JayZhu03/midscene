@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { t, useUiLanguage } from '../../ui-language';
 import './index.less';
 import {
   CaretRightOutlined,
@@ -82,6 +83,8 @@ export function Player(props?: {
   hideFullscreenControl?: boolean;
   presentation?: PlayerPresentation;
 }) {
+  const uiLanguage = useUiLanguage();
+
   const { message } = AntdApp.useApp();
   const {
     autoZoom,
@@ -227,13 +230,14 @@ export function Player(props?: {
         onDownloadReport: props?.onDownloadReport,
       });
     } catch (error) {
-      notifyError(error, { title: 'Failed to download report' });
+      notifyError(error, { title: t('下载报告失败') });
     }
   }, [
     props?.onDownloadReport,
     props?.reportFileContent,
     props?.reportFormat,
     props?.reportUrl,
+    uiLanguage,
   ]);
 
   const subtitle = useMemo(() => {
@@ -359,16 +363,16 @@ export function Player(props?: {
         },
         (pct) => setExportProgress(Math.round(pct * 100)),
       );
-      message.success('Video exported');
+      message.success(t('视频已导出'));
     } catch (e) {
       console.error('Export failed:', e);
-      notifyError(e, { title: 'Video export failed' });
+      notifyError(e, { title: t('导出视频失败') });
     } finally {
       exportInFlightRef.current = false;
       setIsExporting(false);
       setExportProgress(0);
     }
-  }, [autoZoom, frameMap]);
+  }, [autoZoom, frameMap, uiLanguage]);
 
   // Compute chapter markers
   const chapterMarkers = useMemo(() => {
@@ -402,8 +406,8 @@ export function Player(props?: {
   const hasReport = Boolean(reportFileContent || props?.reportUrl);
   const reportActionLabel =
     props?.reportFormat === 'html-and-external-assets'
-      ? 'Open report'
-      : 'Download report';
+      ? t('打开报告')
+      : t('下载报告');
   const canDownloadReport = props?.canDownloadReport !== false;
   const presentation = props?.presentation ?? 'default';
 
@@ -418,7 +422,7 @@ export function Player(props?: {
           data-presentation={presentation}
         >
           <div className="player-empty-state">
-            <span className="player-empty-text">No replay available</span>
+            <span className="player-empty-text">{t('暂无可用的回放')}</span>
             <Button
               icon={<DownloadOutlined />}
               onClick={() => {
@@ -644,7 +648,7 @@ export function Player(props?: {
                       <span className="player-export-label">
                         {isExporting
                           ? `Exporting ${exportProgress}%`
-                          : 'Export video'}
+                          : t('导出视频')}
                       </span>
                     </div>
 
@@ -673,7 +677,7 @@ export function Player(props?: {
                           style={{ width: '16px', height: '16px' }}
                         />
                         <span style={{ fontSize: '14px', marginRight: '16px' }}>
-                          Focus on cursor
+                          {t('跟随光标')}
                         </span>
                       </div>
                       <Switch
@@ -706,7 +710,7 @@ export function Player(props?: {
                           style={{ width: '16px', height: '16px' }}
                         />
                         <span style={{ fontSize: '14px', marginRight: '16px' }}>
-                          Subtitle
+                          {t('字幕')}
                         </span>
                       </div>
                       <Switch
@@ -731,7 +735,7 @@ export function Player(props?: {
                       <ThunderboltOutlined
                         style={{ width: '16px', height: '16px' }}
                       />
-                      <span style={{ fontSize: '14px' }}>Playback speed</span>
+                      <span style={{ fontSize: '14px' }}>{t('播放速度')}</span>
                     </div>
                     {([0.5, 1, 1.5, 2] as PlaybackSpeedType[]).map((speed) => (
                       <div

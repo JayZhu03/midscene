@@ -235,7 +235,7 @@ export default function Recorder() {
           height: '200px',
         }}
       >
-        <div>Loading sessions...</div>
+        <div>正在加载录制列表…</div>
       </div>
     );
   }

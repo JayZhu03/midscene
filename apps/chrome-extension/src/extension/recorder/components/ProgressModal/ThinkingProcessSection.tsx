@@ -62,7 +62,7 @@ export const ThinkingProcessSection: React.FC<ThinkingProcessSectionProps> = ({
           className={' text-sm font-medium '}
           style={{ color: 'rgba(0, 0, 0, 0.85)' }}
         >
-          🤔 AI Thinking Process
+          🤔 AI 思考过程
         </div>
         <div
           className={`transform transition-transform ml-auto mr-1 ${showThinking ? 'rotate-180' : ''}`}
@@ -81,8 +81,7 @@ export const ThinkingProcessSection: React.FC<ThinkingProcessSectionProps> = ({
           }
           style={{ overflowY: 'auto' }}
         >
-          {accumulatedThinking ||
-            'AI is analyzing the recorded events and planning the test structure...'}
+          {accumulatedThinking || 'AI 正在分析录制的操作并规划测试结构…'}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import type { DeviceAction } from '@midscene/core';
 import type { ZodObjectSchema, ZodRuntimeAccess } from '../types';
 import { isLocateField, isZodObjectSchema, unwrapZodType } from '../types';
+import { t } from '../ui-language';
 import { apiMetadata } from './constants';
 
 export interface InlineStructuredFieldConfig {
@@ -111,9 +112,7 @@ export const getInlineStructuredFieldConfig = (
   const placeholder =
     (actualField as ZodRuntimeAccess)._def?.description ||
     (actualField as ZodRuntimeAccess).description ||
-    (isLocate
-      ? 'Describe the element you want to interact with'
-      : `Enter ${name}`);
+    (isLocate ? t('用自然语言描述要操作的元素') : `请输入 ${name}`);
 
   return {
     name,

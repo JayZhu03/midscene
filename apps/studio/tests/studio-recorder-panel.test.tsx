@@ -176,6 +176,7 @@ async function renderReplayPanel({
   activeSessionStoppable = false,
   onDeleteSession,
   onDownloadSession,
+  onExportPlaywright,
   onReplaySession = vi.fn(),
   onSelectSession = vi.fn(),
   onStopActiveSession,
@@ -186,6 +187,7 @@ async function renderReplayPanel({
   activeSessionStoppable?: boolean;
   onDeleteSession?: ReturnType<typeof vi.fn>;
   onDownloadSession?: ReturnType<typeof vi.fn>;
+  onExportPlaywright?: ReturnType<typeof vi.fn>;
   onReplaySession?: ReturnType<typeof vi.fn>;
   onSelectSession?: ReturnType<typeof vi.fn>;
   onStopActiveSession?: ReturnType<typeof vi.fn>;
@@ -203,6 +205,7 @@ async function renderReplayPanel({
         activeSessionStoppable={activeSessionStoppable}
         onDeleteSession={onDeleteSession}
         onDownloadSession={onDownloadSession}
+        onExportPlaywright={onExportPlaywright}
         onReplaySession={onReplaySession}
         onSelectSession={onSelectSession}
         onStopActiveSession={onStopActiveSession}
@@ -582,6 +585,38 @@ describe('StudioRecorderPanel', () => {
     expect(onReplaySession).not.toHaveBeenCalled();
 
     await unmount(root);
+  });
+
+  it('exports native Playwright from a Web replay item menu without selecting or replaying it', async () => {
+    const session = createRecorderMock({
+      sessionOverrides: { target: { platformId: 'web', values: {} } },
+    }).state.sessions[0];
+    const onExportPlaywright = vi.fn();
+    const { container, root, onSelectSession, onReplaySession } =
+      await renderReplayPanel({ sessions: [session], onExportPlaywright });
+    try {
+      await act(async () => {
+        container
+          .querySelector('button[aria-haspopup="menu"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      const exportButton = Array.from(
+        document.body.querySelectorAll('button'),
+      ).find((button) => button.textContent?.includes('Export Playwright'));
+      expect(exportButton).toBeDefined();
+      expect(exportButton?.textContent).toBe('Export Playwright');
+      expect(
+        exportButton?.closest('[role="menu"]')?.getAttribute('style'),
+      ).toContain('width: 240px');
+      await act(async () => {
+        exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(onExportPlaywright).toHaveBeenCalledWith(session);
+      expect(onSelectSession).not.toHaveBeenCalled();
+      expect(onReplaySession).not.toHaveBeenCalled();
+    } finally {
+      await unmount(root);
+    }
   });
 
   it('renders fixed replay history item actions for download and delete', async () => {

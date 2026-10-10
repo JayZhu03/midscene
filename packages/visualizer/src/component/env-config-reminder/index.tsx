@@ -1,5 +1,6 @@
 import { ExclamationCircleFilled } from '@ant-design/icons';
 import { useEnvConfig } from '../../store/store';
+import { t, useUiLanguage } from '../../ui-language';
 import { EnvConfig, type EnvConfigProps } from '../env-config';
 
 import './index.less';
@@ -30,6 +31,8 @@ export const EnvConfigReminder: React.FC<EnvConfigReminderProps> = ({
   envTextareaAutoSize,
   envTextareaMinRows,
 }) => {
+  useUiLanguage();
+
   const { config } = useEnvConfig();
   const configAlreadySet = Object.keys(config || {}).length >= 1;
 
@@ -41,7 +44,7 @@ export const EnvConfigReminder: React.FC<EnvConfigReminderProps> = ({
     <div className={`env-config-reminder ${className}`}>
       <ExclamationCircleFilled className="reminder-icon" />
       <span className="reminder-text">
-        Please set up your environment variables before using.
+        {t('请先配置模型地址、API Key 和模型名称，再开始使用。')}
       </span>
       <EnvConfig
         agentOptions={agentOptions}

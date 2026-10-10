@@ -132,10 +132,10 @@ export const RecordTimeline = ({
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        message.success('JSON copied to clipboard');
+        message.success('JSON 已复制到剪贴板');
       })
       .catch(() => {
-        message.error('Copy failed');
+        message.error('复制失败');
       });
   };
   const getEventIcon = (type: string) => {
@@ -181,7 +181,7 @@ export const RecordTimeline = ({
   };
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
+    return new Date(timestamp).toLocaleTimeString('zh-CN', {
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
@@ -215,24 +215,24 @@ export const RecordTimeline = ({
     switch (event.type) {
       case 'click':
         if (event.targetTagName === 'BUTTON') {
-          return 'Click Button';
+          return '点击按钮';
         }
         if (event.value && !isCoordinateValue(event.value)) {
-          return `Click Element "${event.value}"`;
+          return `点击元素「${event.value}」`;
         }
-        return 'Click';
+        return '点击';
       case 'drag':
-        return 'Drag';
+        return '拖拽';
       case 'input':
-        return 'Input';
+        return '输入';
       case 'scroll':
-        return 'Scroll';
+        return '滚动';
       case 'navigation':
-        return 'Navigate';
+        return '页面跳转';
       case 'setViewport':
-        return 'Viewport changed';
+        return '视口变化';
       case 'keydown':
-        return 'Key down';
+        return '键盘按键';
       default:
         return event.type;
     }
@@ -249,7 +249,7 @@ export const RecordTimeline = ({
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Text>{eventTitle} - </Text>
               <ShinyText
-                text="analyzing target..."
+                text="正在分析目标…"
                 disabled={false}
                 speed={3}
                 className="step-title-shiny"
@@ -299,7 +299,7 @@ export const RecordTimeline = ({
         }
         return (
           <Text>
-            {eventTitle} - {event.value?.split(' ')[0] || 'recorded scroll'}
+            {eventTitle} - {event.value?.split(' ')[0] || '已录制的滚动操作'}
           </Text>
         );
 
@@ -336,7 +336,7 @@ export const RecordTimeline = ({
       case 'keydown':
         return (
           <Text>
-            {eventTitle} - Key: {event.value || 'Unknown'}
+            {eventTitle} - 按键： {event.value || '未知'}
           </Text>
         );
 
@@ -353,7 +353,7 @@ export const RecordTimeline = ({
       case 'click':
       case 'drag':
         return getMidsceneRecorderSemantic(event)?.status === 'pending'
-          ? `${eventTitle} - analyzing target...`
+          ? `${eventTitle} - 正在分析目标…`
           : description
             ? `${eventTitle} - ${description}`
             : eventTitle;
@@ -364,7 +364,7 @@ export const RecordTimeline = ({
       case 'scroll':
         return description
           ? `${eventTitle} - ${description}`
-          : `${eventTitle} - ${event.value?.split(' ')[0] || 'recorded scroll'}`;
+          : `${eventTitle} - ${event.value?.split(' ')[0] || '已录制的滚动操作'}`;
       case 'navigation':
         return `${eventTitle} - ${description || event.url || ''}`;
       case 'setViewport': {
@@ -374,7 +374,7 @@ export const RecordTimeline = ({
           : eventTitle;
       }
       case 'keydown':
-        return `${eventTitle} - Key: ${event.value || 'Unknown'}`;
+        return `${eventTitle} - 按键： ${event.value || '未知'}`;
       default:
         return eventTitle;
     }
@@ -574,7 +574,7 @@ export const RecordTimeline = ({
                         background: 'rgba(255, 255, 255, 0.9)',
                         border: '1px solid #d9d9d9',
                       }}
-                      title="Copy JSON"
+                      title="复制 JSON"
                     />
                   </div>
                 </Card>

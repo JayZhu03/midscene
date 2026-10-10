@@ -70,12 +70,12 @@ describe('PlaygroundResultView', () => {
     ({ props }) => {
       const html = renderResult({ ...props, showOutputAlongsideReport: true });
 
-      expect(html).toContain('Output:');
+      expect(html).toContain('输出：');
       expect(html).toContain(output);
-      expect(html).toContain('Report:');
+      expect(html).toContain('报告：');
       expect(html).toContain('REPORT_PLAYER');
-      expect(html.indexOf(output)).toBeLessThan(html.indexOf('Report:'));
-      expect(html.indexOf('Report:')).toBeLessThan(
+      expect(html.indexOf(output)).toBeLessThan(html.indexOf('报告：'));
+      expect(html.indexOf('报告：')).toBeLessThan(
         html.indexOf('REPORT_PLAYER'),
       );
     },
@@ -84,7 +84,7 @@ describe('PlaygroundResultView', () => {
   it.each(reportCases)('shows only $name by default', ({ props }) => {
     const html = renderResult(props);
 
-    expect(html).not.toContain('Output:');
+    expect(html).not.toContain('输出：');
     expect(html).not.toContain(output);
     expect(html).toContain('REPORT_PLAYER');
   });

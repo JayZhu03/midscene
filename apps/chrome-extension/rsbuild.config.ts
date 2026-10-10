@@ -38,9 +38,10 @@ export default defineConfig({
         },
       },
       html: {
+        template: './src/template.html',
         title: ({ entryName }) => {
           if (entryName === 'confirm') {
-            return 'Midscene Bridge';
+            return 'Midscene 桥接授权';
           }
           return 'Midscene';
         },

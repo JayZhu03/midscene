@@ -10,7 +10,7 @@ export interface NotifyErrorOptions {
   duration?: number;
 }
 
-const DEFAULT_TITLE = 'Something went wrong';
+const DEFAULT_TITLE = '发生错误';
 
 function normalizeMessage(error: unknown): string {
   if (typeof error === 'string') {

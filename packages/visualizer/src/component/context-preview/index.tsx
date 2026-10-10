@@ -23,12 +23,12 @@ export const ContextPreview: React.FC<ContextPreviewProps> = ({
 
   return (
     <div className="form-part context-panel">
-      <h3>UI Context</h3>
+      <h3>页面信息</h3>
       {uiContextPreview ? (
         <Blackboard uiContext={uiContextPreview} hideController />
       ) : (
         <div>
-          {iconForStatus('failed')} No UI context
+          {iconForStatus('failed')} 暂无页面信息
           <Button
             type="link"
             onClick={(e) => {
@@ -36,11 +36,10 @@ export const ContextPreview: React.FC<ContextPreviewProps> = ({
               setUiContextPreview(DemoData as unknown as UIContext);
             }}
           >
-            Load Demo
+            加载示例
           </Button>
           <div>
-            To load the UI context, you can either use the demo data above, or
-            click the &apos;Send to Playground&apos; in the report page.
+            要加载页面信息，可使用上方示例数据，或在报告页面点击「发送到操作调试」。
           </div>
         </div>
       )}

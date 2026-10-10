@@ -8,6 +8,7 @@ import { StudioRecorderProvider } from '../src/renderer/recorder/StudioRecorderP
 import {
   describeStudioRecorderEventsWithAI,
   generateStudioRecorderCodeWithAI,
+  generateStudioRecorderMetadataWithAI,
 } from '../src/renderer/recorder/codegen';
 import { getStudioRecorderSessions } from '../src/renderer/recorder/storage';
 import type { StudioRecorderContextValue } from '../src/renderer/recorder/types';
@@ -2131,6 +2132,54 @@ describe('StudioRecorderProvider preview recording', () => {
     );
 
     await mounted.cleanup();
+  });
+
+  it('compiles native Playwright without AI metadata or code generation', async () => {
+    const event = {
+      type: 'click',
+      source: 'studio-preview',
+      actionType: 'Tap',
+      nativeTarget: { locator: { selector: 'button[data-testid="query"]' } },
+      semantic: {
+        source: 'heuristic',
+        status: 'ready',
+        elementDescription: 'Query',
+      },
+      pageInfo: { width: 1200, height: 800 },
+      timestamp: 123,
+      hashId: 'native-1',
+    };
+    const { context } = createConnectedStudioContext({ events: [event] });
+    context.controller.state.formValues = {
+      platformId: 'web',
+      'web.url': 'https://example.com',
+    };
+    context.controller.state.runtimeInfo!.platformId = 'web';
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder?.startRecording();
+      });
+      await flushPromises();
+      vi.clearAllMocks();
+      let code = '';
+      await act(async () => {
+        code = await mounted.recorder!.generateSessionCode(
+          mounted.recorder!.currentSession!.id,
+          { type: 'playwright-native' },
+        );
+      });
+      expect(code).toContain('target1.click()');
+      expect(code).not.toContain('@midscene');
+      expect(generateStudioRecorderCodeWithAI).not.toHaveBeenCalled();
+      expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
+      expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
+      expect(
+        mounted.recorder?.currentSession?.generatedCode?.['playwright-native'],
+      ).toBe(code);
+    } finally {
+      await mounted.cleanup();
+    }
   });
 
   it('generates Markdown by default for the current session', async () => {

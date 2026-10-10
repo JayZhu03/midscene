@@ -1,5 +1,6 @@
 import type { MjpegStreamOptions } from '@midscene/core/device';
 import { describe, expect, rs, test } from '@rstest/core';
+import { writeMjpegFrame } from '../../src/mjpeg-hub';
 import { PlaygroundServer } from '../../src/server';
 
 function createMockStreamResponse() {
@@ -64,6 +65,47 @@ function getRouteHandler(
 }
 
 describe('PlaygroundServer MJPEG streaming', () => {
+  test('delimits each JPEG immediately without duplicating images', () => {
+    const response = createMockStreamResponse();
+    for (const data of ['first-jpeg', 'last-jpeg']) {
+      writeMjpegFrame(response as any, 'frame', {
+        data: Buffer.from(data).toString('base64'),
+        contentType: 'image/jpeg',
+      });
+    }
+    const body = response.chunks.map((chunk) => chunk.toString()).join('');
+    expect(body).toBe(
+      '--frame\r\nContent-Type: image/jpeg\r\n\r\nfirst-jpeg\r\n' +
+        '--frame\r\nContent-Type: image/jpeg\r\n\r\nlast-jpeg\r\n' +
+        '--frame\r\nContent-Type: image/jpeg\r\n\r\n',
+    );
+  });
+
+  test('recorder reuses only fresh preview frames and otherwise takes a screenshot', async () => {
+    const screenshotBase64 = rs.fn(async () => 'direct-screenshot');
+    const server = new PlaygroundServer({
+      interface: {
+        interfaceType: 'web',
+        actionSpace: () => [],
+        screenshotBase64,
+      },
+    } as any);
+    const cached = rs.spyOn(
+      (server as any)._mjpegHandler,
+      'getLastFrameBase64',
+    );
+    cached.mockReturnValueOnce('fresh-preview').mockReturnValueOnce(undefined);
+    expect(await (server as any).takeRecorderScreenshot()).toBe(
+      'fresh-preview',
+    );
+    expect(screenshotBase64).not.toHaveBeenCalled();
+    expect(cached).toHaveBeenCalledWith(500);
+    expect(await (server as any).takeRecorderScreenshot()).toBe(
+      'direct-screenshot',
+    );
+    expect(screenshotBase64).toHaveBeenCalledTimes(1);
+  });
+
   test('GET /screenshot recreates a factory-backed agent when the page session is closed', async () => {
     const firstDestroy = rs.fn();
     const secondDestroy = rs.fn();

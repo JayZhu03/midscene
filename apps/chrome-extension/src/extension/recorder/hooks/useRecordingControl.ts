@@ -74,7 +74,7 @@ export const useRecordingControl = (
 
         if (!currentTab?.id) {
           recordLogger.error('No active tab found for stopping recording');
-          message.error('No active tab found');
+          message.error('未找到当前网页标签');
           return;
         }
 
@@ -132,7 +132,7 @@ export const useRecordingControl = (
                   eventsCount: events.length,
                 });
                 const hideLoadingMessage = message.loading(
-                  'Generating recording title and description...',
+                  '正在生成录制名称和说明…',
                   0,
                 );
                 try {
@@ -164,7 +164,7 @@ export const useRecordingControl = (
           }
         } catch (error) {
           recordLogger.error('Failed to stop recording', undefined, error);
-          message.error(`Failed to stop recording: ${error}`);
+          message.error(`停止录制失败：${error}`);
           // Still stop recording on our side even if there was an error
           await setIsRecording(false);
         }
@@ -196,19 +196,17 @@ export const useRecordingControl = (
 
               if (!isExtensionMode) {
                 recordLogger.error('Not in extension environment');
-                message.error(
-                  'Recording is only available in Chrome extension environment',
-                );
+                message.error('录制功能仅支持 Chrome 插件环境');
                 return;
               }
 
               startStage = 'load recording session';
               const sessionToUse = await dbManager.getSession(sessionId);
               if (!sessionToUse) {
-                recordLogger.error('Specified session not found', {
+                recordLogger.error('未找到指定的录制记录', {
                   sessionId,
                 });
-                message.error('Specified session not found');
+                message.error('未找到指定的录制记录');
                 return;
               }
 
@@ -216,7 +214,7 @@ export const useRecordingControl = (
                 recordLogger.error(
                   'No active tab found for starting recording',
                 );
-                message.error('No active tab found');
+                message.error('未找到当前网页标签');
                 return;
               }
 
@@ -262,7 +260,7 @@ export const useRecordingControl = (
                 // Load existing events for continuation
                 setEvents(sessionToUse.events);
               }
-              message.success('Recording started');
+              message.success('已开始录制');
             })(),
             `recording startup at ${startStage}`,
             START_RECORDING_TIMEOUT_MS,
@@ -274,7 +272,7 @@ export const useRecordingControl = (
             error,
           );
           message.error(
-            'Failed to start recording. Please ensure you are on a regular web page (not Chrome internal pages) and try again.',
+            '启动录制失败，请打开普通网页后重试（Chrome 内部页面不支持录制）。',
           );
         } finally {
           setIsStarting(false);
@@ -345,7 +343,7 @@ export const useRecordingControl = (
   // Export current events
   const exportEvents = useCallback(() => {
     if (events.length === 0) {
-      message.warning('No events to export');
+      message.warning('暂无可导出的操作');
       return;
     }
 

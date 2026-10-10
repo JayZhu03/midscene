@@ -6,6 +6,7 @@ import type {
 import { App as AntdApp, Tooltip } from 'antd';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import {
   createImportedMarkdownAiActReplayPrompt,
@@ -66,6 +67,8 @@ interface StudioModePanelProps {
 }
 
 function ImportReplayIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -97,14 +100,16 @@ function ReplayImportAction({
   disabledReason: string | null;
   onImportReplay: () => void;
 }) {
+  useStudioLanguage();
+
   return (
     <Tooltip
       placement="bottom"
-      title={disabledReason || 'Import Markdown or YAML replay'}
+      title={disabledReason || t('Import Markdown or YAML replay')}
     >
       <span className="inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center">
         <button
-          aria-label="Import Markdown or YAML replay"
+          aria-label={t('Import Markdown or YAML replay')}
           className="inline-flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[8px] border-0 bg-surface-muted p-[6px] text-text-secondary hover:bg-surface-hover-strong hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45"
           disabled={Boolean(disabledReason)}
           onClick={onImportReplay}
@@ -156,6 +161,8 @@ function ReplayExecutionPanel({
   showHeader: boolean;
   storageNamespace: string;
 }) {
+  const uiLanguage = useStudioLanguage();
+
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const canRenderReplayExecution =
     Boolean(externalRunRequest) &&
@@ -172,8 +179,8 @@ function ReplayExecutionPanel({
       createStudioTimelineConfig({
         emptyState: (
           <StudioTimelineEmptyState
-            description="The mission progress will be displayed here."
-            title="No execution yet"
+            description={t('The mission progress will be displayed here.')}
+            title={t('No execution yet')}
             variant={StudioModeTab.Replay}
           />
         ),
@@ -200,6 +207,7 @@ function ReplayExecutionPanel({
       onExecutionStatusChange,
       storageNamespace,
       timelineCollapsed,
+      uiLanguage,
     ],
   );
 
@@ -216,8 +224,8 @@ function ReplayExecutionPanel({
         variant={StudioModeTab.Replay}
       >
         <StudioTimelineEmptyState
-          description="The mission progress will be displayed here."
-          title="No execution yet"
+          description={t('The mission progress will be displayed here.')}
+          title={t('No execution yet')}
           variant={StudioModeTab.Replay}
         />
       </StudioExecutionTimelinePanel>
@@ -235,7 +243,7 @@ function ReplayExecutionPanel({
           .filter(Boolean)
           .join(' ')}
         playgroundConfig={replayConfig}
-        title="Replay"
+        title={t('Replay')}
       />
     );
   }
@@ -263,6 +271,8 @@ export default function StudioModePanel({
   onTimelineExecutionStatusChange,
   studioMode,
 }: StudioModePanelProps) {
+  const uiLanguage = useStudioLanguage();
+
   const { message } = AntdApp.useApp();
   const playground = useStudioPlayground();
   const recorder = useStudioRecorder();
@@ -371,7 +381,7 @@ export default function StudioModePanel({
     playground.phase !== 'ready' ||
     !playground.controller.state.serverOnline ||
     !playground.controller.state.sessionViewState.connected
-      ? 'Connect a target before replaying a file.'
+      ? t('Connect a target before replaying a file.')
       : null;
   const handleImportReplay = useCallback(async () => {
     try {
@@ -467,7 +477,9 @@ export default function StudioModePanel({
         setReplayingSessionId(session.id);
         replayExecutionWasRunningRef.current = false;
         if (!session.generatedCode?.markdown) {
-          throw new Error('Generate Markdown before replaying this recording.');
+          throw new Error(
+            t('Generate Markdown before replaying this recording.'),
+          );
         }
         triggerExternalRun(
           {
@@ -483,7 +495,7 @@ export default function StudioModePanel({
         message.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [importReplayDisabledReason, message, triggerExternalRun],
+    [importReplayDisabledReason, message, triggerExternalRun, uiLanguage],
   );
   const handleReplayExecutionStatusChange = useCallback(
     (status: PlaygroundExecutionStatus) => {
@@ -510,7 +522,7 @@ export default function StudioModePanel({
       try {
         if (!session.generatedCode?.markdown) {
           throw new Error(
-            'Generate Markdown before downloading this recording.',
+            t('Generate Markdown before downloading this recording.'),
           );
         }
         await recorder.exportSessionCode(session.id, 'markdown');
@@ -518,7 +530,32 @@ export default function StudioModePanel({
         message.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [message, recorder],
+    [message, recorder, uiLanguage],
+  );
+  const handleExportReplayPlaywright = useCallback(
+    async (session: StudioRecordingSession) => {
+      try {
+        if (!session.events.length) {
+          message.error(t('This script has no locators. Record it again.'));
+          return;
+        }
+        await recorder.generateSessionCode(session.id, {
+          type: 'playwright-native',
+        });
+        await recorder.exportSessionCode(session.id, 'playwright-native');
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        const step = details.match(/第\s*(\d+)\s*步/)?.[1];
+        message.error(
+          step
+            ? t('Step {step} cannot be exported. Check the recording.', {
+                step,
+              })
+            : t('Playwright export failed. Please retry.'),
+        );
+      }
+    },
+    [message, recorder, uiLanguage],
   );
   const handleDeleteReplaySession = useCallback(
     async (session: StudioRecordingSession) => {
@@ -561,7 +598,9 @@ export default function StudioModePanel({
       try {
         const markdown = session.generatedCode?.markdown;
         if (!markdown) {
-          throw new Error('Generate Markdown before opening this recording.');
+          throw new Error(
+            t('Generate Markdown before opening this recording.'),
+          );
         }
         if (selectedReplaySessionIdRef.current !== session.id) {
           return;
@@ -588,12 +627,13 @@ export default function StudioModePanel({
       handleDownloadReplaySession,
       message,
       onOpenStudioRightPanel,
+      uiLanguage,
     ],
   );
   const replayTitle =
     activeExternalRunRequest?.reportDisplay?.prompt ||
     activeExternalRunRequest?.displayContent ||
-    'Replay';
+    t('Replay');
   const playgroundInputActions = useMemo(
     () => (
       <ReplayImportAction
@@ -653,7 +693,7 @@ export default function StudioModePanel({
     }
 
     if (studioMode === StudioModeTab.Record) {
-      onHeaderChange({ title: 'Record' });
+      onHeaderChange({ title: t('Record') });
       return;
     }
 
@@ -662,7 +702,7 @@ export default function StudioModePanel({
         title: replayTitle,
       });
     }
-  }, [onHeaderChange, replayTitle, studioMode]);
+  }, [onHeaderChange, replayTitle, studioMode, uiLanguage]);
 
   const recordActive = studioMode === StudioModeTab.Record;
   const replayActive = studioMode === StudioModeTab.Replay;
@@ -711,6 +751,9 @@ export default function StudioModePanel({
           onDeleteSession={handleDeleteReplaySessionFromList}
           onDownloadSession={(session) => {
             void handleDownloadReplaySession(session);
+          }}
+          onExportPlaywright={(session) => {
+            void handleExportReplayPlaywright(session);
           }}
           onReplaySession={(session) => {
             void handleReplaySession(session);

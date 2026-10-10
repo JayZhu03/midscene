@@ -11,10 +11,12 @@ import {
   getMidsceneRecorderEventDescription,
   getMidsceneRecorderSemantic,
 } from '@midscene/shared/recorder';
+import { compileRecorderNativePlaywright } from '@midscene/shared/recorder-native';
 import type { StudioRecorderCodeType } from '@shared/electron-contract';
 import { App as AntdApp } from 'antd';
 import type { PropsWithChildren } from 'react';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { t, useStudioLanguage } from '../i18n';
 import { useStudioPlayground } from '../playground/useStudioPlayground';
 import {
   describeStudioRecorderEventsWithAI,
@@ -229,13 +231,13 @@ function truncateText(value: string, maxLength: number) {
 function eventVerb(event: StudioRecordedEvent) {
   switch (event.type) {
     case 'click':
-      return 'Click';
+      return t('Click');
     case 'input':
-      return 'Input';
+      return t('Input');
     case 'keydown':
       return 'Press';
     case 'scroll':
-      return 'Scroll';
+      return t('Scroll');
     case 'drag':
       return 'Drag';
     case 'navigation':
@@ -708,6 +710,16 @@ function canMergeAdjacentRecorderInputEvents(
     createStudioRecorderTargetSignature(current.target) ===
       createStudioRecorderTargetSignature(next.target) &&
     current.url === next.url &&
+    JSON.stringify(current.nativeTarget?.locator) ===
+      JSON.stringify(next.nativeTarget?.locator) &&
+    current.nativeTarget?.error === next.nativeTarget?.error &&
+    current.nativeTarget?.sensitive === next.nativeTarget?.sensitive &&
+    (!current.nativeTarget?.selection ||
+      !next.nativeTarget?.selection ||
+      (next.nativeTarget.selection.start === next.nativeTarget.selection.end &&
+        next.nativeTarget.selection.start ===
+          current.nativeTarget.selection.start +
+            (current.value?.length || 0))) &&
     current.title === next.title
   );
 }
@@ -884,6 +896,8 @@ function hasRecorderSession(session: StudioRecordingSession | null): boolean {
 }
 
 export function StudioRecorderProvider({ children }: PropsWithChildren) {
+  const uiLanguage = useStudioLanguage();
+
   const { message } = AntdApp.useApp();
   const studioPlayground = useStudioPlayground();
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -1807,10 +1821,51 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       if (session.events.length === 0) {
         throw new Error(`Record at least one event before generating ${type}.`);
       }
-      if (type === 'playwright' && session.target.platformId !== 'web') {
+      if (
+        type.startsWith('playwright') &&
+        session.target.platformId !== 'web'
+      ) {
         throw new Error(
-          'Playwright generation is only available for Web recordings.',
+          t('Playwright generation is only available for Web recordings.'),
         );
+      }
+
+      if (type === 'playwright-native') {
+        options.onProgress?.({ step: 'prepare', status: 'completed' });
+        options.onProgress?.({ step: 'metadata', status: 'completed' });
+        options.onProgress?.({ step: 'code', status: 'loading' });
+        try {
+          const code = compileRecorderNativePlaywright({
+            events: normalizeSessionEventOrder(session).events,
+            testName: session.name,
+            platformId: session.target.platformId,
+          });
+          const updatedSession: StudioRecordingSession = {
+            ...session,
+            generatedCode: {
+              ...session.generatedCode,
+              [type]: code,
+              updatedAt: Date.now(),
+            },
+            updatedAt: Date.now(),
+          };
+          stateRef.current = upsertSessionInState(
+            stateRef.current,
+            updatedSession,
+          );
+          dispatch({ type: 'upsert-session', session: updatedSession });
+          await persistStudioRecorderSession(updatedSession);
+          options.onChunk?.(code);
+          options.onProgress?.({ step: 'code', status: 'completed' });
+          return code;
+        } catch (error) {
+          options.onProgress?.({
+            step: 'code',
+            status: 'error',
+            details: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
       }
 
       let descriptionsSettled = await waitForRecorderEventDescriptions(
@@ -1849,7 +1904,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           options.onProgress?.({
             step: 'metadata',
             status: 'loading',
-            details: 'Analyzing session content...',
+            details: t('Analyzing session content...'),
           });
           const metadata = await generateStudioRecorderMetadataWithAI(
             await materializeSessionForScreenshotExport(sessionForCodegen, 1),
@@ -1902,7 +1957,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         status: 'loading',
         details:
           type === 'playwright'
-            ? 'Generating Playwright test code...'
+            ? t('Generating Playwright test code...')
             : type === 'markdown'
               ? `Generating Markdown replay${
                   options.language ? ` in ${options.language}` : ''
@@ -1957,6 +2012,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       materializeSessionForScreenshotExport,
       persistStudioRecorderSession,
       waitForRecorderEventDescriptions,
+      uiLanguage,
     ],
   );
 
@@ -1991,7 +2047,8 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       const hasRemainingCode = Boolean(
         generatedCode.markdown ||
           generatedCode.yaml ||
-          generatedCode.playwright,
+          generatedCode.playwright ||
+          generatedCode['playwright-native'],
       );
       const updatedSession: StudioRecordingSession = {
         ...session,
@@ -2228,7 +2285,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         return;
       }
       await saveStudioRecorderFile({
-        title: 'Export Recorder JSON',
+        title: t('Export Recorder JSON'),
         defaultFileName: getStudioRecorderExportVariantFileName(
           session,
           'json',
@@ -2238,7 +2295,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         content: generateStudioRecorderJson(session),
       });
     },
-    [flushPendingRecorderInput],
+    [flushPendingRecorderInput, uiLanguage],
   );
 
   const exportSessionYaml = useCallback(
@@ -2252,7 +2309,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       }
       const usesFallback = !session.generatedCode?.yaml;
       await saveStudioRecorderFile({
-        title: 'Export Recorder YAML',
+        title: t('Export Recorder YAML'),
         defaultFileName: getStudioRecorderExportVariantFileName(
           session,
           'yaml',
@@ -2264,11 +2321,13 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       });
       if (usesFallback) {
         message.info(
-          'Downloaded fallback YAML generated from recorded events, not AI YAML.',
+          t(
+            'Downloaded fallback YAML generated from recorded events, not AI YAML.',
+          ),
         );
       }
     },
-    [flushPendingRecorderInput],
+    [flushPendingRecorderInput, uiLanguage],
   );
 
   const exportSessionCode = useCallback(
@@ -2288,10 +2347,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
       if (type === 'markdown') {
         if (!session.generatedCode?.markdown) {
-          throw new Error('Generate AI Markdown before downloading.');
+          throw new Error(t('Generate AI Markdown before downloading.'));
         }
         await saveStudioRecorderFile({
-          title: 'Export Recorder Markdown Replay',
+          title: t('Export Recorder Markdown Replay'),
           defaultFileName: getStudioRecorderExportVariantFileName(
             session,
             'markdown',
@@ -2307,18 +2366,25 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       }
 
       const playwright =
-        session.generatedCode?.playwright ||
-        generateStudioRecorderPlaywright(session);
+        type === 'playwright-native'
+          ? session.generatedCode?.[type] ||
+            compileRecorderNativePlaywright({
+              events: session.events,
+              testName: session.name,
+              platformId: session.target.platformId,
+            })
+          : session.generatedCode?.playwright ||
+            generateStudioRecorderPlaywright(session);
       if (!playwright) {
         throw new Error(
-          'Playwright export is only available for Web recordings.',
+          t('Playwright export is only available for Web recordings.'),
         );
       }
       await saveStudioRecorderFile({
-        title: 'Export Recorder Playwright Test',
+        title: t('Export Recorder Playwright Test'),
         defaultFileName: getStudioRecorderExportVariantFileName(
           session,
-          'playwright',
+          type,
           'spec.ts',
         ),
         filters: [{ name: 'Playwright Test', extensions: ['ts'] }],
@@ -2329,6 +2395,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       exportSessionYaml,
       flushPendingRecorderInput,
       materializeSessionForScreenshotExport,
+      uiLanguage,
     ],
   );
 
@@ -2380,13 +2447,17 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       exportSessions.push(exportSession);
     }
     await saveStudioRecorderFile({
-      title: 'Export Recorder Archive',
+      title: t('Export Recorder Archive'),
       defaultFileName: 'midscene-studio-recordings.zip',
       filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
       content: await createStudioRecorderZipBase64(exportSessions),
       encoding: 'base64',
     });
-  }, [flushPendingRecorderInput, materializeSessionForScreenshotExport]);
+  }, [
+    flushPendingRecorderInput,
+    materializeSessionForScreenshotExport,
+    uiLanguage,
+  ]);
 
   const contextValue = useMemo<StudioRecorderContextValue>(
     () => ({

@@ -88,6 +88,10 @@ export default defineConfig({
       // Same reason as playground-app: renderer imports visualizer directly and
       // via playground-app. Use source entries so rslib watch cannot break lazy
       // compilation while dist files are being removed and rebuilt.
+      '@midscene/visualizer/ui-language$': path.join(
+        __dirname,
+        '../../packages/visualizer/src/ui-language.ts',
+      ),
       '@midscene/visualizer$': path.join(
         __dirname,
         '../../packages/visualizer/src/index.tsx',

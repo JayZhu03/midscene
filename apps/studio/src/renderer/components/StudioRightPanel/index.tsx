@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import { saveStudioRecorderFile } from '../../recorder/export';
 import { DownloadIcon, TrashIcon } from '../Recorder/assets/recorder-icons';
 import { StudioActionMenu } from '../StudioActionMenu';
@@ -31,6 +32,8 @@ export function getStudioRightPanelWidth(view: StudioRightPanelView): number {
 }
 
 function CloseIcon() {
+  useStudioLanguage();
+
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
       <path
@@ -54,6 +57,8 @@ function MarkdownDetailView({
   onDownload?: () => void | Promise<void>;
   title?: string;
 }) {
+  useStudioLanguage();
+
   const downloadMarkdown = async () => {
     if (onDownload) {
       await onDownload();
@@ -86,13 +91,13 @@ function MarkdownDetailView({
             items={[
               {
                 icon: <DownloadIcon />,
-                label: 'Download',
+                label: t('Download'),
                 onClick: downloadMarkdown,
               },
               {
                 danger: true,
                 icon: <TrashIcon />,
-                label: 'Delete',
+                label: t('Delete'),
                 onClick: onDelete,
               },
             ]}
@@ -114,6 +119,8 @@ export function StudioRightPanel({
   onClose: () => void;
   view: StudioRightPanelView;
 }) {
+  useStudioLanguage();
+
   const content =
     view.type === StudioRightPanelViewType.Markdown ? (
       <MarkdownDetailView

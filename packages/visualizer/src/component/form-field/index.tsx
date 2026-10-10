@@ -2,6 +2,7 @@ import type { z } from '@midscene/core';
 import { Form, Input, InputNumber, Select } from 'antd';
 import type React from 'react';
 import type { ZodRuntimeAccess } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 
 const { TextArea } = Input;
 
@@ -16,7 +17,7 @@ interface FormFieldProps {
 }
 
 const renderLabel = (label: string, isOptional: boolean) => {
-  return `${label}${isOptional ? ' (Optional)' : ''}`;
+  return `${label}${isOptional ? t('（可选）') : ''}`;
 };
 
 export const TextField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
@@ -26,15 +27,15 @@ export const TextField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
   marginBottom,
   placeholder: customPlaceholder,
 }) => {
-  const placeholder = customPlaceholder || `Enter ${name}`;
+  useUiLanguage();
+
+  const placeholder = customPlaceholder || `请输入 ${name}`;
   return (
     <Form.Item
       key={name}
       name={['params', name]}
       label={renderLabel(label, !isRequired)}
-      rules={
-        isRequired ? [{ required: true, message: `Please input ${name}` }] : []
-      }
+      rules={isRequired ? [{ required: true, message: `请填写 ${name}` }] : []}
       style={{ marginBottom }}
       colon={false}
     >
@@ -50,8 +51,9 @@ export const LocateField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
   marginBottom,
   placeholder: customPlaceholder,
 }) => {
-  const placeholder =
-    customPlaceholder || `Describe the ${name}, use natural language`;
+  useUiLanguage();
+
+  const placeholder = customPlaceholder || `用自然语言描述 ${name}`;
   return (
     <Form.Item
       key={name}
@@ -62,7 +64,7 @@ export const LocateField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
           ? [
               {
                 required: true,
-                message: `The ${name} is required`,
+                message: `请填写 ${name}`,
               },
             ]
           : []
@@ -83,6 +85,8 @@ export const EnumField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
   marginBottom,
   placeholder: customPlaceholder,
 }) => {
+  useUiLanguage();
+
   const enumValues = (fieldSchema as ZodRuntimeAccess)._def?.values || [];
   const selectOptions = enumValues.map((value: string) => ({
     value,
@@ -94,14 +98,12 @@ export const EnumField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
       key={name}
       name={['params', name]}
       label={label}
-      rules={
-        isRequired ? [{ required: true, message: `Please select ${name}` }] : []
-      }
+      rules={isRequired ? [{ required: true, message: `请选择 ${name}` }] : []}
       style={{ marginBottom }}
       colon={false}
     >
       <Select
-        placeholder={customPlaceholder || `Select ${name}`}
+        placeholder={customPlaceholder || `请选择 ${name}`}
         options={selectOptions}
       />
     </Form.Item>
@@ -115,6 +117,8 @@ export const NumberField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
   marginBottom,
   placeholder: customPlaceholder,
 }) => {
+  useUiLanguage();
+
   const defaultPlaceholder = name === 'distance' ? 500 : 0;
   const placeholderValue = customPlaceholder
     ? Number(customPlaceholder) || defaultPlaceholder
@@ -130,7 +134,7 @@ export const NumberField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
       rules={
         isRequired
           ? [
-              { required: true, message: `Please input ${name}` },
+              { required: true, message: `请填写 ${name}` },
               {
                 type: 'number',
                 min,
@@ -169,9 +173,11 @@ export const BooleanField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
   marginBottom,
   placeholder: customPlaceholder,
 }) => {
+  useUiLanguage();
+
   const selectOptions = [
-    { value: true, label: 'True' },
-    { value: false, label: 'False' },
+    { value: true, label: t('是（true）') },
+    { value: false, label: t('否（false）') },
   ];
 
   return (
@@ -179,14 +185,12 @@ export const BooleanField: React.FC<Omit<FormFieldProps, 'isLocateField'>> = ({
       key={name}
       name={['params', name]}
       label={renderLabel(label, !isRequired)}
-      rules={
-        isRequired ? [{ required: true, message: `Please select ${name}` }] : []
-      }
+      rules={isRequired ? [{ required: true, message: `请选择 ${name}` }] : []}
       style={{ marginBottom }}
       colon={false}
     >
       <Select
-        placeholder={customPlaceholder || `Select ${name}`}
+        placeholder={customPlaceholder || `请选择 ${name}`}
         options={selectOptions}
       />
     </Form.Item>

@@ -17,6 +17,7 @@ import {
 import type { UpdateStatus } from '../../../shared/updater-contract';
 import { assetUrls } from '../../assets';
 import { useStudioUpdater } from '../../hooks/useStudioUpdater';
+import { t, useStudioLanguage } from '../../i18n';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { type StudioMode, StudioModeTab } from '../../recorder/types';
 import MainContent from '../MainContent';
@@ -74,6 +75,8 @@ function readPersistedWidth(
 }
 
 function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
+  useStudioLanguage();
+
   return (
     <img
       alt=""
@@ -99,6 +102,8 @@ function UpdatePill({
   onOpenDownloadPage?: () => void;
   status: UpdateStatus;
 }) {
+  useStudioLanguage();
+
   if (
     status.state !== 'available' &&
     status.state !== 'downloading' &&
@@ -115,10 +120,10 @@ function UpdatePill({
       : 'Update';
   const title =
     status.state === 'downloaded'
-      ? 'Restart to install update'
+      ? t('Restart to install update')
       : isDownloading
         ? `Downloading update ${label}`
-        : 'Update available';
+        : t('Update available');
 
   return (
     <button
@@ -166,6 +171,8 @@ function UpdatePill({
 }
 
 export default function ShellLayout() {
+  useStudioLanguage();
+
   const titlebarInsetRight = getRendererTitlebarRightInset();
   const [activeView, setActiveView] = useState<ShellActiveView>('overview');
   const [studioMode, setStudioMode] = useState<StudioMode>(
@@ -546,7 +553,9 @@ export default function ShellLayout() {
         style={{ left: SIDEBAR_TOGGLE_LEFT, top: SIDEBAR_TOGGLE_TOP }}
       >
         <button
-          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={
+            sidebarCollapsed ? t('Expand sidebar') : t('Collapse sidebar')
+          }
           aria-pressed={sidebarCollapsed}
           className="app-no-drag flex h-[22px] w-[22px] cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-text-secondary transition-transform duration-150 ease-out active:scale-90"
           onClick={(event) => {
@@ -558,7 +567,7 @@ export default function ShellLayout() {
             event.stopPropagation();
             setSidebarCollapsed((prev) => !prev);
           }}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={sidebarCollapsed ? t('Expand sidebar') : t('Collapse sidebar')}
           type="button"
         >
           <SidebarCollapseIcon collapsed={sidebarCollapsed} />

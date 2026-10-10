@@ -1,6 +1,7 @@
 import { DEFAULT_STUDIO_WEB_VIEWPORT } from '@shared/web-viewport';
 import { useState } from 'react';
 import { assetUrls } from '../../assets';
+import { t, useStudioLanguage } from '../../i18n';
 import { MaskedIcon } from '../MaskedIcon';
 
 export interface WebCreateInput {
@@ -26,6 +27,8 @@ interface BaseCardProps {
 }
 
 function ChevronDown({ flipped }: { flipped: boolean }) {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -47,6 +50,8 @@ function ChevronDown({ flipped }: { flipped: boolean }) {
 }
 
 function SphereIcon() {
+  useStudioLanguage();
+
   return (
     <MaskedIcon
       className="h-[14px] w-[14px] text-text-primary"
@@ -56,6 +61,8 @@ function SphereIcon() {
 }
 
 function PhoneIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -85,6 +92,8 @@ function CardShell({
   submitLabel,
   title,
 }: BaseCardProps) {
+  useStudioLanguage();
+
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -96,10 +105,10 @@ function CardShell({
       >
         <span className="flex items-center gap-[8px]">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-active">
-            {title === 'Open a web page' ? <SphereIcon /> : <PhoneIcon />}
+            {title === t('Open a web page') ? <SphereIcon /> : <PhoneIcon />}
           </span>
           <span className="text-[14px] font-medium leading-[16px] text-text-primary">
-            {title}
+            {t(title)}
           </span>
         </span>
         <span className="flex items-center text-text-secondary">
@@ -116,7 +125,7 @@ function CardShell({
               onClick={onSubmit}
               type="button"
             >
-              {busy ? (busyLabel ?? 'Submitting…') : submitLabel}
+              {t(busy ? (busyLabel ?? 'Submitting…') : submitLabel)}
             </button>
           </div>
         </div>
@@ -132,6 +141,8 @@ function FieldLabel({
   children: React.ReactNode;
   required?: boolean;
 }) {
+  useStudioLanguage();
+
   return (
     <div className="mb-[8px] text-[13px] font-medium leading-[20px] text-text-primary">
       {children}
@@ -154,6 +165,8 @@ function NumberInput({
   prefix: string;
   value: number;
 }) {
+  useStudioLanguage();
+
   return (
     <div className="box-border flex h-[36px] min-w-0 flex-1 items-center rounded-[8px] border border-border-subtle bg-surface px-[12px]">
       <span className="mr-[8px] shrink-0 text-[14px] leading-[17px] text-text-placeholder">
@@ -194,6 +207,8 @@ export function WebCreateAgentCard({
   defaultViewportWidth = DEFAULT_STUDIO_WEB_VIEWPORT.width,
   onSubmit,
 }: WebCreateAgentCardProps) {
+  useStudioLanguage();
+
   const [url, setUrl] = useState(defaultUrl);
   const [width, setWidth] = useState(defaultViewportWidth);
   const [height, setHeight] = useState(defaultViewportHeight);
@@ -202,7 +217,7 @@ export function WebCreateAgentCard({
   return (
     <CardShell
       busy={busy}
-      busyLabel="Opening…"
+      busyLabel={t('Opening…')}
       onSubmit={() => {
         if (busy) return;
         void onSubmit({
@@ -212,14 +227,14 @@ export function WebCreateAgentCard({
           headed,
         });
       }}
-      submitLabel="Open Page"
-      title="Open a web page"
+      submitLabel={t('Open Page')}
+      title={t('Open a web page')}
     >
       <div className="grid w-full grid-cols-3 gap-[8px]">
         <div className="flex min-w-0 flex-col">
-          <FieldLabel required>URL</FieldLabel>
+          <FieldLabel required>{t('URL')}</FieldLabel>
           <input
-            aria-label="URL"
+            aria-label={t('URL')}
             className={inputBaseClass}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://example.com"
@@ -228,7 +243,7 @@ export function WebCreateAgentCard({
           />
         </div>
         <div className="flex min-w-0 flex-col">
-          <FieldLabel>Viewport</FieldLabel>
+          <FieldLabel>{t('Viewport')}</FieldLabel>
           <div className="grid w-full grid-cols-2 gap-[8px]">
             <NumberInput
               ariaLabel="Viewport width"
@@ -245,16 +260,16 @@ export function WebCreateAgentCard({
           </div>
         </div>
         <div className="flex min-w-0 flex-col">
-          <FieldLabel>Browser window</FieldLabel>
+          <FieldLabel>{t('Browser window')}</FieldLabel>
           <div className="relative h-[36px]">
             <select
-              aria-label="Browser window mode"
+              aria-label={t('Browser window mode')}
               className={`${inputBaseClass} appearance-none pr-[32px]`}
               onChange={(event) => setHeaded(event.target.value === 'headed')}
               value={headed ? 'headed' : 'headless'}
             >
-              <option value="headless">Headless</option>
-              <option value="headed">Visible Chrome window</option>
+              <option value="headless">{t('Headless')}</option>
+              <option value="headed">{t('Visible Chrome window')}</option>
             </select>
             <span className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 text-text-secondary">
               <ChevronDown flipped={false} />
@@ -279,13 +294,15 @@ export function IOSCreateAgentCard({
   defaultPort = 8100,
   onSubmit,
 }: IOSCreateAgentCardProps) {
+  useStudioLanguage();
+
   const [host, setHost] = useState(defaultHost);
   const [port, setPort] = useState(defaultPort);
 
   return (
     <CardShell
       busy={busy}
-      busyLabel="Connecting…"
+      busyLabel={t('Connecting…')}
       onSubmit={() => {
         if (busy) return;
         void onSubmit({
@@ -293,14 +310,14 @@ export function IOSCreateAgentCard({
           port,
         });
       }}
-      submitLabel="Create Agent"
-      title="Connect WebDriverAgent"
+      submitLabel={t('Create Agent')}
+      title={t('Connect WebDriverAgent')}
     >
       <div className="grid w-full grid-cols-3 gap-[8px]">
         <div className="col-span-2 flex min-w-0 flex-col">
-          <FieldLabel required>WebDriverAgent host</FieldLabel>
+          <FieldLabel required>{t('WebDriverAgent host')}</FieldLabel>
           <input
-            aria-label="WebDriverAgent host"
+            aria-label={t('WebDriverAgent host')}
             className={inputBaseClass}
             onChange={(event) => setHost(event.target.value)}
             placeholder="localhost"
@@ -309,9 +326,9 @@ export function IOSCreateAgentCard({
           />
         </div>
         <div className="col-span-1 flex min-w-0 flex-col">
-          <FieldLabel required>Port</FieldLabel>
+          <FieldLabel required>{t('Port')}</FieldLabel>
           <input
-            aria-label="WebDriverAgent port"
+            aria-label={t('WebDriverAgent port')}
             className={`${inputBaseClass} min-w-0`}
             inputMode="numeric"
             min={1}

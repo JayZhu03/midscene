@@ -434,6 +434,22 @@ describe('MainContent overview', () => {
     expect(html).toContain('padding-right:176px');
   });
 
+  it('keeps the overview refresh button outside native Windows window controls', () => {
+    const html = renderMainContent(
+      createReadyContextValue(),
+      createElement(MainContent, {
+        activeView: 'overview',
+        titlebarInsetRight: 176,
+      }),
+    );
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    expect(
+      document
+        .querySelector('[aria-label="Refresh devices"]')
+        ?.getAttribute('style'),
+    ).toBe('right:176px');
+  });
+
   it('renders browser navigation controls for connected Web sessions', () => {
     const html = renderMainContent(
       createConnectedWebContextValue(),

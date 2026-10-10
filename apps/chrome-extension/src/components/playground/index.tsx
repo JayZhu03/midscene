@@ -36,18 +36,13 @@ function ExtensionWelcomeEmptyState() {
         description={
           <div className="extension-welcome-copy">
             <div className="extension-welcome-title">
-              Welcome to Midscene.js Playground!
+              欢迎使用 Midscene.js 操作调试！
             </div>
             <p>
-              This is a panel for experimenting and testing Midscene.js
-              features. You can use natural language instructions to operate the
-              web page, such as clicking buttons, filling in forms, and querying
-              information.
+              在这里可以体验和测试
+              Midscene.js，用自然语言操作网页，例如点击按钮、填写表单和提取信息。
             </p>
-            <p>
-              Please enter your instructions in the input box below to start
-              experiencing.
-            </p>
+            <p>在下方输入你想执行的操作，即可开始体验。</p>
           </div>
         }
       />
@@ -123,7 +118,7 @@ export function BrowserExtensionPlayground({
         try {
           const agent = getAgent(forceSameTabNavigation);
           if (!agent) {
-            throw new Error('Please configure AI settings first');
+            throw new Error('请先配置模型地址、API Key 和模型名称。');
           }
           return agent.page.screenshot();
         } catch (error) {
@@ -136,7 +131,7 @@ export function BrowserExtensionPlayground({
         try {
           const agent = getAgent(forceSameTabNavigation);
           if (!agent) {
-            throw new Error('Please configure AI settings first');
+            throw new Error('请先配置模型地址、API Key 和模型名称。');
           }
           return agent.page.screenshot();
         } catch (error) {
@@ -188,7 +183,7 @@ export function BrowserExtensionPlayground({
         ),
       }}
       branding={{
-        title: 'Playground',
+        title: '操作调试',
         version: `${extensionVersion}(SDK v${__SDK_VERSION__})`,
       }}
       // Use the same compact execution-flow skin as Studio. The extension

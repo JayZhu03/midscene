@@ -13,6 +13,11 @@
       "import": "./dist/es/index.mjs",
       "require": "./dist/lib/index.js"
     },
+    "./ui-language": {
+      "types": "./dist/types/ui-language.d.ts",
+      "import": "./dist/es/ui-language.mjs",
+      "require": "./dist/lib/ui-language.js"
+    },
     "./history-selector": {
       "types": "./dist/types/component/history-selector/index.d.ts",
       "import": "./dist/es/component/history-selector/index.mjs",
@@ -22,7 +27,10 @@
   "typesVersions": {
     "*": {
       ".": ["./dist/types/index.d.ts"],
-      "history-selector": ["./dist/types/component/history-selector/index.d.ts"]
+      "history-selector": [
+        "./dist/types/component/history-selector/index.d.ts"
+      ],
+      "ui-language": ["./dist/types/ui-language.d.ts"]
     }
   },
   "files": ["dist", "html", "README.md"],

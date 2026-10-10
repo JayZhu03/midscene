@@ -6,6 +6,7 @@ import type {
   ReportDownloadHandler,
   ServiceModeType,
 } from '../../types';
+import { t, useUiLanguage } from '../../ui-language';
 import type { ReplayScriptsInfo } from '../../utils/replay-scripts';
 import { emptyResultTip, serverLaunchTip } from '../misc';
 import { Player, type PlayerPresentation } from '../player';
@@ -50,6 +51,8 @@ export const PlaygroundResultView: React.FC<PlaygroundResultProps> = ({
   playerPresentation,
   hidePlayerFullscreenControl,
 }) => {
+  useUiLanguage();
+
   let resultWrapperClassName = 'result-wrapper';
   if (verticalMode) {
     resultWrapperClassName += ' vertical-mode-result';
@@ -84,13 +87,13 @@ export const PlaygroundResultView: React.FC<PlaygroundResultProps> = ({
         <div className="combined-result-layout">
           <div style={{ flex: '0 0 auto', maxHeight: '40%', overflow: 'auto' }}>
             <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-              Error:
+              {t('错误：')}
             </div>
             {errorNode}
           </div>
           <div className="combined-result-section">
             <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
-              Report:
+              {t('报告：')}
             </div>
             <div className="combined-result-player">
               <Player
@@ -135,11 +138,15 @@ export const PlaygroundResultView: React.FC<PlaygroundResultProps> = ({
     resultDataToShow = (
       <div className="combined-result-layout">
         <div style={{ flex: '0 0 auto' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Output:</div>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+            {t('输出：')}
+          </div>
           {resultOutput}
         </div>
         <div className="combined-result-section">
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Report:</div>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+            {t('报告：')}
+          </div>
           <div className="combined-result-player">
             <Player
               key={replayCounter}
@@ -199,11 +206,15 @@ export const PlaygroundResultView: React.FC<PlaygroundResultProps> = ({
     resultDataToShow = (
       <div className="combined-result-layout">
         <div style={{ flex: '0 0 auto' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Output:</div>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+            {t('输出：')}
+          </div>
           {resultOutput}
         </div>
         <div className="combined-result-section">
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Report:</div>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+            {t('报告：')}
+          </div>
           <div className="combined-result-player">
             <Player
               key={replayCounter}

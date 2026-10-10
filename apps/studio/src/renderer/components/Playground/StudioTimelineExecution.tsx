@@ -5,6 +5,7 @@ import type {
   UniversalPlaygroundConfig,
 } from '@midscene/visualizer';
 import type { ReactNode } from 'react';
+import { t, useStudioLanguage } from '../../i18n';
 import { downloadStudioReport } from '../../playground/report-download';
 import type { useStudioPlayground } from '../../playground/useStudioPlayground';
 import {
@@ -46,19 +47,25 @@ type StudioExecutionTimelineOptions = {
 };
 
 function NotConnectedFallback() {
+  useStudioLanguage();
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[8px] px-[24px] text-center">
       <div className="text-[14px] font-medium text-text-primary">
-        No agent connected
+        {t('No agent connected')}
       </div>
       <div className="text-[12px] leading-[20px] text-text-secondary">
-        Create or pick a device from the Overview page to start a session.
+        {t(
+          'Create or pick a device from the Overview page to start a session.',
+        )}
       </div>
     </div>
   );
 }
 
 function ExecutionEmptyIcon() {
+  useStudioLanguage();
+
   return (
     <svg
       aria-hidden="true"
@@ -93,12 +100,16 @@ function ExecutionEmptyIcon() {
 }
 
 function StudioExecutionEmptyState() {
+  useStudioLanguage();
+
   return (
     <div className="studio-execution-empty-state">
       <ExecutionEmptyIcon />
-      <div className="studio-execution-empty-state-title">No execution yet</div>
+      <div className="studio-execution-empty-state-title">
+        {t('No execution yet')}
+      </div>
       <div className="studio-execution-empty-state-description">
-        The mission progress will be displayed here.
+        {t('The mission progress will be displayed here.')}
       </div>
     </div>
   );
@@ -197,6 +208,8 @@ export function StudioTimelineExecution({
   playgroundConfig: StudioTimelineExecutionConfig;
   title: string;
 }) {
+  useStudioLanguage();
+
   return (
     <PlaygroundConversationPanel
       appVersion={__APP_VERSION__}

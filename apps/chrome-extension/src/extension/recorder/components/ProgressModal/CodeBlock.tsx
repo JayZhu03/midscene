@@ -96,10 +96,10 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
                 'relative bg-gray-50 rounded-[8px] border text-sm overflow-auto max-h-128 font-mono border-radius-[8px] p-4 border-[#F2F4F7]'
               }
             >
-              <code>Generating code...</code>
+              <code>正在生成代码…</code>
 
               <div className="absolute bottom-3 right-2 bg-[#2B83FF1F] text-[#2B83FF] px-2 py-1 rounded-full text-xs">
-                Analyzing...
+                正在分析…
               </div>
             </pre>
           )}
@@ -120,27 +120,27 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           <Text type="secondary" className="text-xs">
             {type === 'playwright' ? (
               <>
-                💡 Learn how to integrate Playwright with Midscene.js
+                💡 了解如何将 Playwright 与 Midscene.js 集成
                 <a
                   target="_blank"
-                  href="https://midscenejs.com/integrate-with-playwright.html"
+                  href="https://midscenejs.com/zh/integrate-with-playwright.html"
                   rel="noreferrer"
                 >
                   {' '}
-                  here
+                  查看文档
                 </a>
                 .
               </>
             ) : (
               <>
-                💡 Learn how to integrate YAML scripts with Midscene.js
+                💡 了解如何使用 Midscene.js YAML 脚本
                 <a
                   target="_blank"
-                  href="https://midscenejs.com/automate-with-scripts-in-yaml.html"
+                  href="https://midscenejs.com/zh/automate-with-scripts-in-yaml.html"
                   rel="noreferrer"
                 >
                   {' '}
-                  here
+                  查看文档
                 </a>
                 .
               </>

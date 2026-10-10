@@ -1,3 +1,4 @@
+import { t, useStudioLanguage } from '../../i18n';
 export type ConnectionStatus =
   | 'connected'
   | 'connecting'
@@ -49,12 +50,14 @@ export function ConnectionStatusDot({
   status,
   size = 12,
 }: ConnectionStatusDotProps) {
+  useStudioLanguage();
+  useStudioLanguage();
   const { inner, border } = PALETTE[status];
   const innerSize = Math.max(2, Math.round((size * 2) / 3));
   return (
     <span
       role="img"
-      aria-label={LABEL[status]}
+      aria-label={t(LABEL[status])}
       style={{
         display: 'inline-flex',
         flexShrink: 0,

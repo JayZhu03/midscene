@@ -25,6 +25,7 @@ export default defineConfig({
     external: ['@silvia-odwyer/photon'],
   },
   test: {
+    setupFiles: ['./tests/setup-language.ts'],
     coverage: createCoverageConfig(__dirname),
     environment: 'node',
     environmentMatchGlobs: [

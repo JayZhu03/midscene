@@ -43,6 +43,7 @@ import {
 import { annotateRects, imageInfoOfBase64 } from '@midscene/shared/img';
 import { getDebug } from '@midscene/shared/logger';
 import type {
+  MidsceneRecorderNativeTarget,
   MidsceneRecorderScreenshotAssetRef,
   MidsceneRecorderSemantic,
   MidsceneRecorderSemanticAction,
@@ -72,6 +73,7 @@ import type {
   PreparedPlaygroundPlatform,
 } from './platform';
 import { PointerInputError, dispatchPointer } from './pointer-dispatch';
+import { capturePlaywrightRecorderTarget } from './recorder-native-playwright';
 import {
   type PlaygroundRuntimeInfo,
   buildRuntimeInfo,
@@ -1181,7 +1183,7 @@ export function createManualExecutorContext(
     taskId: `manual-${uuid()}`,
     status: 'running',
   };
-  return { task };
+  return { task, skipDefaultWait: true };
 }
 const errorHandler = (
   err: unknown,
@@ -1672,6 +1674,13 @@ class PlaygroundServer {
   }
 
   private async takeRecorderScreenshot(): Promise<string | undefined> {
+    // Reuse a recent preview capture instead of making Chromium encode a
+    // second high-quality JPEG for every recorded action. Idle/stale streams
+    // still fall back to a direct screenshot.
+    const previewFrame = this._mjpegHandler.getLastFrameBase64(500);
+    if (previewFrame) {
+      return previewFrame;
+    }
     const agent = this._activeConnection.agent;
     if (typeof agent?.interface?.screenshotBase64 !== 'function') {
       return undefined;
@@ -1804,10 +1813,66 @@ class PlaygroundServer {
     return persistRecorderScreenshotAsset(this._recorderSessionId, screenshot);
   }
 
+  private async captureNativeRecorderTarget(
+    agent: PageAgent,
+    payload: Record<string, unknown>,
+  ): Promise<MidsceneRecorderNativeTarget | undefined> {
+    if (
+      !this._recorderSessionId ||
+      !['web', 'puppeteer', 'playwright'].includes(
+        agent.interface.interfaceType,
+      ) ||
+      ![
+        'Tap',
+        'DoubleClick',
+        'RightClick',
+        'LongPress',
+        'Input',
+        'KeyboardPress',
+        'Scroll',
+        'DragAndDrop',
+      ].includes(String(payload.actionType))
+    )
+      return undefined;
+    if (typeof agent.interface.evaluateJavaScript !== 'function') {
+      return {
+        error: '当前浏览器不支持 DOM 采集，请使用 Studio Web 浏览器重新录制。',
+      };
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        capturePlaywrightRecorderTarget(
+          (script) => agent.interface.evaluateJavaScript!(script),
+          payload,
+        ),
+        new Promise<MidsceneRecorderNativeTarget>((resolve) => {
+          timer = setTimeout(
+            () => resolve({ error: 'DOM 采集超时，请重新录制该步骤。' }),
+            1500,
+          );
+        }),
+      ]);
+      if (
+        result &&
+        typeof result === 'object' &&
+        ('locator' in result || 'error' in result)
+      ) {
+        return result as MidsceneRecorderNativeTarget;
+      }
+      return { error: 'DOM 采集返回了无效结果，请重新录制。' };
+    } catch {
+      return { error: 'DOM 采集失败，请重新录制该步骤。' };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   private async storeStudioPreviewRecorderEvent(
     payload: Record<string, unknown>,
     snapshotBefore?: PlaygroundRecorderSnapshot,
     agent?: PageAgent,
+    nativeTarget?: MidsceneRecorderNativeTarget,
   ): Promise<void> {
     if (!this._recorderSessionId) {
       return;
@@ -1837,6 +1902,7 @@ class PlaygroundServer {
       before?.pageState || pageStateAfter,
       screenshotBefore,
       screenshotAfter,
+      nativeTarget,
     );
     if (!event) {
       this._studioPreviewRecorderLastScreenshot = screenshotAfter;
@@ -1859,6 +1925,7 @@ class PlaygroundServer {
     pageState: PlaygroundRecorderPageState,
     screenshotBefore?: string,
     screenshotAfter?: string,
+    nativeTarget?: MidsceneRecorderNativeTarget,
   ): Promise<PlaygroundRecorderEvent | null> {
     const actionType =
       typeof payload.actionType === 'string' ? payload.actionType : undefined;
@@ -1915,6 +1982,7 @@ class PlaygroundServer {
       source: 'studio-preview' as const,
       actionType,
       rawPayload: payload,
+      ...(nativeTarget ? { nativeTarget } : {}),
       pageInfo,
       url,
       title,
@@ -2380,11 +2448,29 @@ class PlaygroundServer {
     current: PlaygroundRecorderEvent,
     next: PlaygroundRecorderEvent,
   ) {
+    const currentSelection =
+      current.nativeTarget?.selection ||
+      current.nativeTarget?.contentEditableSelection;
+    const nextSelection =
+      next.nativeTarget?.selection ||
+      next.nativeTarget?.contentEditableSelection;
     return (
       current.url === next.url &&
       current.title === next.title &&
       current.rawPayload?.x === next.rawPayload?.x &&
-      current.rawPayload?.y === next.rawPayload?.y
+      current.rawPayload?.y === next.rawPayload?.y &&
+      JSON.stringify(current.nativeTarget?.locator) ===
+        JSON.stringify(next.nativeTarget?.locator) &&
+      current.nativeTarget?.error === next.nativeTarget?.error &&
+      current.nativeTarget?.sensitive === next.nativeTarget?.sensitive &&
+      ((!currentSelection && !nextSelection) ||
+        Boolean(
+          currentSelection &&
+            nextSelection &&
+            nextSelection.start === nextSelection.end &&
+            nextSelection.start ===
+              currentSelection.start + (current.value?.length || 0),
+        ))
     );
   }
 
@@ -2601,6 +2687,7 @@ class PlaygroundServer {
     payload: Record<string, unknown>,
     snapshotBefore?: PlaygroundRecorderSnapshot,
     agent?: PageAgent,
+    nativeTarget?: MidsceneRecorderNativeTarget,
   ): void {
     const sessionId = this._recorderSessionId;
     if (!sessionId) {
@@ -2622,6 +2709,7 @@ class PlaygroundServer {
             payload,
             snapshotBefore,
             agent,
+            nativeTarget,
           );
         } finally {
           this._recorderPendingCaptures = Math.max(
@@ -4018,6 +4106,10 @@ class PlaygroundServer {
         });
         const recorderSnapshotBefore =
           this.captureCachedRecorderSnapshotBeforeInteract();
+        const nativeTarget = await this.captureNativeRecorderTarget(
+          agent,
+          req.body ?? {},
+        );
         const inputPrimitives = agent.interface.inputPrimitives;
         if (inputPrimitives) {
           await dispatchPointer(inputPrimitives, req.body ?? {}, () =>
@@ -4032,6 +4124,7 @@ class PlaygroundServer {
             req.body ?? {},
             recorderSnapshotBefore,
             agent,
+            nativeTarget,
           );
           debugInteract('manual interact completed %o', {
             payload: summarizeInteractPayload(req.body ?? {}),
@@ -4062,6 +4155,7 @@ class PlaygroundServer {
           req.body ?? {},
           recorderSnapshotBefore,
           agent,
+          nativeTarget,
         );
         debugInteract('manual interact completed %o', {
           payload: summarizeInteractPayload(req.body ?? {}),

@@ -30,7 +30,7 @@ export const SessionModals: React.FC<SessionModalsProps> = ({
     <>
       {/* Edit Session Modal */}
       <Modal
-        title="Edit Recording Session"
+        title="编辑录制记录"
         open={isEditModalVisible}
         onCancel={() => {
           setIsEditModalVisible(false);
@@ -43,13 +43,13 @@ export const SessionModals: React.FC<SessionModalsProps> = ({
         <Form form={editForm} layout="vertical" onFinish={onUpdateSession}>
           <Form.Item
             name="name"
-            label="Session Name"
-            rules={[{ required: true, message: 'Please enter a session name' }]}
+            label="录制名称"
+            rules={[{ required: true, message: '请输入录制名称' }]}
           >
-            <Input placeholder="Enter session name" />
+            <Input placeholder="输入录制名称" />
           </Form.Item>
-          <Form.Item name="description" label="Description (Optional)">
-            <Input.TextArea placeholder="Enter session description" rows={3} />
+          <Form.Item name="description" label="说明（可选）">
+            <Input.TextArea placeholder="输入录制说明" rows={3} />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
             <Space>
@@ -60,10 +60,10 @@ export const SessionModals: React.FC<SessionModalsProps> = ({
                   editForm.resetFields();
                 }}
               >
-                Cancel
+                取消
               </Button>
               <Button type="primary" htmlType="submit">
-                Update Session
+                保存修改
               </Button>
             </Space>
           </Form.Item>

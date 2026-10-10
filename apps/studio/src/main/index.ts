@@ -210,7 +210,7 @@ const getBackgroundColor = () =>
 const getTitleBarOverlay = (): TitleBarOverlay => ({
   color: '#00000000',
   height: 56,
-  symbolColor: '#17212b',
+  symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#17212b',
 });
 
 const sanitizeImagePreviewFileName = (fileName?: string) => {
@@ -667,6 +667,9 @@ const registerIpcHandlers = () => {
         return;
       }
       const isDark = nativeTheme.shouldUseDarkColors;
+      if (process.platform !== 'darwin') {
+        mainWindow.setTitleBarOverlay(getTitleBarOverlay());
+      }
       // Keep the window backgroundColor transparent on platforms that rely
       // on OS material (macOS vibrancy / Windows acrylic); only Linux needs
       // a solid theme-tinted fallback.
