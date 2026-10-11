@@ -283,7 +283,7 @@ describe('ShellLayout right panel tabs', () => {
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>('[aria-label="Collapse sidebar"]')
-        ?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        ?.click();
     });
 
     expect(container.contains(updateButton)).toBe(true);
@@ -365,7 +365,7 @@ describe('ShellLayout right panel tabs', () => {
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>('[aria-label="Collapse sidebar"]')
-        ?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        ?.click();
     });
     expect(mainArea.style.left).toBe('4px');
 

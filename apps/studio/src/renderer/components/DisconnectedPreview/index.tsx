@@ -6,7 +6,7 @@ export interface DisconnectedPreviewProps {
 
 export default function DisconnectedPreview({
   iconSrc,
-  title = t('Connect Android Device'),
+  title = t('Open test page'),
 }: DisconnectedPreviewProps) {
   useStudioLanguage();
 

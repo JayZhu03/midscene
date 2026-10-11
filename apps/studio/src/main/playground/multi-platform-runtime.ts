@@ -8,6 +8,7 @@ import type {
   RegisteredPlaygroundPlatform,
 } from '@midscene/playground';
 import { getDebug } from '@midscene/shared/logger';
+import type { launchPuppeteerPage } from '@midscene/web/puppeteer-agent-launcher';
 import type { StudioAgentOptions } from '@shared/agent-options';
 import type { DiscoveredDevice } from '@shared/electron-contract';
 import type { PlaygroundBootstrap } from '@shared/electron-contract';
@@ -16,6 +17,8 @@ import { ensureStudioShellEnvHydrated } from '../shell-env';
 import { createStudioCorsOptions } from './cors';
 import type { DeviceDiscoveryService } from './device-discovery';
 import type { PlaygroundRuntimeService } from './types';
+import { launchPersistentWebPage, webProfileArgs } from './web-profile';
+import { attachWebSiteIcon } from './web-site-icon';
 
 const require = createRequire(__filename);
 const debugWebRuntime = getDebug('studio:web-runtime', { console: true });
@@ -49,6 +52,7 @@ type StudioLaunchPuppeteerPage = (
     url: string;
     viewportWidth: number;
     viewportHeight: number;
+    chromeArgs?: string[];
   },
   preference?: {
     headed?: boolean;
@@ -169,12 +173,17 @@ export async function loadWebPlaygroundModule(): Promise<
     PuppeteerAgent: StudioPuppeteerAgentConstructor;
   };
   const launcherModule = require('@midscene/web/puppeteer-agent-launcher') as {
-    launchPuppeteerPage: StudioLaunchPuppeteerPage;
+    launchPuppeteerPage: typeof launchPuppeteerPage;
   };
 
   return {
     PuppeteerAgent: webModule.PuppeteerAgent,
-    launchPuppeteerPage: launcherModule.launchPuppeteerPage,
+    launchPuppeteerPage: (target, preference) =>
+      launchPersistentWebPage(
+        launcherModule.launchPuppeteerPage,
+        target,
+        preference,
+      ),
   };
 }
 
@@ -336,9 +345,11 @@ function createStudioWebPreviewDescriptor(): PlaygroundPreviewDescriptor {
 async function prepareStudioWebPlatform({
   loadWebModule,
   getAgentOptions,
+  profileRoot,
 }: {
   loadWebModule: typeof loadWebPlaygroundModule;
   getAgentOptions: () => StudioAgentOptions;
+  profileRoot?: string;
 }): Promise<PreparedPlaygroundPlatform> {
   const webModule = await loadWebModule();
   // The two cleanup baskets are kept separate so the playground server's
@@ -449,6 +460,9 @@ async function prepareStudioWebPlatform({
                 url,
                 viewportWidth,
                 viewportHeight,
+                ...(profileRoot
+                  ? { chromeArgs: webProfileArgs(profileRoot, url) }
+                  : {}),
               },
               {
                 headed,
@@ -462,6 +476,7 @@ async function prepareStudioWebPlatform({
             ...getAgentOptions(),
             cacheId: 'studio-web',
           });
+          attachWebSiteIcon(agent.interface);
           agentCleanup = [
             {
               name: 'studio_web_agent',
@@ -523,6 +538,7 @@ const createStudioPlatformSpecs = ({
   loadIosModule = loadIosPlaygroundModule,
   loadWebModule = loadWebPlaygroundModule,
   getAgentOptions = () => ({}),
+  profileRoot,
 }: {
   loadAndroidModule?: typeof loadAndroidPlaygroundModule;
   loadComputerModule?: typeof loadComputerPlaygroundModule;
@@ -531,6 +547,7 @@ const createStudioPlatformSpecs = ({
   loadIosModule?: typeof loadIosPlaygroundModule;
   loadWebModule?: typeof loadWebPlaygroundModule;
   getAgentOptions?: () => StudioAgentOptions;
+  profileRoot?: string;
 } = {}): StudioPlatformSpec[] => [
   {
     id: 'web',
@@ -541,6 +558,7 @@ const createStudioPlatformSpecs = ({
       prepareStudioWebPlatform({
         loadWebModule,
         getAgentOptions,
+        profileRoot,
       }),
   },
   {
@@ -611,15 +629,17 @@ function buildRegisteredPlatforms(
   studioPlatformSpecs: StudioPlatformSpec[],
   resolvePackageStaticDir: (packageName: string) => string,
 ): RegisteredPlaygroundPlatform[] {
-  return studioPlatformSpecs.map((spec) => {
-    const staticDir = resolvePackageStaticDir(spec.staticDirPackage);
-    return {
-      id: spec.id,
-      label: spec.label,
-      description: spec.description,
-      prepare: () => spec.prepare(staticDir),
-    };
-  });
+  return studioPlatformSpecs
+    .filter((spec) => spec.id === 'web')
+    .map((spec) => {
+      const staticDir = resolvePackageStaticDir(spec.staticDirPackage);
+      return {
+        id: spec.id,
+        label: spec.label,
+        description: spec.description,
+        prepare: () => spec.prepare(staticDir),
+      };
+    });
 }
 
 /**
@@ -640,6 +660,7 @@ export function createMultiPlatformRuntimeService({
   loadIosModule = loadIosPlaygroundModule,
   loadWebModule = loadWebPlaygroundModule,
   resolvePackageStaticDir = resolveStaticDir,
+  profileRoot,
 }: {
   deviceDiscoveryService?: StudioDeviceDiscoveryService;
   loadModules?: () => Promise<MultiPlatformRuntimeModules>;
@@ -650,6 +671,7 @@ export function createMultiPlatformRuntimeService({
   loadIosModule?: typeof loadIosPlaygroundModule;
   loadWebModule?: typeof loadWebPlaygroundModule;
   resolvePackageStaticDir?: (packageName: string) => string;
+  profileRoot?: string;
 } = {}): PlaygroundRuntimeService {
   let agentOptions: StudioAgentOptions = {};
   let bootstrap: PlaygroundBootstrap = {
@@ -708,6 +730,7 @@ export function createMultiPlatformRuntimeService({
                         launchPuppeteerPage: runtimeModules.launchPuppeteerPage,
                       }),
                       getAgentOptions: () => agentOptions,
+                      profileRoot,
                     }),
                 },
                 {
@@ -770,6 +793,7 @@ export function createMultiPlatformRuntimeService({
                 loadHarmonyModule,
                 loadIosModule,
                 loadWebModule,
+                profileRoot,
                 getAgentOptions: () => agentOptions,
               }),
           resolvePackageStaticDir,
@@ -779,7 +803,7 @@ export function createMultiPlatformRuntimeService({
             platforms,
             {
               title: 'Midscene Studio Beta',
-              description: 'Multi-platform playground',
+              description: 'Web testing',
               selectorFieldKey: 'platformId',
               selectorVariant: 'cards',
             },

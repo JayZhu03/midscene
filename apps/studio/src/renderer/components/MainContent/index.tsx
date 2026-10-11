@@ -2,6 +2,7 @@ import { PlaygroundPreview } from '@midscene/playground-app';
 import { getDebug } from '@midscene/shared/logger';
 import type { PlaygroundExecutionStatus } from '@midscene/visualizer';
 import type { StudioPlatformId } from '@shared/electron-contract';
+import type { WebSiteIcon } from '@shared/web-site-icon';
 import {
   type CSSProperties,
   type ReactNode,
@@ -16,6 +17,14 @@ import {
   type StudioPreviewConnectionState,
   shouldPauseDiscoveryPollingDuringPreview,
 } from '../../playground/preview-discovery';
+import {
+  type SavedWebPage,
+  loadSavedWebPages,
+  saveWebPage,
+  savedWebPageDisplay,
+  updateWebPageIcon,
+  useSavedWebPages,
+} from '../../playground/saved-web-pages';
 import {
   buildDeviceSelectionFormValues,
   buildStudioSidebarDeviceBuckets,
@@ -39,6 +48,7 @@ import {
 import type { ShellActiveView } from '../ShellLayout/types';
 import StudioModePanel from '../StudioModePanel';
 import type { StudioRightPanelView } from '../StudioRightPanel';
+import { WebSiteIcon as WebsiteIcon } from '../WebSiteIcon';
 import { DeviceList } from './DeviceList';
 import { MobilePreviewFrame } from './MobilePreviewFrame';
 import {
@@ -202,7 +212,7 @@ function resolvePlatformLogo(platform?: string): string {
     case 'android':
       return assetUrls.main.platformAndroid;
     default:
-      return assetUrls.main.platformAndroid;
+      return assetUrls.main.platformWeb;
   }
 }
 
@@ -219,7 +229,7 @@ function getPreviewConnectingLabel(platform?: string): string {
     case 'android':
       return t('Preparing Android device connection…');
     default:
-      return t('Preparing device connection…');
+      return t('Opening Web page…');
   }
 }
 
@@ -236,7 +246,7 @@ function getDisconnectedPreviewTitle(platform?: string): string {
     case 'android':
       return t('Connect Android Device');
     default:
-      return t('Connect Device');
+      return t('Open test page');
   }
 }
 
@@ -302,38 +312,6 @@ function WebNavigationButton({
   );
 }
 
-function OverviewToolbar({
-  onRefresh,
-  refreshing,
-  titlebarInsetRight,
-}: {
-  onRefresh: () => void;
-  refreshing: boolean;
-  titlebarInsetRight: number;
-}) {
-  useStudioLanguage();
-
-  // Vertically centered in the 52px drag header strip so the button lines
-  // up with the sidebar collapse toggle on the opposite side. The
-  // surrounding header is `-webkit-app-region: drag`, so the button must
-  // explicitly opt back out via `app-no-drag` or the OS swallows hover
-  // and click events.
-  return (
-    <>
-      <button
-        aria-label={t('Refresh devices')}
-        className="app-no-drag absolute right-[16px] top-[10px] z-10 flex h-[32px] w-[32px] cursor-pointer items-center justify-center rounded-[8px] border border-border-subtle bg-transparent text-text-secondary transition-colors hover:bg-surface-hover-strong hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={refreshing}
-        style={{ right: Math.max(16, titlebarInsetRight) }}
-        onClick={onRefresh}
-        type="button"
-      >
-        <RefreshIcon spinning={refreshing} />
-      </button>
-    </>
-  );
-}
-
 export default function MainContent({
   activeView,
   pendingCreatePlatform,
@@ -374,7 +352,6 @@ export default function MainContent({
   const [previewStatusText, setPreviewStatusText] = useState<string | null>(
     null,
   );
-  const [overviewRefreshing, setOverviewRefreshing] = useState(false);
   const [webNavigationBusyAction, setWebNavigationBusyAction] = useState<
     'GoBack' | 'GoForward' | 'Stop' | 'Reload' | null
   >(null);
@@ -434,8 +411,14 @@ export default function MainContent({
   const connectedDeviceLabel = isReady
     ? resolveConnectedDeviceLabel(runtimeInfo, { emptyLabel: '' })
     : undefined;
+  const savedPages = useSavedWebPages();
+  const webDisplay = savedWebPageDisplay(
+    runtimeInfo?.metadata?.url ?? previewFormValues['web.url'],
+    savedPages,
+  );
   const lastKnownDeviceLabelRef = useRef<string | undefined>(undefined);
   const resolvedDeviceLabel =
+    (runtimeInfo?.platformId === 'web' ? webDisplay?.name : undefined) ||
     (isConnected ? connectedDeviceLabel : selectedDeviceLabel) ||
     selectedDeviceLabel ||
     connectedDeviceLabel;
@@ -448,7 +431,7 @@ export default function MainContent({
       : isReady
         ? resolvedDeviceLabel ||
           lastKnownDeviceLabelRef.current ||
-          t('No device selected')
+          t('No page opened')
         : t('Playground starting');
   const shouldFrameMobilePreview = shouldEnableMobilePreviewFrame(
     runtimeInfo,
@@ -476,7 +459,7 @@ export default function MainContent({
   const previewPlatform =
     pendingCreatePlatform && (!isConnected || isSessionMutating)
       ? pendingCreatePlatform
-      : (resolvedPreviewPlatform ?? pendingCreatePlatform);
+      : (resolvedPreviewPlatform ?? pendingCreatePlatform ?? 'web');
   const webPreviewAspectRatio =
     resolveStudioWebPreviewAspectRatio(previewFormValues);
   const webPreviewCanvasStyle: CSSProperties | undefined =
@@ -522,7 +505,7 @@ export default function MainContent({
   if (previewDeviceSize) {
     previewHeaderSubInfo.push({
       key: 'viewport',
-      text: `Viewport: ${previewDeviceSize.width} x ${previewDeviceSize.height}`,
+      text: `${t('Page size')}: ${previewDeviceSize.width} × ${previewDeviceSize.height}`,
     });
   }
   const pillStatusLabel: Record<ConnectionStatus, string> = {
@@ -716,6 +699,10 @@ export default function MainContent({
         const info = await webNavigationSDK.getInterfaceInfo();
         if (cancelled) return;
         setWebIsLoading(Boolean(info?.navigationState?.isLoading));
+        const siteIcon = (
+          info?.navigationState as { siteIcon?: WebSiteIcon } | undefined
+        )?.siteIcon;
+        if (siteIcon) updateWebPageIcon(siteIcon);
       } catch (error) {
         if (!cancelled) {
           debugWebNavigation('failed to refresh web loading state: %s', error);
@@ -813,6 +800,88 @@ export default function MainContent({
     void refreshSessionSetup(currentFormValuesRef.current ?? undefined);
   }, [previewStatus, refreshSessionSetup]);
 
+  const openWebPage = async (input: SavedWebPage) => {
+    if (!isReady || studioPlayground.controller.state.sessionMutating) return;
+    const { headed, url, viewportHeight, viewportWidth } = input;
+    const { actions, state } = studioPlayground.controller;
+    const selectionValues = {
+      platformId: 'web' as const,
+      'web.url': url,
+      'web.viewportWidth': viewportWidth,
+      'web.viewportHeight': viewportHeight,
+      'web.headed': headed,
+    };
+    setPendingCreatePlatform?.('web');
+    state.form.setFieldsValue(selectionValues);
+    onSelectDeviceView?.();
+    if (state.sessionViewState.connected) {
+      await stopStudioActivityBeforeSessionDestroy();
+      await actions.destroySession();
+    }
+    // Destroy refreshes setup defaults; keep the preview and recorder aligned
+    // with the dimensions of the newly selected saved page.
+    state.form.setFieldsValue(selectionValues);
+    const created = await actions.createSession({
+      ...state.form.getFieldsValue(true),
+      ...selectionValues,
+    });
+    if (!created) return;
+    saveWebPage(input);
+    // The page is settled into waitForNetworkIdle by the time
+    // createSession resolves, but the MJPEG <img> doesn't mount
+    // until React commits the new "connected" state and the
+    // browser opens the /mjpeg HTTP request. If we fire Reload
+    // immediately, page.reload() generates frames *before* any
+    // subscriber is attached — by the time the <img> connects,
+    // the page is idle again and CDP screencast emits nothing
+    // new, so the user sees a blank canvas. Wait long enough for
+    // the React commit + browser MJPEG handshake to complete
+    // (~1.5s in practice) before triggering the reload that
+    // actually pushes a frame to the now-attached subscriber.
+    window.setTimeout(() => {
+      if (studioPlayground.phase !== 'ready') return;
+      const sdk = studioPlayground.controller.state.playgroundSDK;
+      void sdk.interact({ actionType: 'Reload' }).catch((error: unknown) => {
+        debugWebNavigation('post-create web reload failed: %s', error);
+      });
+    }, 1500);
+  };
+  const openWebPageRef = useRef(openWebPage);
+  openWebPageRef.current = openWebPage;
+  const restoredWebPageRef = useRef(false);
+  useEffect(() => {
+    const open = (event: Event) => {
+      restoredWebPageRef.current = true;
+      void openWebPageRef
+        .current((event as CustomEvent<SavedWebPage>).detail)
+        .catch((error) =>
+          debugWebNavigation('Unable to open saved page: %s', error),
+        );
+    };
+    window.addEventListener('studio:open-saved-page', open);
+    return () => window.removeEventListener('studio:open-saved-page', open);
+  }, []);
+  useEffect(() => {
+    if (
+      !isReady ||
+      !studioPlayground.controller.state.serverOnline ||
+      !studioPlayground.controller.state.sessionSetup ||
+      studioPlayground.controller.state.sessionLoading ||
+      isSessionMutating ||
+      restoredWebPageRef.current
+    )
+      return;
+    restoredWebPageRef.current = true;
+    if (isConnected) return;
+    const saved = loadSavedWebPages()[0];
+    if (saved)
+      void openWebPageRef
+        .current(saved)
+        .catch((error) =>
+          debugWebNavigation('Unable to restore page: %s', error),
+        );
+  }, [isReady, studioPlayground, isSessionMutating, isConnected]);
+
   if (activeView === 'overview') {
     const overviewSessionBuckets = isReady
       ? buildStudioSidebarDeviceBuckets({
@@ -834,30 +903,6 @@ export default function MainContent({
     return (
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-surface">
         <div className="app-drag absolute left-0 right-0 top-0 z-0 h-[48px]" />
-        <OverviewToolbar
-          titlebarInsetRight={titlebarInsetRight}
-          onRefresh={async () => {
-            if (!isReady || overviewRefreshing) {
-              return;
-            }
-            setOverviewRefreshing(true);
-            try {
-              // Refresh BOTH sources: session-setup targets (server-side
-              // list) and cross-platform discovery (ADB/HDC/displays).
-              // Discovery is what surfaces an unplug while a session is
-              // still technically "connected" on the server.
-              await Promise.all([
-                studioPlayground.controller.actions.refreshSessionSetup(
-                  studioPlayground.controller.state.formValues,
-                ),
-                studioPlayground.refreshDiscoveredDevices(),
-              ]);
-            } finally {
-              setOverviewRefreshing(false);
-            }
-          }}
-          refreshing={overviewRefreshing}
-        />
         <DeviceList
           buckets={overviewBuckets}
           connectingDeviceId={overviewSelectedDeviceId}
@@ -868,76 +913,7 @@ export default function MainContent({
           sessionMutating={
             isReady ? studioPlayground.controller.state.sessionMutating : false
           }
-          onCreateWebSession={async ({
-            headed,
-            url,
-            viewportHeight,
-            viewportWidth,
-          }) => {
-            if (!isReady) return;
-            const { actions, state } = studioPlayground.controller;
-            const selectionValues = {
-              platformId: 'web' as const,
-              'web.url': url,
-              'web.viewportWidth': viewportWidth,
-              'web.viewportHeight': viewportHeight,
-              'web.headed': headed,
-            };
-            setPendingCreatePlatform?.('web');
-            state.form.setFieldsValue(selectionValues);
-            onSelectDeviceView?.();
-            if (state.sessionViewState.connected) {
-              await stopStudioActivityBeforeSessionDestroy();
-              await actions.destroySession();
-            }
-            await actions.createSession({
-              ...state.form.getFieldsValue(true),
-              ...selectionValues,
-            });
-            // The page is settled into waitForNetworkIdle by the time
-            // createSession resolves, but the MJPEG <img> doesn't mount
-            // until React commits the new "connected" state and the
-            // browser opens the /mjpeg HTTP request. If we fire Reload
-            // immediately, page.reload() generates frames *before* any
-            // subscriber is attached — by the time the <img> connects,
-            // the page is idle again and CDP screencast emits nothing
-            // new, so the user sees a blank canvas. Wait long enough for
-            // the React commit + browser MJPEG handshake to complete
-            // (~1.5s in practice) before triggering the reload that
-            // actually pushes a frame to the now-attached subscriber.
-            window.setTimeout(() => {
-              if (studioPlayground.phase !== 'ready') return;
-              const sdk = studioPlayground.controller.state.playgroundSDK;
-              void sdk
-                .interact({ actionType: 'Reload' })
-                .catch((error: unknown) => {
-                  debugWebNavigation(
-                    'post-create web reload failed: %s',
-                    error,
-                  );
-                });
-            }, 1500);
-          }}
-          onCreateIOSSession={async ({ host, port }) => {
-            if (!isReady) return;
-            const { actions, state } = studioPlayground.controller;
-            const selectionValues = {
-              platformId: 'ios' as const,
-              'ios.host': host,
-              'ios.port': port,
-            };
-            setPendingCreatePlatform?.('ios');
-            state.form.setFieldsValue(selectionValues);
-            onSelectDeviceView?.();
-            if (state.sessionViewState.connected) {
-              await stopStudioActivityBeforeSessionDestroy();
-              await actions.destroySession();
-            }
-            await actions.createSession({
-              ...state.form.getFieldsValue(true),
-              ...selectionValues,
-            });
-          }}
+          onCreateWebSession={openWebPage}
           onConnect={async (platform, device) => {
             if (!isReady) {
               return;
@@ -1005,12 +981,20 @@ export default function MainContent({
       >
         <div className="flex min-w-0 flex-1 items-center gap-[8px]">
           <div className="ml-[8px] flex h-[32px] w-[32px] shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-border-subtle bg-surface-muted">
-            <img
-              alt=""
-              aria-hidden="true"
-              className="h-[26px] w-[26px] object-contain"
-              src={resolvePlatformLogo(previewPlatform)}
-            />
+            {previewPlatform === 'web' && webDisplay ? (
+              <WebsiteIcon
+                key={webDisplay.url}
+                page={webDisplay}
+                className="size-[26px] shrink-0"
+              />
+            ) : (
+              <img
+                alt=""
+                aria-hidden="true"
+                className="h-[26px] w-[26px] object-contain"
+                src={resolvePlatformLogo(previewPlatform)}
+              />
+            )}
           </div>
           <div className="flex min-w-0 flex-col">
             <div className="flex min-w-0 items-center gap-[8px]">
@@ -1196,8 +1180,8 @@ export default function MainContent({
                   }}
                   renderErrorOverlay={({ retry }) => (
                     <ConnectionFailedPreview
-                      adbId={previewDeviceId}
-                      iconSrc={assetUrls.main.connectionFailed}
+                      pageUrl={webDisplay?.url}
+                      iconSrc={assetUrls.main.platformWeb}
                       onReconnect={retry}
                     />
                   )}
@@ -1221,7 +1205,7 @@ export default function MainContent({
               </div>
             ) : (
               <DisconnectedPreview
-                iconSrc={assetUrls.main.connectionClosed}
+                iconSrc={assetUrls.main.platformWeb}
                 title={disconnectedPreviewTitle}
               />
             )}

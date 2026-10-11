@@ -317,7 +317,7 @@ describe('MainContent overview', () => {
     expect(computerHtml).not.toContain('studio-web-preview-fixed-aspect');
   });
 
-  it('renders discovered devices without requiring model env configuration', () => {
+  it('shows Workbench without physical devices', () => {
     const html = renderMainContent(
       createReadyContextValue(),
       createElement(MainContent, {
@@ -325,9 +325,9 @@ describe('MainContent overview', () => {
       }),
     );
 
-    expect(html).toContain('DELL U2720Q');
-    expect(html).toContain('No device');
-    expect(html).toContain('Please plug in the device and check.');
+    expect(html).not.toContain('DELL U2720Q');
+    expect(html).not.toContain('No device');
+    expect(html).toContain('Workbench');
     expect(html).not.toContain('Finish environment setup');
     expect(html).not.toContain('未检测到 adb');
   });
@@ -340,16 +340,16 @@ describe('MainContent overview', () => {
       }),
     );
 
-    expect(html).toContain('flex w-[704px] flex-col gap-[32px]');
-    expect(html).toContain('flex w-[704px] flex-col');
-    expect(html).toContain('w-[704px] shrink-0 overflow-hidden');
-    expect(html).toContain('rounded-[8px] bg-transparent');
+    expect(html).toContain('flex w-full max-w-[704px] flex-col gap-6');
+    expect(html).toContain('flex w-full flex-col');
+    expect(html).toContain('w-full shrink-0 overflow-hidden');
+    expect(html).toContain('Open test page');
     expect(html).not.toContain(
       'border border-border-subtle bg-surface-elevated',
     );
   });
 
-  it('renders iOS and Web create cards collapsed by default', () => {
+  it('shows only the expanded Web form by default', () => {
     const html = renderMainContent(
       createReadyContextValue(),
       createElement(MainContent, {
@@ -357,13 +357,13 @@ describe('MainContent overview', () => {
       }),
     );
 
-    expect(html).toContain('Connect WebDriverAgent');
-    expect(html).toContain('Open a web page');
+    expect(html).not.toContain('Connect WebDriverAgent');
+    expect(html).toContain('Open test page');
     expect(html).not.toContain('WebDriverAgent host');
-    expect(html).not.toContain('https://example.com');
+    expect(html).toContain('https://example.com');
   });
 
-  it('replaces the Android empty state with an adb-missing hint when discovery reports a toolchain error', () => {
+  it('ignores obsolete Android toolchain errors', () => {
     const baseContext = createReadyContextValue();
     if (baseContext.phase !== 'ready') {
       throw new Error('expected ready context');
@@ -382,10 +382,10 @@ describe('MainContent overview', () => {
       }),
     );
 
-    expect(html).toContain('ADB not detected');
+    expect(html).not.toContain('ADB not detected');
   });
 
-  it('replaces the HarmonyOS empty state with an hdc-missing hint when discovery reports a toolchain error', () => {
+  it('ignores obsolete Harmony toolchain errors', () => {
     const baseContext = createReadyContextValue();
     if (baseContext.phase !== 'ready') {
       throw new Error('expected ready context');
@@ -404,7 +404,7 @@ describe('MainContent overview', () => {
       }),
     );
 
-    expect(html).toContain('HDC not detected');
+    expect(html).not.toContain('HDC not detected');
   });
 
   it('keeps the disconnect control out of the window drag region', () => {
@@ -434,7 +434,7 @@ describe('MainContent overview', () => {
     expect(html).toContain('padding-right:176px');
   });
 
-  it('keeps the overview refresh button outside native Windows window controls', () => {
+  it('removes the obsolete device-discovery refresh button from Web overview', () => {
     const html = renderMainContent(
       createReadyContextValue(),
       createElement(MainContent, {
@@ -445,9 +445,9 @@ describe('MainContent overview', () => {
     const document = new DOMParser().parseFromString(html, 'text/html');
     expect(
       document
-        .querySelector('[aria-label="Refresh devices"]')
+        .querySelector('[aria-label="Refresh pages"]')
         ?.getAttribute('style'),
-    ).toBe('right:176px');
+    ).toBeUndefined();
   });
 
   it('renders browser navigation controls for connected Web sessions', () => {
@@ -481,6 +481,27 @@ describe('MainContent overview', () => {
     expect(html).toContain('Open Web Page');
     expect(html).not.toContain('Connect Android Device');
   });
+
+  it.each([false, true])(
+    'uses Web visuals before platform setup arrives (opening: %s)',
+    (opening) => {
+      const context = createDisconnectedWebContextValue();
+      context.controller.state = {
+        ...context.controller.state,
+        formValues: {},
+        sessionMutating: opening,
+      };
+      const html = renderMainContent(
+        context,
+        createElement(MainContent, { activeView: 'device' }),
+      );
+      expect(html).toContain('web-browser.svg');
+      expect(html).not.toMatch(
+        /android\.png|iphone\.png|Connect Android|Connect Device/,
+      );
+      expect(html).toContain(opening ? 'Opening Web page' : 'Open Web Page');
+    },
+  );
 
   it('shows a loading state while opening a Web page', () => {
     const html = renderMainContent(

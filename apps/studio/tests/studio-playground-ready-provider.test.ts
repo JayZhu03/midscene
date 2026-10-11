@@ -50,7 +50,7 @@ describe('StudioPlaygroundReadyProvider', () => {
     document.body.replaceChildren();
   });
 
-  it('seeds the controller with the default Android platform', () => {
+  it('seeds the controller with the default Web platform', () => {
     renderToStaticMarkup(
       createElement(
         StudioPlaygroundReadyProvider,
@@ -66,96 +66,28 @@ describe('StudioPlaygroundReadyProvider', () => {
 
     expect(usePlaygroundControllerMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        initialFormValues: { platformId: 'android' },
+        initialFormValues: { platformId: 'web' },
         serverUrl: 'http://127.0.0.1:5800',
-        onCountdownFinish: expect.any(Function),
       }),
     );
   });
 
-  it('minimizes Studio when the controller countdown finishes', () => {
-    const minimizeWindow = vi.fn(async () => undefined);
-    window.electronShell = {
-      minimizeWindow,
-    } as unknown as typeof window.electronShell;
-
+  it('does not auto-select physical devices or minimize Studio in Web mode', () => {
     renderToStaticMarkup(
-      createElement(
-        StudioPlaygroundReadyProvider,
-        {
-          refreshDiscoveredDevices: async () => undefined,
-          restartPlayground: async () => undefined,
-          setDiscoveryPollingPaused: () => undefined,
-          serverUrl: 'http://127.0.0.1:5800',
-        },
-        createElement('div', null, 'child'),
-      ),
+      createElement(StudioPlaygroundReadyProvider, {
+        refreshDiscoveredDevices: async () => undefined,
+        restartPlayground: async () => undefined,
+        setDiscoveryPollingPaused: () => undefined,
+        serverUrl: 'http://127.0.0.1:5800',
+      }),
     );
-
-    const options = (
-      usePlaygroundControllerMock as unknown as {
-        mock: { calls: Array<[ControllerOptions]> };
-      }
-    ).mock.calls.at(-1)![0];
-    options.onCountdownFinish!();
-
-    expect(minimizeWindow).toHaveBeenCalledTimes(1);
-  });
-
-  it('writes the first discovered Android device into the create agent form', async () => {
-    usePlaygroundControllerMock.mockReturnValue({
-      actions: {},
-      state: {
-        form: {
-          setFieldsValue: setFieldsValueMock,
-        },
-        formValues: {
-          platformId: 'android',
-        },
-      },
-    } as unknown as PlaygroundControllerResult);
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        createElement(
-          StudioPlaygroundReadyProvider,
-          {
-            discoveredDevices: {
-              android: [
-                {
-                  platformId: 'android',
-                  id: 'device-1',
-                  label: 'Pixel 8',
-                  sessionValues: {
-                    deviceId: 'device-1',
-                  },
-                },
-              ],
-              ios: [],
-              computer: [],
-              harmony: [],
-              web: [],
-            },
-            refreshDiscoveredDevices: async () => undefined,
-            restartPlayground: async () => undefined,
-            setDiscoveryPollingPaused: () => undefined,
-            serverUrl: 'http://127.0.0.1:5800',
-          },
-          createElement('div', null, 'child'),
-        ),
-      );
-    });
-
-    expect(setFieldsValueMock).toHaveBeenCalledWith({
-      platformId: 'android',
-      'android.deviceId': 'device-1',
-    });
-
-    await act(async () => {
-      root.unmount();
-    });
+    expect(setFieldsValueMock).not.toHaveBeenCalled();
+    expect(
+      (
+        usePlaygroundControllerMock.mock.calls.at(-1) as unknown as [
+          ControllerOptions,
+        ]
+      )[0].onCountdownFinish,
+    ).toBeUndefined();
   });
 });

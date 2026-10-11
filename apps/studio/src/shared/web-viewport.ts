@@ -4,6 +4,6 @@
  * screencast frame arrives.
  */
 export const DEFAULT_STUDIO_WEB_VIEWPORT = {
-  width: 1280,
-  height: 720,
+  width: 1920,
+  height: 1080,
 } as const;

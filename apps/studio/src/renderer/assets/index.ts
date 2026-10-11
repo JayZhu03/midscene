@@ -1,8 +1,4 @@
-// Shared device-icon URLs. Android and Harmony share the same Android glyph
-// (Harmony's form factor maps closer to Android than to iPhone), and Web
-// shares the desktop PC glyph since Web sessions run inside a desktop
-// browser. See apps/studio/assets/{android,iphone,pc}.png for the source
-// art.
+// Keep Web sessions on their own browser glyph, including startup states.
 const androidDeviceIcon = new URL(
   '../../../assets/android.png',
   import.meta.url,
@@ -11,6 +7,10 @@ const iosDeviceIcon = new URL('../../../assets/iphone.png', import.meta.url)
   .href;
 const computerDeviceIcon = new URL('../../../assets/pc.png', import.meta.url)
   .href;
+const webBrowserIcon = new URL(
+  '../../../assets/web-browser.svg',
+  import.meta.url,
+).href;
 
 export const assetUrls = {
   device: {
@@ -18,7 +18,7 @@ export const assetUrls = {
     computer: computerDeviceIcon,
     harmony: androidDeviceIcon,
     ios: iosDeviceIcon,
-    web: computerDeviceIcon,
+    web: webBrowserIcon,
   },
   main: {
     chat: new URL('./main-chat.png', import.meta.url).href,
@@ -35,7 +35,7 @@ export const assetUrls = {
     platformIos: iosDeviceIcon,
     platformHarmony: androidDeviceIcon,
     platformPc: computerDeviceIcon,
-    platformWeb: computerDeviceIcon,
+    platformWeb: webBrowserIcon,
     devices: new URL('../../../assets/devices.svg', import.meta.url).href,
     disconnect: new URL('./main-disconnect.png', import.meta.url).href,
     env: new URL('../../../assets/env.svg', import.meta.url).href,
@@ -65,6 +65,6 @@ export const assetUrls = {
     expand: new URL('./sidebar-expand.svg', import.meta.url).href,
     overview: new URL('./sidebar-overview.png', import.meta.url).href,
     settings: new URL('./sidebar-settings.png', import.meta.url).href,
-    web: new URL('./sidebar-web.png', import.meta.url).href,
+    web: webBrowserIcon,
   },
 } as const;

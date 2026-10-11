@@ -174,6 +174,7 @@ export default function ShellLayout() {
   useStudioLanguage();
 
   const titlebarInsetRight = getRendererTitlebarRightInset();
+  const isWindows = titlebarInsetRight > 0;
   const [activeView, setActiveView] = useState<ShellActiveView>('overview');
   const [studioMode, setStudioMode] = useState<StudioMode>(
     StudioModeTab.Record,
@@ -308,27 +309,12 @@ export default function ShellLayout() {
     setModelModalOpen(true);
   }, []);
   const closeModelModal = useCallback(() => setModelModalOpen(false), []);
-  // Going back to Overview tears down the live session and clears every
-  // selection-shaped form field so the sidebar / device cards stop
-  // showing a "still selected" row that no longer corresponds to
-  // anything running on the playground server.
+  // Opening the Web form should not throw away the live page or interrupt a
+  // recording. Actual page switching handles stopping work and browser cleanup.
   const selectOverview = useCallback(() => {
     setActiveView('overview');
     setPendingCreatePlatform(undefined);
-    if (studioPlayground.phase !== 'ready') return;
-    const { actions, state } = studioPlayground.controller;
-    state.form.setFieldsValue({
-      platformId: undefined,
-      'web.url': undefined,
-      'ios.host': undefined,
-      'ios.port': undefined,
-      'computer.displayId': undefined,
-      'android.deviceId': undefined,
-      'harmony.deviceId': undefined,
-    });
-    if (!state.sessionViewState.connected) return;
-    void actions.destroySession();
-  }, [studioPlayground]);
+  }, []);
 
   const openExternalUrl = useCallback(
     (url: string) => {
@@ -447,7 +433,7 @@ export default function ShellLayout() {
         className={`absolute left-0 top-0 z-30 h-full overflow-visible transition-transform ${SIDEBAR_TRANSITION_CLASS} ${sidebarBgClassName}`}
         style={sidebarPanelStyle}
       >
-        <div className="absolute left-[4px] right-[4px] top-[52px] overflow-hidden">
+        <div className="absolute bottom-[88px] left-[4px] right-[4px] top-[52px] overflow-y-auto overflow-x-hidden">
           <Sidebar
             activeView={activeView}
             onPendingCreatePlatform={setPendingCreatePlatform}
@@ -525,7 +511,11 @@ export default function ShellLayout() {
           pendingCreatePlatform={pendingCreatePlatform}
           studioMode={studioMode}
           titlebarInsetLeft={
-            sidebarCollapsed ? COLLAPSED_TITLEBAR_INSET : undefined
+            sidebarCollapsed
+              ? isWindows
+                ? 64
+                : COLLAPSED_TITLEBAR_INSET
+              : undefined
           }
           titlebarInsetRight={titlebarInsetRight || undefined}
         />
@@ -550,7 +540,10 @@ export default function ShellLayout() {
 
       <div
         className={`app-no-drag absolute z-[80] flex h-[22px] items-center gap-[8px] transition-[opacity,transform] ${SIDEBAR_TRANSITION_CLASS}`}
-        style={{ left: SIDEBAR_TOGGLE_LEFT, top: SIDEBAR_TOGGLE_TOP }}
+        style={{
+          left: isWindows ? 16 : SIDEBAR_TOGGLE_LEFT,
+          top: isWindows ? TITLEBAR_CONTROL_TOP : SIDEBAR_TOGGLE_TOP,
+        }}
       >
         <button
           aria-label={
@@ -559,10 +552,6 @@ export default function ShellLayout() {
           aria-pressed={sidebarCollapsed}
           className="app-no-drag flex h-[22px] w-[22px] cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-text-secondary transition-transform duration-150 ease-out active:scale-90"
           onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
             setSidebarCollapsed((prev) => !prev);

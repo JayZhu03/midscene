@@ -12,7 +12,6 @@ import { setMidsceneRunDir } from '@midscene/shared/common';
 import { setLogDirectoryResolver } from '@midscene/shared/logger';
 import {
   type ChooseReplayFileResult,
-  type DiscoverDevicesRequest,
   IPC_CHANNELS,
   type OpenImagePreviewRequest,
   type PrepareRecorderMarkdownReplayRequest,
@@ -38,10 +37,6 @@ import { registerFileExportHandlers } from './file-export';
 import { startStudioEventLoopWatchdog } from './performance-watchdog';
 import { requestPlaygroundBootstrap } from './playground/bootstrap-request';
 import { runConnectivityTest } from './playground/connectivity-test';
-import {
-  type DeviceDiscoveryService,
-  createDeviceDiscoveryService,
-} from './playground/device-discovery';
 import { createMultiPlatformRuntimeService } from './playground/multi-platform-runtime';
 import type { PlaygroundRuntimeService } from './playground/types';
 import {
@@ -90,8 +85,6 @@ let mainWindow: BrowserWindow | null = null;
 let mainWindowRevealController: WindowRevealController | null = null;
 let cachedAppIcon: NativeImage | null = null;
 let playgroundRuntimePromise: Promise<PlaygroundRuntimeService> | null = null;
-let deviceDiscoveryServicePromise: Promise<DeviceDiscoveryService> | null =
-  null;
 let studioRunDir: string | null = null;
 let isQuitting = false;
 const isStudioSmokeTest = process.env.MIDSCENE_STUDIO_SMOKE_TEST === '1';
@@ -324,7 +317,7 @@ const getPlaygroundRuntime = async (): Promise<PlaygroundRuntimeService> => {
     playgroundRuntimePromise = Promise.resolve()
       .then(() =>
         createMultiPlatformRuntimeService({
-          deviceDiscoveryService: getDeviceDiscoveryService(),
+          profileRoot: path.join(app.getPath('userData'), 'web-profiles'),
         }),
       )
       .catch((error) => {
@@ -343,19 +336,6 @@ const closePlaygroundRuntime = async (): Promise<void> => {
 
   const runtime = await playgroundRuntimePromise;
   await runtime.close();
-};
-
-const getDeviceDiscoveryService = async () => {
-  if (!deviceDiscoveryServicePromise) {
-    deviceDiscoveryServicePromise = Promise.resolve()
-      .then(() => createDeviceDiscoveryService())
-      .catch((error) => {
-        deviceDiscoveryServicePromise = null;
-        throw error;
-      });
-  }
-
-  return deviceDiscoveryServicePromise;
 };
 
 const createMainWindow = () => {
@@ -699,19 +679,11 @@ const registerIpcHandlers = () => {
   ipcMain.handle(IPC_CHANNELS.restartPlayground, async () =>
     (await getPlaygroundRuntime()).restart(),
   );
-  ipcMain.handle(
-    IPC_CHANNELS.discoverDevices,
-    async (_event, request?: DiscoverDevicesRequest) =>
-      (await getDeviceDiscoveryService()).getSnapshot({
-        forceRefresh: request?.forceRefresh,
-      }),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.setDiscoveryPollingPaused,
-    async (_event, paused: boolean) => {
-      (await getDeviceDiscoveryService()).setPollingPaused(Boolean(paused));
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.discoverDevices, async () => ({
+    devices: [],
+    errors: [],
+  }));
+  ipcMain.handle(IPC_CHANNELS.setDiscoveryPollingPaused, async () => {});
   ipcMain.handle(IPC_CHANNELS.runConnectivityTest, async (_event, request) =>
     runConnectivityTest(request),
   );
@@ -762,23 +734,6 @@ if (shouldBootstrapStudio) {
       app.dock.setIcon(getAppIcon());
     }
 
-    void getDeviceDiscoveryService()
-      .then((service) =>
-        service.subscribe((devices) => {
-          if (!mainWindow || mainWindow.isDestroyed()) {
-            return;
-          }
-
-          mainWindow.webContents.send(
-            IPC_CHANNELS.discoveredDevicesUpdated,
-            devices,
-          );
-        }),
-      )
-      .catch((error) => {
-        console.error('Failed to initialize device discovery service:', error);
-      });
-
     registerIpcHandlers();
     registerUpdaterHandlers(studioUpdater);
     ensureMainWindow();
@@ -818,17 +773,19 @@ if (shouldBootstrapStudio) {
     }
   });
 
-  app.on('before-quit', () => {
-    void closePlaygroundRuntime();
-    const discoveryService = deviceDiscoveryServicePromise;
-    if (discoveryService) {
-      void discoveryService
-        .then((service) => {
-          service.close();
-        })
-        .catch(() => {
-          // ignore cleanup failures during shutdown
-        });
-    }
+  // Finish browser shutdown before Electron exits so Chromium can flush the
+  // profile and release its lock. A second quit is allowed once cleanup ends.
+  let profilesClosed = false;
+  app.on('before-quit', (event) => {
+    if (profilesClosed) return;
+    event.preventDefault();
+    void closePlaygroundRuntime()
+      .catch((error) => {
+        console.error('Failed to close the Web browser:', error);
+      })
+      .finally(() => {
+        profilesClosed = true;
+        app.quit();
+      });
   });
 }

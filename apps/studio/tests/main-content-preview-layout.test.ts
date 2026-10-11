@@ -171,7 +171,7 @@ describe('fitMobilePreviewViewport', () => {
 });
 
 describe('resolveStudioWebPreviewAspectRatio', () => {
-  it('uses the 1280 by 720 default until a Web session supplies dimensions', () => {
+  it('uses the 1920 by 1080 default until a Web session supplies dimensions', () => {
     expect(resolveStudioWebPreviewAspectRatio({})).toBe(16 / 9);
   });
 

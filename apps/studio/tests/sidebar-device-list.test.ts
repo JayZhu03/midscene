@@ -4,8 +4,9 @@ import type { StudioPlaygroundContextValue } from '@renderer/playground/types';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../src/renderer/components/Sidebar';
+import { saveWebPage } from '../src/renderer/playground/saved-web-pages';
 import { StudioPlaygroundContext } from '../src/renderer/playground/useStudioPlayground';
 
 type ReadyStudioPlaygroundContextValue = Extract<
@@ -94,7 +95,7 @@ function createConnectedWebContextValue() {
         sessionConnected: true,
         sessionDisplayName: 'Example Web Session',
         setupState: 'ready',
-        url: 'Example Web Session',
+        url: 'https://example.test/',
       },
     },
     sessionViewState: {
@@ -116,134 +117,83 @@ function createConnectedWebContextValue() {
   };
 }
 
-describe('Sidebar device list', () => {
-  it('shows empty platform rows instead of an iOS setup hint when no devices exist', () => {
+beforeEach(() => localStorage.clear());
+describe('Web sidebar', () => {
+  it('offers only Workbench and no platform groups', () => {
     const html = renderToStaticMarkup(
       createElement(
         StudioPlaygroundContext.Provider,
         { value: createReadyContextValue() },
         createElement(Sidebar, {
           activeView: 'overview',
-          onSelectDevice: () => undefined,
-          onSelectOverview: () => undefined,
+          onSelectOverview: vi.fn(),
+          onSelectDevice: vi.fn(),
         }),
       ),
     );
-
-    expect(html).not.toContain('Set up iOS via the playground form');
-    expect(html.match(/No devices/g)).toHaveLength(5);
-    expect(html.match(/h-8 w-\[22px\] shrink-0/g)).toHaveLength(5);
-  });
-
-  it('keeps visual separation between adjacent platform hover and selected states', () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        StudioPlaygroundContext.Provider,
-        { value: createReadyContextValue() },
-        createElement(Sidebar, {
-          activeView: 'device',
-          onSelectDevice: () => undefined,
-          onSelectOverview: () => undefined,
-        }),
-      ),
+    expect(html).toContain('Workbench');
+    expect(html).not.toMatch(
+      /Android|HarmonyOS|Platform|No devices|Computer|iOS/,
     );
-
-    expect(html.match(/pb-\[2px\] last:pb-0/g)).toHaveLength(5);
   });
-
-  it('renders platform headers as static labels instead of collapsible buttons', async () => {
-    const container = document.createElement('div');
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        createElement(
-          StudioPlaygroundContext.Provider,
-          { value: createReadyContextValue() },
-          createElement(Sidebar, {
-            activeView: 'overview',
-            onSelectDevice: () => undefined,
-            onSelectOverview: () => undefined,
-          }),
-        ),
-      );
+  it('reopens a saved page with its stored viewport and does not disconnect the active page', async () => {
+    saveWebPage({
+      url: 'https://second.test/',
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      headed: false,
     });
-
-    const platformButtons = Array.from(
-      container.querySelectorAll('button'),
-    ).filter((button) =>
-      ['Android', 'iOS', 'Computer', 'HarmonyOS', 'Web'].some((label) =>
-        button.textContent?.includes(label),
-      ),
-    );
-    expect(platformButtons).toHaveLength(0);
-    expect(container.textContent).toContain('Android');
-    expect(container.textContent).toContain('No devices');
-
-    await act(async () => {
-      root.unmount();
+    saveWebPage({
+      url: 'https://example.test/',
+      viewportWidth: 1440,
+      viewportHeight: 900,
+      headed: false,
     });
-  });
-
-  it('matches the Figma platform row structure for sidebar headers', () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        StudioPlaygroundContext.Provider,
-        { value: createReadyContextValue() },
-        createElement(Sidebar, {
-          activeView: 'overview',
-          onSelectDevice: () => undefined,
-          onSelectOverview: () => undefined,
-        }),
-      ),
-    );
-
-    expect(html.match(/justify-between rounded-\[8px\]/g)).toHaveLength(5);
-    expect(html.match(/size-\[22px\]/g)).toHaveLength(6);
-    expect(html.match(/text-\[#474848\]/g)).toHaveLength(10);
-  });
-
-  it('does not disconnect when clicking the active Web session in the sidebar', async () => {
-    const { context, createSession, destroySession, setFieldsValue } =
+    const { context, destroySession, createSession } =
       createConnectedWebContextValue();
     const onSelectDevice = vi.fn();
+    const opened = vi.fn();
+    window.addEventListener('studio:open-saved-page', opened);
     const container = document.createElement('div');
     const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        createElement(
-          StudioPlaygroundContext.Provider,
-          { value: context },
-          createElement(Sidebar, {
-            activeView: 'device',
-            onSelectDevice,
-            onSelectOverview: () => undefined,
-          }),
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            StudioPlaygroundContext.Provider,
+            { value: context },
+            createElement(Sidebar, {
+              activeView: 'device',
+              onSelectOverview: vi.fn(),
+              onSelectDevice,
+            }),
+          ),
         ),
       );
-    });
-
-    const webButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.includes('Example Web Session'),
-    );
-    expect(webButton).toBeTruthy();
-    expect(webButton?.className).toContain('outline-none');
-    expect(webButton?.querySelector('span.flex-1')?.className).toContain(
-      'leading-[22.11px]',
-    );
-
-    await act(async () => {
-      webButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(onSelectDevice).toHaveBeenCalledTimes(1);
-    expect(destroySession).not.toHaveBeenCalled();
-    expect(createSession).not.toHaveBeenCalled();
-    expect(setFieldsValue).not.toHaveBeenCalled();
-
-    await act(async () => {
-      root.unmount();
-    });
+      await act(async () =>
+        (
+          container.querySelector(
+            '[title="https://example.test/"]',
+          ) as HTMLButtonElement
+        ).click(),
+      );
+      expect(onSelectDevice).toHaveBeenCalledOnce();
+      expect(destroySession).not.toHaveBeenCalled();
+      expect(createSession).not.toHaveBeenCalled();
+      await act(async () =>
+        (
+          container.querySelector(
+            '[title="https://second.test/"]',
+          ) as HTMLButtonElement
+        ).click(),
+      );
+      expect((opened.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+        url: 'https://second.test/',
+        viewportWidth: 1280,
+      });
+    } finally {
+      await act(async () => root.unmount());
+      window.removeEventListener('studio:open-saved-page', opened);
+    }
   });
 });

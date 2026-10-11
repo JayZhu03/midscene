@@ -1,13 +1,13 @@
 import { t, useStudioLanguage } from '../../i18n';
 export interface ConnectionFailedPreviewProps {
-  adbId?: string;
+  pageUrl?: string;
   className?: string;
   iconSrc: string;
   onReconnect?: () => void;
 }
 
 export default function ConnectionFailedPreview({
-  adbId,
+  pageUrl,
   className,
   iconSrc,
   onReconnect,
@@ -37,10 +37,11 @@ export default function ConnectionFailedPreview({
           {t('Connection failed')}
         </div>
 
-        <div className="mt-[4px] w-[190px] text-center text-[12px] leading-[20px] text-text-secondary">
-          {adbId
-            ? `ADB Device: ${adbId}`
-            : t('Unable to reconnect to this device.')}
+        <div
+          title={pageUrl}
+          className="mt-[4px] w-[190px] break-words text-center text-[12px] leading-[20px] text-text-secondary"
+        >
+          {t('Unable to connect to this page.')}
         </div>
 
         <button

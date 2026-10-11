@@ -15,9 +15,6 @@ type RuntimeServiceOptions = NonNullable<
 type PlaygroundCoreLoader = NonNullable<
   RuntimeServiceOptions['loadPlaygroundCore']
 >;
-type HarmonyModuleLoader = NonNullable<
-  RuntimeServiceOptions['loadHarmonyModule']
->;
 
 const buildPlaygroundBrowserUrl = (host: string, port: number) => {
   const normalizedHost =
@@ -155,13 +152,7 @@ describe('playground runtime bootstrap', () => {
       error: null,
     });
 
-    expect(capturedPlatforms?.map((platform) => platform.id)).toEqual([
-      'web',
-      'android',
-      'ios',
-      'harmony',
-      'computer',
-    ]);
+    expect(capturedPlatforms?.map((platform) => platform.id)).toEqual(['web']);
     expect(androidLoadCount).toBe(0);
     expect(computerLoadCount).toBe(0);
     expect(harmonyLoadCount).toBe(0);
@@ -173,10 +164,10 @@ describe('playground runtime bootstrap', () => {
     );
     expect(webLoadCount).toBe(1);
 
-    await expect(capturedPlatforms?.[1]?.prepare()).rejects.toThrow(
-      'android should stay lazy',
-    );
-    expect(androidLoadCount).toBe(1);
+    expect(
+      capturedPlatforms?.find((platform) => platform.id === 'android'),
+    ).toBeUndefined();
+    expect(androidLoadCount).toBe(0);
   });
 
   it('prepares a Web session with Puppeteer and MJPEG preview metadata', async () => {
@@ -278,10 +269,10 @@ describe('playground runtime bootstrap', () => {
     });
     expect(
       setup?.fields.find((field) => field.key === 'viewportWidth'),
-    ).toMatchObject({ defaultValue: 1280 });
+    ).toMatchObject({ defaultValue: 1920 });
     expect(
       setup?.fields.find((field) => field.key === 'viewportHeight'),
-    ).toMatchObject({ defaultValue: 720 });
+    ).toMatchObject({ defaultValue: 1080 });
 
     const defaultSession = await prepared?.sessionManager?.createSession({});
     expect(defaultSession?.displayName).toBe(
@@ -323,99 +314,5 @@ describe('playground runtime bootstrap', () => {
     await prepared?.sessionManager?.destroySession?.();
     expect(destroyAgent).toHaveBeenCalledTimes(1);
     expect(cleanupBrowser).toHaveBeenCalledTimes(1);
-  });
-
-  it('prepares Harmony in deferred mode so Studio never exits on device selection', async () => {
-    const harmonyPrepare = vi.fn(
-      async (_options: {
-        staticDir?: string;
-        deferConnection?: boolean;
-        getAgentOptions?: () => {
-          replanningCycleLimit?: number;
-          waitAfterAction?: number;
-          screenshotShrinkFactor?: number;
-        };
-      }) => ({
-        platformId: 'harmony',
-        title: 'Midscene HarmonyOS Playground',
-        metadata: {
-          sessionConnected: false,
-          setupState: 'required',
-        },
-        sessionManager: {
-          createSession: async () => ({
-            displayName: 'unused',
-          }),
-        },
-      }),
-    );
-    let capturedPlatforms:
-      | import('@midscene/playground').RegisteredPlaygroundPlatform[]
-      | undefined;
-
-    const runtime = createMultiPlatformRuntimeService({
-      loadPlaygroundCore: (async () =>
-        ({
-          launchPreparedPlaygroundPlatform: async () => ({
-            close: async () => undefined,
-            host: '127.0.0.1',
-            port: 5800,
-            server: {
-              setPreparedPlatform: () => undefined,
-            },
-          }),
-          buildPlaygroundBrowserUrl,
-          prepareMultiPlatformPlayground: async (
-            platforms: RegisteredPlaygroundPlatform[],
-          ) => {
-            capturedPlatforms = platforms;
-            return {
-              platformId: 'multi-platform',
-              title: 'Midscene Studio Beta',
-              description: 'Multi-platform playground',
-              metadata: {},
-              sessionManager: {
-                createSession: async () => {
-                  throw new Error('not needed for bootstrap');
-                },
-              },
-            };
-          },
-        }) as unknown as Awaited<
-          ReturnType<PlaygroundCoreLoader>
-        >) as PlaygroundCoreLoader,
-      loadHarmonyModule: (async () =>
-        ({
-          harmonyPlaygroundPlatform: {
-            prepare: harmonyPrepare,
-          },
-        }) as unknown as Awaited<
-          ReturnType<HarmonyModuleLoader>
-        >) as HarmonyModuleLoader,
-      resolvePackageStaticDir: (packageName) => `/virtual/${packageName}`,
-    });
-
-    await expect(runtime.start()).resolves.toEqual({
-      status: 'ready',
-      serverUrl: 'http://127.0.0.1:5800',
-      port: 5800,
-      error: null,
-    });
-    const agentOptions = {
-      replanningCycleLimit: 0,
-      waitAfterAction: 500,
-      screenshotShrinkFactor: 2,
-    };
-    await runtime.updateAgentOptions(agentOptions);
-
-    await capturedPlatforms?.[3]?.prepare();
-
-    expect(harmonyPrepare).toHaveBeenCalledWith({
-      staticDir: '/virtual/@midscene/harmony',
-      deferConnection: true,
-      getAgentOptions: expect.any(Function),
-    });
-    const prepareOptions = harmonyPrepare.mock.calls[0]?.[0];
-    expect(prepareOptions?.getAgentOptions?.()).toEqual(agentOptions);
   });
 });

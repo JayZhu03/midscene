@@ -1,137 +1,24 @@
-import { useEffect, useState } from 'react';
+import { Dropdown, Modal } from 'antd';
+import { useState } from 'react';
 import { assetUrls } from '../../assets';
 import { t, useStudioLanguage } from '../../i18n';
 import {
-  buildDeviceSelectionFormValues,
-  buildStudioSidebarDeviceBuckets,
-  mergeSidebarDeviceBucketsWithDiscovery,
-  normalizeStudioPlatformId,
-  resolveConnectedDeviceId,
-  resolveSelectedDeviceId,
-} from '../../playground/selectors';
+  type SavedWebPage,
+  removeWebPage,
+  renameWebPage,
+  useSavedWebPages,
+} from '../../playground/saved-web-pages';
 import type { StudioSidebarPlatformKey } from '../../playground/types';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { MaskedIcon } from '../MaskedIcon';
 import SettingsDock from '../SettingsDock';
 import type { ShellActiveView } from '../ShellLayout/types';
-
-type DeviceStatus = 'active' | 'idle';
-
-interface DeviceItem {
-  id: string;
-  label: string;
-  status: DeviceStatus;
-  onClick?: () => void | Promise<void>;
-}
-
-interface SectionDefinition {
-  iconSrc?: string;
-  key: StudioSidebarPlatformKey;
-  label: string;
-}
-
-const sectionDefinitions: SectionDefinition[] = [
-  { iconSrc: assetUrls.sidebar.android, key: 'android', label: 'Android' },
-  { iconSrc: assetUrls.sidebar.ios, key: 'ios', label: 'iOS' },
-  { iconSrc: assetUrls.sidebar.computer, key: 'computer', label: 'Computer' },
-  { iconSrc: assetUrls.sidebar.harmony, key: 'harmony', label: 'HarmonyOS' },
-  { iconSrc: assetUrls.sidebar.web, key: 'web', label: 'Web' },
-];
-
-const EMPTY_DEVICE_ID_PREFIX = '__empty__';
-
-function SectionHeader({
-  iconSrc,
-  label,
-}: {
-  iconSrc?: string;
-  label: string;
-}) {
-  useStudioLanguage();
-
-  return (
-    <div className="mb-[2px] flex h-8 w-full items-center justify-between rounded-[8px] px-[12px] py-[5px] text-left">
-      <div className="flex min-w-0 items-center gap-[6px]">
-        <span className="flex size-[22px] shrink-0 items-center justify-center text-[#474848] dark:text-text-secondary">
-          {iconSrc ? (
-            <MaskedIcon className="size-4" src={iconSrc} />
-          ) : (
-            <span className="size-4" />
-          )}
-        </span>
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-[#474848] dark:text-text-secondary">
-          {t(label)}
-        </span>
-      </div>
-      <span className="size-4 shrink-0" aria-hidden="true" />
-    </div>
-  );
-}
-
-function DeviceRow({
-  label,
-  onClick,
-  selected,
-  status,
-}: DeviceItem & {
-  selected: boolean;
-}) {
-  useStudioLanguage();
-
-  return (
-    <button
-      className={`flex h-8 w-full cursor-pointer appearance-none items-center gap-[6px] rounded-[10px] border-0 px-[12px] text-left outline-none transition-colors focus-visible:bg-surface-hover-strong dark:focus-visible:bg-white/[0.18] ${
-        selected
-          ? 'bg-surface-hover hover:bg-surface-hover dark:bg-white/[0.1] dark:hover:bg-white/[0.18]'
-          : 'bg-transparent hover:bg-surface-hover active:bg-surface-active dark:hover:bg-white/[0.16] dark:active:bg-white/[0.2]'
-      }`}
-      onClick={onClick}
-      type="button"
-    >
-      <div className="h-8 w-[22px] shrink-0" />
-      <span
-        className={`flex-1 overflow-hidden whitespace-nowrap font-sans text-[13px] leading-[22.11px] ${
-          selected
-            ? 'font-medium text-text-primary'
-            : 'font-normal text-text-secondary'
-        }`}
-      >
-        {t(label)}
-      </span>
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-        <span
-          aria-hidden="true"
-          className={`h-[8px] w-[8px] rounded-full ${
-            status === 'active'
-              ? 'bg-status-success shadow-[0_0_0_2px_rgba(66,181,108,0.25)]'
-              : 'bg-[#BFC0C1] shadow-[0_0_0_2px_rgba(182,182,182,0.22)]'
-          }`}
-        />
-      </span>
-    </button>
-  );
-}
-
-function EmptyDeviceRow() {
-  useStudioLanguage();
-
-  return (
-    <div className="flex h-8 w-full items-center gap-[6px] rounded-lg px-[12px]">
-      <div className="h-8 w-[22px] shrink-0" />
-      <span className="flex-1 overflow-hidden whitespace-nowrap font-sans text-[13px] font-normal leading-[13px] text-text-tertiary">
-        {t('No devices')}
-      </span>
-    </div>
-  );
-}
+import { WebSiteIcon } from '../WebSiteIcon';
 
 export interface SidebarProps {
   activeView: ShellActiveView;
   onSelectOverview: () => void;
   onSelectDevice: () => void;
-  /** Fires the instant the user clicks a device row so the device preview
-   * header can render the correct platform icon without waiting for
-   * antd's Form.useWatch to settle. */
   onPendingCreatePlatform?: (platform: StudioSidebarPlatformKey) => void;
 }
 
@@ -139,273 +26,162 @@ export default function Sidebar({
   activeView,
   onSelectOverview,
   onSelectDevice,
-  onPendingCreatePlatform,
 }: SidebarProps) {
   useStudioLanguage();
-
-  const studioPlayground = useStudioPlayground();
-  // Sticky record of the user's most recent click. Kept locally so the
-  // highlight survives any transient form-state churn during the
-  // destroy → refreshSessionSetup → createSession round-trip.
-  const [stickySelection, setStickySelection] = useState<
-    { platformKey: StudioSidebarPlatformKey; deviceId: string } | undefined
-  >(undefined);
-
-  // Device buckets: merge session-setup targets (from the currently
-  // selected platform) with cross-platform discovered devices. Discovery
-  // is the source of truth for platforms that support it (ADB/HDC/
-  // displays) — this is what makes an unplug disappear from the list.
-  const sessionBuckets =
-    studioPlayground.phase === 'ready'
-      ? buildStudioSidebarDeviceBuckets({
-          formValues: studioPlayground.controller.state.formValues,
-          runtimeInfo: studioPlayground.controller.state.runtimeInfo,
-          targets:
-            studioPlayground.controller.state.sessionSetup?.targets || [],
-        })
-      : {
-          android: [],
-          ios: [],
-          computer: [],
-          harmony: [],
-          web: [],
-        };
-
-  const deviceBuckets = mergeSidebarDeviceBucketsWithDiscovery(
-    sessionBuckets,
-    studioPlayground.discoveredDevices,
-  );
-
-  const runtimeInfo =
-    studioPlayground.phase === 'ready'
-      ? studioPlayground.controller.state.runtimeInfo
-      : null;
-  const connectedDeviceId = resolveConnectedDeviceId(runtimeInfo);
-  const connectedPlatformKey = normalizeStudioPlatformId(
-    runtimeInfo?.platformId ?? runtimeInfo?.interface?.type,
-  );
-
-  /**
-   * Build a click-enabled device list for any platform section. The
-   * multi-platform session manager expects:
-   *   - `platformId` — which platform this device belongs to
-   *   - `{platformId}.deviceId` — the prefixed field key for the target
-   */
-  const buildDeviceItemsForPlatform = (
-    platformKey: StudioSidebarPlatformKey,
-    devices: typeof deviceBuckets.android,
-  ): DeviceItem[] => {
-    if (studioPlayground.phase !== 'ready') {
-      // Boot / error state has its own indicator in MainContent — leave every
-      // sidebar section empty rather than spamming a placeholder row per
-      // platform.
-      return [];
-    }
-
-    return devices.map((item) => ({
-      id: item.id,
-      label: item.label,
-      status: item.status,
-      onClick: async () => {
-        if (studioPlayground.phase !== 'ready') {
-          return;
-        }
-        const { actions, state } = studioPlayground.controller;
-
-        // Stamp the highlight synchronously so the row stays selected
-        // even before the form state propagates through useWatch.
-        setStickySelection({ platformKey, deviceId: item.id });
-        // Same idea for the device-preview header: surface the platform
-        // immediately so its icon doesn't flash the default Android phone.
-        onPendingCreatePlatform?.(platformKey);
-
-        if (item.selected && item.status === 'active') {
-          onSelectDevice();
-          return;
-        }
-
-        // Tell the multi-platform session manager which platform +
-        // device to target. Field keys follow the `{platformId}.fieldKey`
-        // convention from `prepareMultiPlatformPlayground`.
-        const selectionValues = buildDeviceSelectionFormValues(
-          platformKey,
-          item,
-        );
-        state.form.setFieldsValue(selectionValues);
-
-        onSelectDevice();
-
-        if (connectedDeviceId === item.id) {
-          return;
-        }
-        if (state.sessionViewState.connected) {
-          await actions.destroySession();
-          // refreshSessionSetup inside destroySession may overwrite the
-          // selection we just stamped — re-apply it so the highlight
-          // and the next createSession agree.
-          state.form.setFieldsValue(selectionValues);
-        }
-        const sessionValues = {
-          ...state.form.getFieldsValue(true),
-          ...selectionValues,
-        };
-        await actions.createSession(sessionValues);
-      },
-    }));
+  const pages = useSavedWebPages();
+  const [editing, setEditing] = useState<SavedWebPage | null>(null);
+  const [deleting, setDeleting] = useState<SavedWebPage | null>(null);
+  const [name, setName] = useState('');
+  const confirmRename = () => {
+    if (!editing || !name.trim()) return;
+    renameWebPage(editing.url, name);
+    setEditing(null);
   };
-
-  // Source-of-truth for the sidebar highlight is the form's selection
-  // (i.e. the row the user most recently clicked) — not the connected
-  // device, so the highlight stays put during the session swap from one
-  // device to another. The active-status dot still tracks the live
-  // connection separately.
-  const formValues =
-    studioPlayground.phase === 'ready'
-      ? studioPlayground.controller.state.formValues
-      : undefined;
-  const formSelectedPlatformKey = formValues
-    ? normalizeStudioPlatformId(formValues.platformId)
-    : undefined;
-  const formSelectedDeviceId = formValues
-    ? resolveSelectedDeviceId(formValues)
-    : undefined;
-
-  // Keep stickySelection in lockstep with the form. If a downstream
-  // effect (refreshSessionSetup, discovery auto-select, switching to a
-  // different platform's session) updates the form, the sticky highlight
-  // follows — including clearing it when the form is fully empty so a
-  // stale Computer/Android row doesn't stay highlighted after the user
-  // opens a Web session or returns to Overview.
-  useEffect(() => {
-    if (!formSelectedPlatformKey || !formSelectedDeviceId) {
-      setStickySelection((prev) => (prev ? undefined : prev));
-      return;
-    }
-    setStickySelection((prev) => {
-      if (
-        prev &&
-        prev.platformKey === formSelectedPlatformKey &&
-        prev.deviceId === formSelectedDeviceId
-      ) {
-        return prev;
-      }
-      return {
-        platformKey: formSelectedPlatformKey,
-        deviceId: formSelectedDeviceId,
-      };
-    });
-  }, [formSelectedPlatformKey, formSelectedDeviceId]);
-
-  const totalDeviceCount = sectionDefinitions.reduce(
-    (sum, section) => sum + deviceBuckets[section.key].length,
-    0,
-  );
-
-  const resolvedSections = sectionDefinitions.map((section) => ({
-    ...section,
-    devices: buildDeviceItemsForPlatform(
-      section.key,
-      deviceBuckets[section.key],
-    ),
-  }));
-
-  const overviewActive = activeView === 'overview';
-
+  const playground = useStudioPlayground();
+  const state =
+    playground.phase === 'ready' ? playground.controller.state : null;
+  const connectedUrl = state?.runtimeInfo?.metadata?.url;
+  const rowClass =
+    'flex h-9 w-full items-center gap-2 rounded-lg border-0 px-3 text-left text-[13px] text-text-secondary hover:bg-surface-hover disabled:opacity-50';
   return (
-    <div className="flex flex-col">
+    <nav className="flex flex-col gap-2" aria-label={t('Workbench')}>
       <button
-        className={`flex h-8 w-full appearance-none items-center gap-[6px] border-0 px-[12px] text-left outline-none focus-visible:bg-surface-hover-strong dark:focus-visible:bg-white/[0.18] ${
-          overviewActive
-            ? 'rounded-[10px] bg-black/5 dark:bg-white/[0.1]'
-            : 'rounded-lg bg-transparent hover:bg-surface-hover dark:hover:bg-white/[0.16]'
-        }`}
-        onClick={onSelectOverview}
         type="button"
+        className={`${rowClass} ${activeView === 'overview' ? 'bg-surface-hover' : 'bg-transparent'}`}
+        onClick={onSelectOverview}
       >
-        <span className="flex size-[22px] shrink-0 items-center justify-center text-text-secondary">
-          <MaskedIcon
-            className="h-4 w-4 shrink-0"
-            src={assetUrls.sidebar.overview}
-          />
-        </span>
-        <span className="flex-1 overflow-hidden whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-text-secondary">
-          {t('Overview')}
-        </span>
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center font-sans text-[11px] font-normal leading-none text-text-tertiary">
-          {totalDeviceCount}
-        </span>
+        <MaskedIcon className="size-4 shrink-0" src={assetUrls.sidebar.web} />
+        <span>{t('Workbench')}</span>
       </button>
-
-      <div className="mt-1 flex flex-col">
-        <div className="flex h-8 w-full items-center pl-[12px]">
-          <span className="overflow-hidden whitespace-nowrap font-sans text-[13px] font-medium leading-[22px] text-text-placeholder">
-            {t('Platform')}
-          </span>
-        </div>
-
-        <div className="flex flex-col">
-          {resolvedSections.map((section) => {
-            const hasDevices = section.devices.length > 0;
-            return (
-              <div
-                className="flex flex-col pb-[2px] last:pb-0"
-                key={section.key}
-              >
-                <SectionHeader
-                  iconSrc={section.iconSrc}
-                  label={section.label}
-                />
-
-                {hasDevices ? (
-                  <div className="flex flex-col gap-[4px]">
-                    {section.devices.map((device) => {
-                      // Single-source-of-truth selection: only one row
-                      // may ever be highlighted, even while sticky / form /
-                      // connected diverge during a fast re-click. Sticky
-                      // wins (matches the user's intent the instant they
-                      // click), with form / connected as fallbacks.
-                      // On Overview we suppress every highlight because
-                      // the page is meant to be a "no device picked yet"
-                      // state.
-                      let selected = false;
-                      if (activeView !== 'overview') {
-                        if (stickySelection) {
-                          selected =
-                            stickySelection.platformKey === section.key &&
-                            stickySelection.deviceId === device.id;
-                        } else if (
-                          formSelectedDeviceId &&
-                          formSelectedPlatformKey
-                        ) {
-                          selected =
-                            formSelectedPlatformKey === section.key &&
-                            formSelectedDeviceId === device.id;
-                        } else if (connectedDeviceId && connectedPlatformKey) {
-                          selected =
-                            connectedPlatformKey === section.key &&
-                            connectedDeviceId === device.id;
-                        }
-                      }
-                      return (
-                        <DeviceRow
-                          key={device.id}
-                          selected={selected}
-                          {...device}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <EmptyDeviceRow
-                    key={`${EMPTY_DEVICE_ID_PREFIX}${section.key}`}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+      <div className="px-3 pt-3 text-[12px] text-text-tertiary">
+        {t('Saved pages')}
       </div>
-    </div>
+      {pages.length === 0 ? (
+        <span className="px-3 text-[12px] text-text-tertiary">
+          {t('No saved pages')}
+        </span>
+      ) : null}
+      {pages.map((page) => {
+        const active =
+          activeView === 'device' &&
+          connectedUrl === page.url &&
+          state?.sessionViewState.connected;
+        return (
+          <div
+            key={new URL(page.url).origin}
+            className={`group flex items-center rounded-lg ${active ? 'bg-surface-hover' : 'hover:bg-surface-hover'}`}
+          >
+            <button
+              type="button"
+              title={page.url}
+              className={`${rowClass} min-w-0 flex-1 bg-transparent`}
+              disabled={!state || state.sessionMutating}
+              aria-current={active ? 'page' : undefined}
+              onClick={() => {
+                if (active) {
+                  onSelectDevice();
+                  return;
+                }
+                window.dispatchEvent(
+                  new CustomEvent('studio:open-saved-page', { detail: page }),
+                );
+              }}
+            >
+              <WebSiteIcon page={page} />
+              <span className="truncate">
+                {page.name || new URL(page.url).host}
+              </span>
+            </button>
+            <Dropdown
+              trigger={['click']}
+              placement="bottomRight"
+              menu={{
+                items: [
+                  { key: 'rename', label: t('Rename page') },
+                  { key: 'delete', label: t('Delete page'), danger: true },
+                ],
+                onClick: ({ key }) => {
+                  if (key === 'rename') {
+                    setName(page.name || new URL(page.url).host);
+                    setEditing(page);
+                  } else {
+                    setDeleting(page);
+                  }
+                },
+              }}
+            >
+              <button
+                type="button"
+                aria-label={`${t('Page actions')}: ${page.name || new URL(page.url).host}`}
+                title={t('Page actions')}
+                className="app-no-drag mr-1 flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-text-secondary hover:bg-surface-hover-strong focus-visible:outline focus-visible:outline-2"
+              >
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                >
+                  <circle cx="3" cy="8" r="1.5" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <circle cx="13" cy="8" r="1.5" />
+                </svg>
+              </button>
+            </Dropdown>
+          </div>
+        );
+      })}
+      <Modal
+        title={t('Rename page')}
+        open={!!editing}
+        onCancel={() => setEditing(null)}
+        onOk={confirmRename}
+        okText={t('Save')}
+        cancelText={t('Cancel')}
+        okButtonProps={{ disabled: !name.trim() }}
+        afterOpenChange={(open) => {
+          if (open) document.getElementById('saved-page-name')?.focus();
+        }}
+        width={360}
+      >
+        <input
+          id="saved-page-name"
+          aria-label={t('Page name')}
+          className="box-border h-9 w-full rounded-lg border border-border-subtle bg-surface px-3 text-text-primary outline-none focus:border-blue-500"
+          value={name}
+          maxLength={80}
+          onChange={(event) => setName(event.target.value)}
+          onFocus={(event) => event.target.select()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing)
+              confirmRename();
+          }}
+        />
+      </Modal>
+      <Modal
+        title={t('Delete page')}
+        open={!!deleting}
+        onCancel={() => setDeleting(null)}
+        onOk={() => {
+          if (deleting) removeWebPage(deleting.url);
+          setDeleting(null);
+        }}
+        okText={t('Delete')}
+        cancelText={t('Cancel')}
+        okButtonProps={{ danger: true }}
+        width={360}
+      >
+        <p className="break-words font-medium">
+          {deleting?.name || deleting?.url}
+        </p>
+        <p>
+          {t(
+            'Remove this page from the list? Browser login data will be kept.',
+          )}
+        </p>
+      </Modal>
+    </nav>
   );
 }
 

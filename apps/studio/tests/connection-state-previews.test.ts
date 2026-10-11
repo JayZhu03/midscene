@@ -13,7 +13,7 @@ describe('connection state previews', () => {
     );
 
     expect(html).toContain('connection-closed.svg');
-    expect(html).toContain('Connect Android Device');
+    expect(html).toContain('Open test page');
   });
 
   it('renders custom disconnected copy for non-Android platforms', () => {
@@ -32,14 +32,15 @@ describe('connection state previews', () => {
   it('renders the failed preview with the local icon and english copy', () => {
     const html = renderToStaticMarkup(
       createElement(ConnectionFailedPreview, {
-        adbId: '61029ADBY537482',
+        pageUrl: 'https://mom.test/',
         iconSrc: 'connection-failed.svg',
       }),
     );
 
     expect(html).toContain('connection-failed.svg');
     expect(html).toContain('Connection failed');
-    expect(html).toContain('ADB Device: 61029ADBY537482');
+    expect(html).toContain('Unable to connect to this page.');
+    expect(html).not.toContain('ADB');
     expect(html).toContain('Reconnect');
   });
 });

@@ -2,18 +2,18 @@ import type { ReactNode } from 'react';
 import { STUDIO_EXTERNAL_LINKS } from '../../../shared/external-links';
 import { assetUrls } from '../../assets';
 import { t, useStudioLanguage } from '../../i18n';
+import {
+  savedWebPageDisplay,
+  useSavedWebPages,
+} from '../../playground/saved-web-pages';
 import type {
   DiscoveryErrorsByPlatform,
   StudioAndroidDeviceItem,
   StudioSidebarDeviceBuckets,
   StudioSidebarPlatformKey,
 } from '../../playground/types';
-import {
-  IOSCreateAgentCard,
-  type IOSCreateInput,
-  WebCreateAgentCard,
-  type WebCreateInput,
-} from './CreateAgentCard';
+import { WebSiteIcon } from '../WebSiteIcon';
+import { WebCreateAgentCard, type WebCreateInput } from './CreateAgentCard';
 import { ModelConfigCard } from './ModelConfigCard';
 
 type DeviceConnectionState = 'idle' | 'live' | 'connecting';
@@ -31,32 +31,7 @@ interface PlatformConfig {
 // header.
 const PLATFORM_CONFIGS: PlatformConfig[] = [
   {
-    iconSrc: assetUrls.main.platformAndroid,
-    idLabel: 'ADB Device',
-    key: 'android',
-    label: 'Android',
-  },
-  {
-    iconSrc: assetUrls.main.platformIos,
-    idLabel: 'UDID',
-    key: 'ios',
-    label: 'iOS',
-  },
-  {
-    iconSrc: assetUrls.main.platformPc,
-    idLabel: 'Display',
-    key: 'computer',
-    label: 'Computer',
-  },
-  {
-    iconSrc: assetUrls.main.platformHarmony,
-    idLabel: 'HDC Device',
-    key: 'harmony',
-    label: 'HarmonyOS',
-  },
-  {
     iconSrc: assetUrls.main.platformWeb,
-    idLabel: 'Target',
     key: 'web',
     label: 'Web',
   },
@@ -174,11 +149,6 @@ export interface DeviceListProps {
    * Rendered as an inline form at the top of the Web section.
    */
   onCreateWebSession?: (input: WebCreateInput) => void | Promise<void>;
-  /**
-   * Submits an iOS playground session (WDA host / port). Rendered as an
-   * inline form at the top of the iOS section.
-   */
-  onCreateIOSSession?: (input: IOSCreateInput) => void | Promise<void>;
   /** Disables form submission while a session is being mutated. */
   sessionMutating?: boolean;
 }
@@ -207,7 +177,7 @@ function ToolchainMissingTile({
 
   return (
     <button
-      className="flex h-[66px] w-[704px] cursor-pointer items-center justify-center rounded-[8px] border border-dashed border-border-subtle bg-transparent px-[16px] font-sans text-[12px] text-text-secondary underline-offset-2 transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text-primary hover:underline"
+      className="flex h-[66px] w-full cursor-pointer items-center justify-center rounded-[8px] border border-dashed border-border-subtle bg-transparent px-[16px] font-sans text-[12px] text-text-secondary underline-offset-2 transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text-primary hover:underline"
       onClick={() => {
         void window.electronShell?.openExternalUrl(href);
       }}
@@ -220,12 +190,14 @@ function ToolchainMissingTile({
 
 function DeviceCardBody({
   device,
+  site,
   iconSrc,
   idLabel,
   status,
   trailingSlot,
 }: {
   device: StudioAndroidDeviceItem;
+  site?: ReturnType<typeof savedWebPageDisplay>;
   iconSrc?: string;
   idLabel?: string;
   status: DeviceConnectionState;
@@ -233,16 +205,15 @@ function DeviceCardBody({
 }) {
   useStudioLanguage();
 
-  // device.description carries the platform-native identifier (ADB serial,
-  // udid, display index…). Fall back to id when it equals the label so the
-  // row still has a meta line.
-  const idText = device.description ?? device.id;
+  const idText = device.description;
   const showIdLine = Boolean(idText && idText !== device.label);
 
   return (
     <>
       <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-border-subtle bg-surface-muted">
-        {iconSrc ? (
+        {site ? (
+          <WebSiteIcon key={site.url} page={site} className="size-7 shrink-0" />
+        ) : iconSrc ? (
           <img
             alt=""
             className="h-[29px] w-[29px] object-contain"
@@ -260,7 +231,10 @@ function DeviceCardBody({
           {status === 'connecting' ? <ConnectingBadge /> : null}
         </div>
         {showIdLine ? (
-          <span className="flex items-center gap-[8px] font-sans text-[10px] leading-[12px] text-[#000000] dark:text-white">
+          <span
+            title={idText}
+            className="flex items-center gap-[8px] font-sans text-[12px] leading-[18px] text-text-secondary"
+          >
             <span className="overflow-hidden truncate">
               {idLabel ? `${idLabel}：${idText}` : idText}
             </span>
@@ -275,6 +249,7 @@ function DeviceCardBody({
 
 function DeviceCard({
   device,
+  site,
   iconSrc,
   idLabel,
   status,
@@ -282,6 +257,7 @@ function DeviceCard({
   onDisconnect,
 }: {
   device: StudioAndroidDeviceItem;
+  site?: ReturnType<typeof savedWebPageDisplay>;
   iconSrc?: string;
   idLabel?: string;
   status: DeviceConnectionState;
@@ -301,7 +277,7 @@ function DeviceCard({
     ? 'cursor-not-allowed opacity-70'
     : 'cursor-pointer hover:bg-surface-hover';
   const cardClassName =
-    `box-border flex h-[66px] w-[704px] shrink-0 items-center gap-[12px] rounded-[8px] bg-transparent px-[12px] py-[12px] text-left outline-none focus-visible:bg-surface-hover ${interactionClassName}`.trim();
+    `box-border flex h-[66px] w-full shrink-0 items-center gap-[12px] rounded-[8px] bg-transparent px-[12px] py-[12px] text-left outline-none focus-visible:bg-surface-hover ${interactionClassName}`.trim();
 
   const handleCardClick = () => {
     if (isConnecting) return;
@@ -327,6 +303,7 @@ function DeviceCard({
     >
       <DeviceCardBody
         device={device}
+        site={site}
         iconSrc={iconSrc}
         idLabel={idLabel}
         status={status}
@@ -364,19 +341,28 @@ export function DeviceList({
   connectingDeviceId,
   errors,
   modelConfigComplete,
-  modelEnvText,
   onConnect,
-  onCreateIOSSession,
   onCreateWebSession,
   onDisconnect,
   onOpenEnvModal,
   sessionMutating,
 }: DeviceListProps) {
   useStudioLanguage();
+  const savedPages = useSavedWebPages();
 
   const sections = PLATFORM_CONFIGS.map((config) => ({
     ...config,
-    devices: buckets[config.key],
+    devices: buckets[config.key].map((device) => {
+      const display = savedWebPageDisplay(
+        device.sessionValues?.url ?? device.label,
+        savedPages,
+      );
+      return {
+        ...device,
+        label: display?.name ?? device.label,
+        description: display?.url,
+      };
+    }),
     toolchainHint:
       errors?.[config.key]?.kind === 'toolchain-missing'
         ? PLATFORM_TOOLCHAIN_HINTS[config.key]
@@ -394,52 +380,32 @@ export function DeviceList({
         />
       );
     }
-    if (key === 'ios' && onCreateIOSSession) {
-      return (
-        <IOSCreateAgentCard
-          busy={sessionMutating}
-          onSubmit={onCreateIOSSession}
-        />
-      );
-    }
     return null;
   };
 
   return (
     <div className="flex h-full w-full flex-col items-center overflow-y-auto px-[16px] pb-[40px] pt-[88px]">
-      <div className="mb-[28px] flex w-[704px] flex-col">
+      <div className="mb-6 flex w-full max-w-[704px] flex-wrap items-center justify-between gap-3">
         <h1
           className="m-0 text-[24px] font-medium not-italic leading-[32px] tracking-[0] text-[#0D0D0D] dark:text-text-primary"
           style={{ fontFamily: 'Inter, sans-serif' }}
         >
-          {t('Overview')}
+          {t('Workbench')}
         </h1>
-        <p className="m-0 mt-[4px] font-sans text-[12px] font-normal leading-[18px] text-text-secondary">
-          {t(
-            'Manage models and devices, and let Midscene connect your devices.',
-          )}
-        </p>
-      </div>
-      <div className="flex w-[704px] flex-col gap-[32px]">
         {showModelConfigCard ? (
           <ModelConfigCard
             complete={Boolean(modelConfigComplete)}
-            envText={modelEnvText}
             onOpen={onOpenEnvModal}
           />
         ) : null}
+      </div>
+      <div className="flex w-full max-w-[704px] flex-col gap-6">
         {sections.map((section) => {
           const createForm = renderSectionCreateForm(section.key);
           const hasDevices = section.devices.length > 0;
           return (
-            <div className="flex w-[704px] flex-col" key={section.key}>
-              <div className="flex h-[22px] items-center">
-                <span className="font-sans text-[14px] font-medium leading-[22px] text-text-secondary">
-                  {section.label}
-                </span>
-              </div>
-              <div className="mt-[8px] h-[1px] w-full bg-divider" />
-              <div className="mt-[16px] flex flex-col gap-[8px]">
+            <div className="flex w-full flex-col" key={section.key}>
+              <div className="flex flex-col gap-3">
                 {createForm}
                 {hasDevices ? (
                   section.devices.map((device) => {
@@ -452,6 +418,10 @@ export function DeviceList({
                     return (
                       <DeviceCard
                         device={device}
+                        site={savedWebPageDisplay(
+                          device.description,
+                          savedPages,
+                        )}
                         iconSrc={section.iconSrc}
                         idLabel={section.idLabel}
                         key={device.id}
@@ -473,7 +443,7 @@ export function DeviceList({
                     label={section.toolchainHint.label}
                   />
                 ) : (
-                  <div className="flex h-[66px] w-[704px] items-center justify-center font-sans text-[12px] text-text-tertiary">
+                  <div className="flex h-[66px] w-full items-center justify-center font-sans text-[12px] text-text-tertiary">
                     {t('No device. Please plug in the device and check.')}
                   </div>
                 )}

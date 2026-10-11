@@ -12,7 +12,7 @@ export default function ConnectingPreview({
   className,
   iconSrc,
   iconVariant = 'desktop',
-  statusLabel = t('Preparing device connection...'),
+  statusLabel = t('Opening Web page…'),
 }: ConnectingPreviewProps) {
   useStudioLanguage();
 

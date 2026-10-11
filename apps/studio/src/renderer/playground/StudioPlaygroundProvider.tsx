@@ -1,15 +1,7 @@
-import type {
-  DiscoverDevicesResult,
-  PlaygroundBootstrap,
-} from '@shared/electron-contract';
+import type { PlaygroundBootstrap } from '@shared/electron-contract';
 import type { PropsWithChildren } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StudioPlaygroundReadyProvider from './StudioPlaygroundReadyProvider';
-import { bucketDiscoveredDevices, bucketDiscoveryErrors } from './selectors';
-import type {
-  DiscoveredDevicesByPlatform,
-  DiscoveryErrorsByPlatform,
-} from './types';
 import { StudioPlaygroundContext } from './useStudioPlayground';
 
 function getMissingBridgeError() {
@@ -28,80 +20,14 @@ export function StudioPlaygroundProvider({ children }: PropsWithChildren) {
   >({ phase: 'booting' });
   const [bootstrapTick, setBootstrapTick] = useState(0);
 
-  // Cross-platform device discovery — polls ALL platforms (ADB, HDC,
-  // displays) once the playground runtime is ready, so the sidebar shows
-  // devices from every platform simultaneously. Gated on the ready phase
-  // to avoid waking up adb/hdc while we are still booting or in error.
-  const [discoveredDevices, setDiscoveredDevices] = useState<
-    DiscoveredDevicesByPlatform | undefined
-  >();
-  const [discoveryErrors, setDiscoveryErrors] = useState<
-    DiscoveryErrorsByPlatform | undefined
-  >();
-  const applyDiscoveredDevices = useCallback(
-    (result: DiscoverDevicesResult) => {
-      setDiscoveredDevices(bucketDiscoveredDevices(result.devices));
-      setDiscoveryErrors(bucketDiscoveryErrors(result.errors));
-    },
+  // Web testing has no physical devices to discover.
+  const discoveredDevices = undefined;
+  const discoveryErrors = undefined;
+  const refreshDiscoveredDevices = useCallback(async () => {}, []);
+  const setDiscoveryPollingPausedValue = useCallback(
+    (_paused: boolean) => {},
     [],
   );
-
-  const setDiscoveryPollingPausedValue = useCallback((paused: boolean) => {
-    void window.studioRuntime?.setDiscoveryPollingPaused(paused);
-  }, []);
-
-  // Imperative scan — safe to call from anywhere (user-initiated refresh,
-  // post-destroy session cleanup, etc). Resolves after state is updated.
-  const refreshDiscoveredDevices = useCallback(async () => {
-    const studioRuntime = window.studioRuntime;
-    if (!studioRuntime?.discoverDevices) {
-      return;
-    }
-
-    try {
-      const devices = await studioRuntime.discoverDevices({
-        forceRefresh: true,
-      });
-      applyDiscoveredDevices(devices);
-    } catch (err) {
-      console.warn('[studio] device discovery failed:', err);
-    }
-  }, [applyDiscoveredDevices]);
-
-  useEffect(() => {
-    if (bootstrap.phase !== 'ready') {
-      return;
-    }
-
-    const studioRuntime = window.studioRuntime;
-    if (!studioRuntime) {
-      return;
-    }
-
-    let cancelled = false;
-    const unsubscribe = studioRuntime.onDiscoveredDevicesChanged((devices) => {
-      if (cancelled) {
-        return;
-      }
-      applyDiscoveredDevices(devices);
-    });
-
-    void studioRuntime
-      .discoverDevices()
-      .then((devices) => {
-        if (!cancelled) {
-          applyDiscoveredDevices(devices);
-        }
-      })
-      .catch((err) => {
-        console.warn('[studio] initial device discovery failed:', err);
-      });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [applyDiscoveredDevices, bootstrap.phase]);
 
   const readBootstrap = useCallback(async () => {
     if (!window.studioRuntime) {

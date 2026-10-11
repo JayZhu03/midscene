@@ -5,15 +5,15 @@ import {
 import type { StudioPlatformId } from '@shared/electron-contract';
 import { Form } from 'antd';
 import type { PropsWithChildren } from 'react';
-import { useCallback, useEffect, useMemo } from 'react';
-import { resolveDiscoveredDeviceSelectionFormValues } from './selectors';
+import { useMemo } from 'react';
+import { loadSavedWebPages, webPageFormValues } from './saved-web-pages';
 import type {
   DiscoveredDevicesByPlatform,
   DiscoveryErrorsByPlatform,
 } from './types';
 import { StudioPlaygroundContext } from './useStudioPlayground';
 
-const DEFAULT_PLATFORM_ID: StudioPlatformId = 'android';
+const DEFAULT_PLATFORM_ID: StudioPlatformId = 'web';
 
 interface StudioPlaygroundReadyProviderProps {
   discoveredDevices?: DiscoveredDevicesByPlatform;
@@ -33,30 +33,14 @@ export default function StudioPlaygroundReadyProvider({
   setDiscoveryPollingPaused,
   serverUrl,
 }: PropsWithChildren<StudioPlaygroundReadyProviderProps>) {
-  const handleCountdownFinish = useCallback(() => {
-    void window.electronShell?.minimizeWindow();
-  }, []);
-
-  const controller = usePlaygroundController({
-    initialFormValues: { platformId: DEFAULT_PLATFORM_ID },
-    serverUrl,
-    // Computer mode hands control of the desktop to the agent right after the
-    // countdown; minimise Studio so the controlled apps are in view instead
-    // of the Studio chrome.
-    onCountdownFinish: handleCountdownFinish,
-  });
-
-  useEffect(() => {
-    const selectionPatch = resolveDiscoveredDeviceSelectionFormValues({
-      discoveredDevices,
-      formValues: controller.state.formValues,
-    });
-    if (!selectionPatch) {
-      return;
-    }
-
-    controller.state.form.setFieldsValue(selectionPatch);
-  }, [controller.state.form, controller.state.formValues, discoveredDevices]);
+  const initialFormValues = useMemo(
+    () => ({
+      ...webPageFormValues(loadSavedWebPages()[0]),
+      platformId: DEFAULT_PLATFORM_ID,
+    }),
+    [],
+  );
+  const controller = usePlaygroundController({ initialFormValues, serverUrl });
 
   const contextValue = useMemo(
     () => ({

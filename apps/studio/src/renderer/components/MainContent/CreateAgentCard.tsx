@@ -2,6 +2,10 @@ import { DEFAULT_STUDIO_WEB_VIEWPORT } from '@shared/web-viewport';
 import { useState } from 'react';
 import { assetUrls } from '../../assets';
 import { t, useStudioLanguage } from '../../i18n';
+import {
+  loadSavedWebPages,
+  normalizeSavedWebPage,
+} from '../../playground/saved-web-pages';
 import { MaskedIcon } from '../MaskedIcon';
 
 export interface WebCreateInput {
@@ -9,11 +13,6 @@ export interface WebCreateInput {
   viewportWidth: number;
   viewportHeight: number;
   headed: boolean;
-}
-
-export interface IOSCreateInput {
-  host: string;
-  port: number;
 }
 
 interface BaseCardProps {
@@ -49,38 +48,14 @@ function ChevronDown({ flipped }: { flipped: boolean }) {
   );
 }
 
-function SphereIcon() {
+function WebIcon() {
   useStudioLanguage();
 
   return (
     <MaskedIcon
       className="h-[14px] w-[14px] text-text-primary"
-      src={assetUrls.main.sphere}
+      src={assetUrls.main.platformWeb}
     />
-  );
-}
-
-function PhoneIcon() {
-  useStudioLanguage();
-
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-[14px] w-[14px] text-text-primary"
-      fill="none"
-      viewBox="0 0 14 14"
-    >
-      <rect
-        height="11.5"
-        rx="1.6"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        width="7.6"
-        x="3.2"
-        y="1.25"
-      />
-      <path d="M5.8 11.4h2.4" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
   );
 }
 
@@ -94,10 +69,10 @@ function CardShell({
 }: BaseCardProps) {
   useStudioLanguage();
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="w-[704px] shrink-0 overflow-hidden rounded-[12px] bg-surface-muted">
+    <div className="w-full shrink-0 overflow-hidden rounded-[12px] bg-surface-muted">
       <button
         className="flex h-[48px] w-full cursor-pointer appearance-none items-center justify-between border-0 bg-transparent px-[16px] text-left"
         onClick={() => setExpanded((prev) => !prev)}
@@ -105,7 +80,7 @@ function CardShell({
       >
         <span className="flex items-center gap-[8px]">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-active">
-            {title === t('Open a web page') ? <SphereIcon /> : <PhoneIcon />}
+            <WebIcon />
           </span>
           <span className="text-[14px] font-medium leading-[16px] text-text-primary">
             {t(title)}
@@ -209,10 +184,16 @@ export function WebCreateAgentCard({
 }: WebCreateAgentCardProps) {
   useStudioLanguage();
 
-  const [url, setUrl] = useState(defaultUrl);
-  const [width, setWidth] = useState(defaultViewportWidth);
-  const [height, setHeight] = useState(defaultViewportHeight);
-  const [headed, setHeaded] = useState(defaultHeaded);
+  const [saved] = useState(() => loadSavedWebPages()[0]);
+  const [url, setUrl] = useState(saved?.url ?? defaultUrl);
+  const [width, setWidth] = useState(
+    saved?.viewportWidth ?? defaultViewportWidth,
+  );
+  const [height, setHeight] = useState(
+    saved?.viewportHeight ?? defaultViewportHeight,
+  );
+  const [headed, setHeaded] = useState(saved?.headed ?? defaultHeaded);
+  const [error, setError] = useState('');
 
   return (
     <CardShell
@@ -220,39 +201,66 @@ export function WebCreateAgentCard({
       busyLabel={t('Opening…')}
       onSubmit={() => {
         if (busy) return;
-        void onSubmit({
-          url: url.trim() || defaultUrl,
+        const input = normalizeSavedWebPage({
+          url,
           viewportWidth: width,
           viewportHeight: height,
           headed,
         });
+        if (!input) {
+          setError(t('Please enter a valid HTTP or HTTPS URL.'));
+          return;
+        }
+        setError('');
+        void Promise.resolve(onSubmit(input)).catch(() =>
+          setError(t('Unable to open page')),
+        );
       }}
-      submitLabel={t('Open Page')}
-      title={t('Open a web page')}
+      submitLabel={t('Open test page')}
+      title={t('Open test page')}
     >
-      <div className="grid w-full grid-cols-3 gap-[8px]">
+      {error ? (
+        <div role="alert" className="mb-2 text-status-error">
+          {error}
+        </div>
+      ) : null}
+      <div className="grid w-full grid-cols-1 gap-4 min-[1000px]:grid-cols-3">
         <div className="flex min-w-0 flex-col">
           <FieldLabel required>{t('URL')}</FieldLabel>
           <input
             aria-label={t('URL')}
             className={inputBaseClass}
             onChange={(event) => setUrl(event.target.value)}
+            onBlur={() => {
+              const next = normalizeSavedWebPage({ url });
+              const previous =
+                next &&
+                loadSavedWebPages().find(
+                  (page) =>
+                    new URL(page.url).origin === new URL(next.url).origin,
+                );
+              if (previous) {
+                setWidth(previous.viewportWidth);
+                setHeight(previous.viewportHeight);
+                setHeaded(previous.headed);
+              }
+            }}
             placeholder="https://example.com"
             type="text"
             value={url}
           />
         </div>
         <div className="flex min-w-0 flex-col">
-          <FieldLabel>{t('Viewport')}</FieldLabel>
+          <FieldLabel>{t('Page size')}</FieldLabel>
           <div className="grid w-full grid-cols-2 gap-[8px]">
             <NumberInput
-              ariaLabel="Viewport width"
+              ariaLabel={t('Page width')}
               onChange={setWidth}
               prefix="W"
               value={width}
             />
             <NumberInput
-              ariaLabel="Viewport height"
+              ariaLabel={t('Page height')}
               onChange={setHeight}
               prefix="H"
               value={height}
@@ -275,73 +283,6 @@ export function WebCreateAgentCard({
               <ChevronDown flipped={false} />
             </span>
           </div>
-        </div>
-      </div>
-    </CardShell>
-  );
-}
-
-export interface IOSCreateAgentCardProps {
-  busy?: boolean;
-  defaultHost?: string;
-  defaultPort?: number;
-  onSubmit: (input: IOSCreateInput) => void | Promise<void>;
-}
-
-export function IOSCreateAgentCard({
-  busy,
-  defaultHost = 'localhost',
-  defaultPort = 8100,
-  onSubmit,
-}: IOSCreateAgentCardProps) {
-  useStudioLanguage();
-
-  const [host, setHost] = useState(defaultHost);
-  const [port, setPort] = useState(defaultPort);
-
-  return (
-    <CardShell
-      busy={busy}
-      busyLabel={t('Connecting…')}
-      onSubmit={() => {
-        if (busy) return;
-        void onSubmit({
-          host: host.trim() || defaultHost,
-          port,
-        });
-      }}
-      submitLabel={t('Create Agent')}
-      title={t('Connect WebDriverAgent')}
-    >
-      <div className="grid w-full grid-cols-3 gap-[8px]">
-        <div className="col-span-2 flex min-w-0 flex-col">
-          <FieldLabel required>{t('WebDriverAgent host')}</FieldLabel>
-          <input
-            aria-label={t('WebDriverAgent host')}
-            className={inputBaseClass}
-            onChange={(event) => setHost(event.target.value)}
-            placeholder="localhost"
-            type="text"
-            value={host}
-          />
-        </div>
-        <div className="col-span-1 flex min-w-0 flex-col">
-          <FieldLabel required>{t('Port')}</FieldLabel>
-          <input
-            aria-label={t('WebDriverAgent port')}
-            className={`${inputBaseClass} min-w-0`}
-            inputMode="numeric"
-            min={1}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (Number.isFinite(next)) {
-                setPort(next);
-              }
-            }}
-            placeholder="8100"
-            type="number"
-            value={port}
-          />
         </div>
       </div>
     </CardShell>
