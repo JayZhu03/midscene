@@ -1,4 +1,4 @@
-import { t } from '../ui-language';
+import { getUiLanguage, t } from '../ui-language';
 const actionLabels: Record<string, string> = {
   aiAct: '自动操作',
   aiTap: '点击',
@@ -16,11 +16,23 @@ const actionLabels: Record<string, string> = {
   aiAsk: '询问页面',
   aiAssert: '断言',
   aiWaitFor: '等待条件',
+  aiDragAndDrop: 'Drag and drop',
+  aiLongPress: 'Long press',
+  aiClearInput: 'Clear input',
+  CursorMove: 'Move text cursor',
+  aiPinch: 'Pinch gesture',
+  Navigate: 'Navigate to URL',
+  Reload: 'Reload page',
+  GoBack: 'Go back',
+  GoForward: 'Go forward',
 };
 
 export const actionNameForType = (type: string) => {
   if (!type) return '';
-  if (Object.hasOwn(actionLabels, type)) return t(actionLabels[type]);
+  if (Object.hasOwn(actionLabels, type)) {
+    const label = t(actionLabels[type]);
+    return getUiLanguage() === 'zh' ? `${label}（${type}）` : label;
+  }
 
   // Remove 'ai' prefix and convert camelCase to space-separated words
   const typeWithoutAi = type.startsWith('ai') ? type.slice(2) : type;

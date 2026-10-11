@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { t, useStudioLanguage } from '../../i18n';
 import './playground-shell-skin.css';
 
@@ -35,7 +35,14 @@ export function PlaygroundShell({
   );
 
   return (
-    <div className="playground-shell">
+    <div
+      className="playground-shell"
+      style={
+        {
+          '--studio-api-title': JSON.stringify(t('API Playground')),
+        } as CSSProperties
+      }
+    >
       {showHeader ? (
         <div className="app-drag absolute left-0 top-0 z-10 flex h-[52px] w-full items-center justify-between gap-[12px] border-b border-border-subtle bg-surface px-[12px]">
           <div className="flex min-w-0 items-center gap-[6px]">

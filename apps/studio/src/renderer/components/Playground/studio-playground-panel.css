@@ -34,7 +34,7 @@
   box-sizing: border-box;
   padding: 8px 12px 8px 16px;
   color: #0d0d0d;
-  content: "API Playground";
+  content: var(--studio-api-title);
   font-family: Inter, system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -71,8 +71,8 @@
   .prompt-input-wrapper
   .mode-radio-group-wrapper {
   position: relative;
-  height: 28px;
-  flex: 0 0 28px;
+  height: auto;
+  flex: 0 0 auto;
   gap: 8px;
   z-index: 1;
 }
@@ -81,6 +81,8 @@
   .studio-playground-input-first
   .prompt-input-wrapper
   .mode-radio-group {
+  flex-wrap: wrap;
+  overflow: visible;
   gap: 8px;
   margin-right: 0;
   scrollbar-width: none;
@@ -100,6 +102,16 @@
   .ant-form-item
   .ant-radio-group {
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.playground-shell
+  .studio-playground-input-first
+  .prompt-input-wrapper
+  .mode-radio-group
+  .ant-form-item {
+  min-width: 0;
+  flex: 1 1 100%;
 }
 
 .playground-shell
