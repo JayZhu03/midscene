@@ -18,7 +18,7 @@ const webMessages: Record<string, string> = {
   'Configure model': '配置模型',
   Edit: '修改',
   'Page actions': '网页操作',
-  'Rename page': '改名',
+  'Rename page': '重命名',
   'Delete page': '删除网页',
   'Page name': '网页名称',
   'Remove this page from the list? Browser login data will be kept.':
