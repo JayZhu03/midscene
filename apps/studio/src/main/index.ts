@@ -32,7 +32,10 @@ import {
 } from 'electron';
 import type { TitleBarOverlay } from 'electron';
 import { normalizeStudioAgentOptions } from '../shared/agent-options';
-import { MACOS_TRAFFIC_LIGHT_POSITION } from '../shared/titlebar-layout';
+import {
+  MACOS_TRAFFIC_LIGHT_POSITION,
+  TITLEBAR_OVERLAY_HEIGHT,
+} from '../shared/titlebar-layout';
 import { registerFileExportHandlers } from './file-export';
 import { startStudioEventLoopWatchdog } from './performance-watchdog';
 import { requestPlaygroundBootstrap } from './playground/bootstrap-request';
@@ -202,7 +205,7 @@ const getBackgroundColor = () =>
 
 const getTitleBarOverlay = (): TitleBarOverlay => ({
   color: '#00000000',
-  height: 56,
+  height: TITLEBAR_OVERLAY_HEIGHT,
   symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#17212b',
 });
 

@@ -411,9 +411,8 @@ it.each(['scenario', 'script'] as const)(
     expect(container.textContent).not.toContain('Wrong quantity');
     await click('View execution · Failed');
     expect(container.textContent).toContain('Wrong quantity');
-    expect(container.textContent).toContain(
-      'AI summary unavailable. Execution results are retained.',
-    );
+    await click('View report');
+    expect(document.body.textContent).toContain('Report generation failed');
     expect(
       container
         .querySelector('[role="progressbar"]')
@@ -431,16 +430,29 @@ it('shows checkpoint evidence and summary independently of execution status', as
   run.scripts[0].status = 'passed';
   run.scripts[0].completedSteps = run.scripts[0].totalSteps;
   run.scripts[0].steps![0].detail = 'Quantity matches';
+  run.error = 'Quantity matches';
   run.summary = { status: 'generating' };
   await render();
-  expect(container.textContent).toContain('Generating summary…');
-  expect(container.textContent).toContain('Quantity matches');
+  expect(container.querySelector('.studio-report-progress')).toBeNull();
+  await click('View report');
+  expect(document.body.textContent).toContain(
+    'Report is being generated. Please wait.',
+  );
+  expect(container.textContent?.split('Quantity matches')).toHaveLength(2);
+  expect(
+    container.querySelector('.studio-execution-body > .studio-scenario-error'),
+  ).toBeNull();
+  expect(
+    container.querySelector('.studio-execution-page > .studio-report-entry'),
+  ).toBeTruthy();
   run.summary = {
     status: 'completed',
     text: 'Recorded checkpoints passed. Review business coverage.',
   };
   await render();
-  expect(container.textContent).toContain(run.summary.text);
+  expect(container.textContent).not.toContain(run.summary.text);
+  await click('View report');
+  expect(document.body.textContent).toContain(run.summary.text);
   expect(container.textContent).toContain('Completed');
 });
 

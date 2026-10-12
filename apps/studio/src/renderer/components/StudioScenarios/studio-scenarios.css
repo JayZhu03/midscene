@@ -42,6 +42,160 @@
   color: var(--midscene-text-secondary);
   font-size: 11px;
 }
+.studio-report-entry {
+  flex: 0 0 auto;
+}
+.studio-report-drawer .ant-drawer-content {
+  /* The body portal overlays the native window drag strip. Z-index alone
+     cannot restore pointer events; exclude the report from that drag region. */
+  -webkit-app-region: no-drag;
+  background: var(--midscene-surface);
+  color: var(--midscene-text-primary);
+}
+.studio-report-drawer .ant-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-color: var(--midscene-border-subtle);
+}
+.studio-report-drawer .ant-drawer-header-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.studio-report-drawer .ant-drawer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-report-drawer .studio-report-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.studio-report-drawer .studio-report-heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studio-report-drawer .studio-report-download {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: auto;
+  height: 32px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--midscene-border-subtle);
+  border-radius: 8px;
+  background: var(--midscene-surface);
+  color: var(--midscene-text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.studio-report-drawer .studio-report-download:hover:not(:disabled) {
+  border-color: var(--midscene-brand);
+  color: var(--midscene-brand);
+}
+.studio-report-drawer .studio-report-download:focus-visible {
+  outline: 2px solid var(--midscene-brand);
+  outline-offset: 2px;
+}
+.studio-report-drawer .studio-report-download:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.studio-report-drawer .studio-report-download-icon {
+  display: inline-flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.studio-report-drawer .studio-report-download-label {
+  display: block;
+  flex: 0 0 auto;
+  line-height: 20px;
+}
+.studio-report-drawer .studio-report-download svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.studio-report-markdown {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.studio-report-markdown h1 {
+  font-size: 16px;
+}
+.studio-report-markdown h2 {
+  font-size: 14px;
+  margin-top: 20px;
+}
+.studio-report-markdown h3 {
+  font-size: 13px;
+}
+.studio-report-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  table-layout: fixed;
+}
+.studio-report-markdown th,
+.studio-report-markdown td {
+  border: 1px solid var(--midscene-border-subtle);
+  padding: 6px;
+  text-align: left;
+}
+.studio-report-markdown th {
+  background: var(--midscene-surface);
+}
+.studio-report-markdown ul {
+  padding-left: 20px;
+}
+.studio-report-records {
+  flex: 1;
+  min-height: 0;
+}
+.studio-report-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.studio-report-list button {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 8px;
+  text-align: left;
+  border: 1px solid var(--midscene-border-subtle);
+  border-radius: 8px;
+  background: var(--midscene-surface);
+  color: var(--midscene-text-primary);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.studio-report-list button:hover {
+  border-color: var(--midscene-brand);
+}
+.studio-report-list time {
+  font-size: 11px;
+  color: var(--midscene-text-secondary);
+}
 .studio-execution-pulse {
   width: 6px;
   height: 6px;
@@ -173,26 +327,6 @@
 }
 .studio-execution-steps > li[data-status="running"] .studio-execution-step-dot {
   background: var(--midscene-brand);
-}
-.studio-execution-summary {
-  padding: 12px;
-  margin-top: 12px;
-  border-radius: 12px;
-  background: var(--midscene-surface);
-  border: 1px solid var(--midscene-border-subtle);
-}
-.studio-execution-summary h4 {
-  font-size: 13px;
-  font-weight: 500;
-  margin: 0 0 8px;
-}
-.studio-execution-summary p,
-.studio-execution-summary output {
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .studio-execution-reopen {
   align-self: stretch;

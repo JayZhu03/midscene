@@ -3,6 +3,7 @@ import { Button, Progress } from 'antd';
 import { useEffect, useRef } from 'react';
 import { t } from '../../i18n';
 import { BackIcon } from '../Recorder/assets/recorder-icons';
+import { StudioScenarioReport } from './StudioScenarioReport';
 import { runStatusLabel } from './StudioScriptSequence';
 
 export function StudioScenarioExecution({
@@ -28,6 +29,12 @@ export function StudioScenarioExecution({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const active = scenarioRunActive(run);
+  const hasStepError = (value: string) =>
+    run?.scripts.some((script) =>
+      script.steps?.some(
+        (step) => step.error === value || step.detail === value,
+      ),
+    );
   const total = run?.scripts.reduce((n, s) => n + s.totalSteps, 0) || 0;
   const completed =
     run?.scripts.reduce(
@@ -234,12 +241,12 @@ export function StudioScenarioExecution({
         </Button>
       ) : null}
       <div className="studio-execution-body" ref={scrollRef}>
-        {error ? (
+        {error && !hasStepError(error) ? (
           <div className="studio-scenario-error" role="alert">
             {t(error)}
           </div>
         ) : null}
-        {run?.error ? (
+        {run?.error && !hasStepError(run.error) && run.error !== error ? (
           <div className="studio-scenario-error" role="alert">
             {t(run.error)}
           </div>
@@ -352,24 +359,8 @@ export function StudioScenarioExecution({
             </li>
           ))}
         </ol>
-        {run && !active ? (
-          <section
-            className="studio-execution-summary"
-            aria-label={t('AI summary')}
-          >
-            <h4>{t('AI summary')}</h4>
-            {run.summary?.status === 'completed' ? (
-              <p>{run.summary.text}</p>
-            ) : run.summary?.status === 'failed' ? (
-              <p>
-                {t('AI summary unavailable. Execution results are retained.')}
-              </p>
-            ) : (
-              <output>{t('Generating summary…')}</output>
-            )}
-          </section>
-        ) : null}
       </div>
+      {run && !active ? <StudioScenarioReport key={run.id} run={run} /> : null}
     </div>
   );
 }

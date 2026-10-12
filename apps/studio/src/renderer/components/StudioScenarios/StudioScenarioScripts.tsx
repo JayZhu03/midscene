@@ -486,6 +486,7 @@ export function StudioScenarioScripts({
     void execution.start({
       ...buildScenarioRun(scenario.id, selectedScripts, selectedSequence),
       scenarioName: scenario.name,
+      scenarioDescription: scenario.description,
       scope,
       language: readStoredLanguage(),
       sessionMode,

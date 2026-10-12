@@ -20,6 +20,7 @@ export interface ScenarioRunInput {
   scenarioId: string;
   sessionMode?: 'current' | 'fresh';
   scenarioName?: string;
+  scenarioDescription?: string;
   scope?: 'scenario' | 'script';
   language?: 'zh' | 'en';
   scripts: ScenarioRunScript[];
@@ -28,6 +29,7 @@ export interface ScenarioStepResult {
   id: string;
   type: ScenarioRunStep['type'];
   description: string;
+  instruction?: string;
   status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'stopped';
   startedAt?: number;
   finishedAt?: number;
@@ -43,6 +45,15 @@ export interface ScenarioRecovery {
   observation?: string;
   instruction?: string;
   reason?: string;
+  attempts?: Array<{
+    strategy: 'wait' | 'act' | 'backtrack';
+    reason: string;
+    instruction?: string;
+    previousStepId?: string;
+    error?: string;
+    verification?: string;
+    completed?: boolean;
+  }>;
 }
 export interface ScenarioContinuation {
   status: 'checking' | 'allowed' | 'blocked' | 'stopped';
@@ -56,18 +67,30 @@ export type ScenarioRunStatus =
   | 'failed'
   | 'blocked'
   | 'completed';
+export type ScenarioReportPhase =
+  | 'preparing'
+  | 'analyzing'
+  | 'validating'
+  | 'repairing'
+  | 'saving'
+  | 'ready';
 export interface ScenarioRunState {
   id: string;
   scenarioId: string;
   sessionMode?: 'current' | 'fresh';
   scenarioName?: string;
+  scenarioDescription?: string;
   scope?: 'scenario' | 'script';
   language?: 'zh' | 'en';
   startedAt?: number;
   finishedAt?: number;
   summary?: {
     status: 'generating' | 'completed' | 'failed';
+    phase?: ScenarioReportPhase;
     text?: string;
+    format?: 'markdown';
+    skillVersion?: string;
+    storageError?: string;
   };
   status: ScenarioRunStatus;
   scriptIndex: number;

@@ -28,7 +28,7 @@
       "default": "./dist/es/recorder-ui-describer.mjs"
     }
   },
-  "files": ["dist", "static"],
+  "files": ["dist", "static", "runtime-skills"],
   "scripts": {
     "build": "rslib build",
     "build:watch": "rslib build --watch --no-clean",
@@ -40,6 +40,7 @@
   "dependencies": {
     "@midscene/core": "workspace:*",
     "@midscene/shared": "workspace:*",
+    "ajv": "8.17.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

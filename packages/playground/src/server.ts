@@ -85,13 +85,21 @@ import {
   recoverScenarioStep,
 } from './scenario-recovery';
 import {
+  listScenarioReports,
+  readScenarioReport,
+  saveScenarioReport,
+} from './scenario-report-storage';
+import {
   ScenarioBlockedError,
   ScenarioFatalError,
   ScenarioRunner,
   executeScenarioAgentStep,
   validateScenarioRun,
 } from './scenario-runner';
-import { generateScenarioSummary } from './scenario-summary';
+import {
+  basicScenarioSummary,
+  generateScenarioSummary,
+} from './scenario-summary';
 import type { AgentFactory, PlaygroundReportRef } from './types';
 
 import 'dotenv/config';
@@ -3540,6 +3548,32 @@ class PlaygroundServer {
           'fresh',
       });
     });
+    this._app.get('/scenario-reports', async (_req: Request, res: Response) => {
+      try {
+        res.json({
+          reports: await listScenarioReports(
+            join(getMidsceneRunSubDir('report'), 'scenario-reports'),
+          ),
+        });
+      } catch {
+        res.status(500).json({ error: 'Unable to read execution reports.' });
+      }
+    });
+    this._app.get(
+      '/scenario-reports/:id',
+      async (req: Request, res: Response) => {
+        try {
+          res.json({
+            run: await readScenarioReport(
+              join(getMidsceneRunSubDir('report'), 'scenario-reports'),
+              req.params.id,
+            ),
+          });
+        } catch {
+          res.status(404).json({ error: 'Unable to read execution report.' });
+        }
+      },
+    );
     this._app.post(
       '/scenario-runs/session/restore',
       async (_req: Request, res: Response) => {
@@ -4670,22 +4704,39 @@ class PlaygroundServer {
   private async summarizeScenario(runner: ScenarioRunner): Promise<void> {
     const abort = new AbortController();
     this.scenarioSummaryAbort = abort;
-    runner.state.summary = { status: 'generating' };
+    runner.state.summary = { status: 'generating', phase: 'preparing' };
     try {
       const agent = this.getActiveAgentOrThrow();
       const config = (
         agent.modelConfigManager || globalModelConfigManager
       ).getModelConfig('insight');
-      const text = await generateScenarioSummary(
+      runner.state.summary = await generateScenarioSummary(
         structuredClone(runner.state),
         getModelRuntime(config),
         AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]),
+        undefined,
+        (phase) => {
+          runner.state.summary = { status: 'generating', phase };
+        },
       );
-      runner.state.summary = { status: 'completed', text };
     } catch {
       // Summary failure must never replace the authoritative execution result.
-      runner.state.summary = { status: 'failed' };
+      runner.state.summary = basicScenarioSummary(runner.state);
     }
+    try {
+      runner.state.summary!.phase = 'saving';
+      await saveScenarioReport(
+        join(getMidsceneRunSubDir('report'), 'scenario-reports'),
+        {
+          ...runner.state,
+          summary: { ...runner.state.summary!, phase: 'ready' },
+        },
+      );
+    } catch {
+      runner.state.summary!.storageError =
+        'Unable to save execution report. Download it before leaving.';
+    }
+    runner.state.summary!.phase = 'ready';
   }
 
   async close(): Promise<void> {

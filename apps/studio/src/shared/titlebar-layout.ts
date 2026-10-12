@@ -1,4 +1,5 @@
 /** Layout values shared by the native window chrome and ShellLayout. */
+export const TITLEBAR_OVERLAY_HEIGHT = 56;
 export const TITLEBAR_CONTROL_TOP = 19;
 export const TITLEBAR_CONTROL_HEIGHT = 22;
 // Windows renders its native minimize/maximize/close controls over the right

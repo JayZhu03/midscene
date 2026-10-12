@@ -73,6 +73,9 @@ export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
     throw new Error('Invalid scenario execution plan.');
   }
   if (
+    (value.scenarioDescription !== undefined &&
+      (typeof value.scenarioDescription !== 'string' ||
+        value.scenarioDescription.length > 4000)) ||
     (value.sessionMode !== undefined &&
       !['current', 'fresh'].includes(value.sessionMode)) ||
     (value.scenarioName !== undefined &&
@@ -169,6 +172,7 @@ export class ScenarioRunner {
       scenarioId: plan.scenarioId,
       sessionMode: plan.sessionMode || 'current',
       scenarioName: plan.scenarioName,
+      scenarioDescription: plan.scenarioDescription,
       scope: plan.scope,
       language: plan.language,
       startedAt: Date.now(),
@@ -185,6 +189,7 @@ export class ScenarioRunner {
           id: step.id,
           type: step.type,
           description: step.description,
+          instruction: step.instruction,
           status: 'pending',
         })),
       })),

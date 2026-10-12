@@ -579,6 +579,12 @@ importers:
       react-dom:
         specifier: 18.3.1
         version: 18.3.1(react@18.3.1)
+      react-markdown:
+        specifier: 10.1.0
+        version: 10.1.0(@types/react@18.3.23)(react@18.3.1)
+      remark-gfm:
+        specifier: 4.0.1
+        version: 4.0.1
       sharp:
         specifier: ^0.34.3
         version: 0.34.3
@@ -1199,6 +1205,9 @@ importers:
       '@midscene/shared':
         specifier: workspace:*
         version: link:../shared
+      ajv:
+        specifier: 8.17.1
+        version: 8.17.1
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -9889,6 +9898,12 @@ packages:
 
   react-lazy-with-preload@2.2.1:
     resolution: {integrity: sha512-ONSb8gizLE5jFpdHAclZ6EAAKuFX2JydnFXPPPjoUImZlLjGtKzyBS8SJgJq7CpLgsGKh9QCZdugJyEEOVC16Q==}
+
+  react-markdown@10.1.0:
+    resolution: {integrity: sha512-qKxVopLT/TyA6BX3Ue5NwabOsAzm0Q7kAPwq6L+wWDwisYs7R8vZ0nRXqq6rkueboxpkjvLGU9fWifiX/ZZFxQ==}
+    peerDependencies:
+      '@types/react': '>=18'
+      react: '>=18'
 
   react-reconciler@0.33.0:
     resolution: {integrity: sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==}
@@ -22172,6 +22187,24 @@ snapshots:
       react: 18.3.1
 
   react-lazy-with-preload@2.2.1: {}
+
+  react-markdown@10.1.0(@types/react@18.3.23)(react@18.3.1):
+    dependencies:
+      '@types/hast': 3.0.4
+      '@types/mdast': 4.0.4
+      '@types/react': 18.3.23
+      devlop: 1.1.0
+      hast-util-to-jsx-runtime: 2.3.6
+      html-url-attributes: 3.0.1
+      mdast-util-to-hast: 13.2.0
+      react: 18.3.1
+      remark-parse: 11.0.0
+      remark-rehype: 11.1.2
+      unified: 11.0.5
+      unist-util-visit: 5.1.0
+      vfile: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
 
   react-reconciler@0.33.0(react@19.2.8):
     dependencies:

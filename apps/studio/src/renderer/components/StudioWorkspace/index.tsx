@@ -1,8 +1,9 @@
-import { Empty, Segmented, Tabs } from 'antd';
+import { Segmented, Tabs } from 'antd';
 import type { ReactNode } from 'react';
 import { t, useStudioLanguage } from '../../i18n';
 import { type StudioMode, StudioModeTab } from '../../recorder/types';
 import { StudioScenarios } from '../StudioScenarios';
+import { StudioExecutionRecords } from '../StudioScenarios/StudioExecutionRecords';
 import type { StudioWorkbenchMenu, StudioWorkspaceMode } from './preferences';
 import './studio-workspace.css';
 
@@ -113,12 +114,7 @@ export function StudioWorkspace({
       </div>
       <StudioScenarios active={!original && menu === 'scenarios'} />
       {!original && menu === 'execution-records' ? (
-        <div className="studio-workspace-empty">
-          <Empty
-            description={t('No execution records yet')}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        </div>
+        <StudioExecutionRecords />
       ) : null}
     </div>
   );

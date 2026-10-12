@@ -6,6 +6,7 @@ import {
   executeScenarioNative,
 } from '../../src/scenario-native';
 import { SCENARIO_PAGE_NOT_READY } from '../../src/scenario-readiness';
+import { saveScenarioReport } from '../../src/scenario-report-storage';
 import { generateScenarioSummary } from '../../src/scenario-summary';
 import { PlaygroundServer } from '../../src/server';
 
@@ -18,7 +19,21 @@ rs.mock('../../src/scenario-native', () => ({
   executeScenarioNative: rs.fn(async () => {}),
 }));
 rs.mock('../../src/scenario-summary', () => ({
-  generateScenarioSummary: rs.fn(async () => 'Execution reviewed.'),
+  generateScenarioSummary: rs.fn(async () => ({
+    status: 'completed',
+    format: 'markdown',
+    text: 'Execution reviewed.',
+  })),
+  basicScenarioSummary: rs.fn(() => ({
+    status: 'failed',
+    format: 'markdown',
+    text: 'Basic execution report.',
+  })),
+}));
+rs.mock('../../src/scenario-report-storage', () => ({
+  saveScenarioReport: rs.fn(async () => {}),
+  listScenarioReports: rs.fn(async () => []),
+  readScenarioReport: rs.fn(async () => ({})),
 }));
 const response = () => ({
   statusCode: 200,
@@ -387,6 +402,8 @@ describe('scenario routes', () => {
       expect(status().run.status).toBe('completed');
       expect(status().run.error).toBeUndefined();
       expect(status().busy).toBe(false);
+      await until(() => rs.mocked(saveScenarioReport).mock.calls.length > 0);
+      expect(status().run.summary.format).toBe('markdown');
     } finally {
       await server.close();
     }
