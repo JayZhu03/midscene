@@ -25,6 +25,12 @@ export async function executeScenarioAgentStep(
         'The checkpoint did not pass.',
     );
   }
+  return {
+    detail:
+      typeof (result as { thought?: unknown })?.thought === 'string'
+        ? (result as { thought: string }).thought
+        : undefined,
+  };
 }
 
 export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
@@ -38,6 +44,17 @@ export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
   ) {
     throw new Error('Invalid scenario execution plan.');
   }
+  if (
+    (value.sessionMode !== undefined &&
+      !['current', 'fresh'].includes(value.sessionMode)) ||
+    (value.scenarioName !== undefined &&
+      (typeof value.scenarioName !== 'string' ||
+        value.scenarioName.length > 200)) ||
+    (value.scope !== undefined &&
+      !['scenario', 'script'].includes(value.scope)) ||
+    (value.language !== undefined && !['zh', 'en'].includes(value.language))
+  )
+    throw new Error('Invalid scenario execution plan.');
   const ids = new Set<string>();
   for (const script of value.scripts) {
     if (
@@ -122,6 +139,11 @@ export class ScenarioRunner {
     this.state = {
       id: randomUUID(),
       scenarioId: plan.scenarioId,
+      sessionMode: plan.sessionMode || 'current',
+      scenarioName: plan.scenarioName,
+      scope: plan.scope,
+      language: plan.language,
+      startedAt: Date.now(),
       status: 'running',
       scriptIndex: 0,
       stepIndex: 0,
@@ -131,6 +153,12 @@ export class ScenarioRunner {
         status: 'pending',
         completedSteps: 0,
         totalSteps: s.steps.length,
+        steps: s.steps.map((step) => ({
+          id: step.id,
+          type: step.type,
+          description: step.description,
+          status: 'pending',
+        })),
       })),
     };
   }
@@ -156,7 +184,7 @@ export class ScenarioRunner {
       step: ScenarioRunStep,
       signal: AbortSignal,
       scriptIndex: number,
-    ) => Promise<void>,
+    ) => Promise<unknown>,
   ) {
     if (this.started) throw new Error('Scenario already started.');
     this.started = true;
@@ -181,8 +209,20 @@ export class ScenarioRunner {
           this.abort.signal.throwIfAborted();
           this.state.stepIndex = j;
           this.state.stepDescription = script.steps[j].description;
-          await execute(script.steps[j], this.abort.signal, i);
+          const stepResult = result.steps![j];
+          stepResult.status = 'running';
+          stepResult.startedAt = Date.now();
+          const evidence = await execute(script.steps[j], this.abort.signal, i);
           this.abort.signal.throwIfAborted();
+          stepResult.status = 'passed';
+          stepResult.finishedAt = Date.now();
+          if (
+            evidence &&
+            typeof evidence === 'object' &&
+            'detail' in evidence &&
+            typeof evidence.detail === 'string'
+          )
+            stepResult.detail = evidence.detail;
           result.completedSteps++;
         }
         result.status = 'passed';
@@ -200,6 +240,17 @@ export class ScenarioRunner {
         : error instanceof Error
           ? error.message
           : 'Scenario execution failed.';
+      const step =
+        this.state.scripts[this.state.scriptIndex].steps?.[
+          this.state.stepIndex
+        ];
+      if (step?.status === 'running') {
+        step.status = stopped ? 'stopped' : 'failed';
+        step.finishedAt = Date.now();
+        step.error = this.state.error;
+      }
+    } finally {
+      this.state.finishedAt = Date.now();
     }
   }
 }

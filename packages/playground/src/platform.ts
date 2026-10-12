@@ -257,6 +257,10 @@ export interface PlaygroundCreatedSession {
 }
 
 export interface PlaygroundSessionManager {
+  /** Switch the visible browser without discarding the original login session. */
+  switchExecutionSession?(
+    mode: 'fresh' | 'restore',
+  ): Promise<PlaygroundCreatedSession>;
   getSetupSchema?(
     input?: Record<string, unknown>,
   ): Promise<PlaygroundSessionSetup>;

@@ -1,6 +1,6 @@
 import type { ScenarioRunState } from '@midscene/playground';
 import { Button, Dropdown } from 'antd';
-import { useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { t } from '../../i18n';
 import {
   EditIcon,
@@ -9,6 +9,7 @@ import {
 } from '../Recorder/assets/recorder-icons';
 import type { ScenarioScript } from './script-model';
 import { type SequenceEntry, moveScript } from './sequence';
+import { type SessionMode, sessionModeMenu } from './session-mode';
 
 export const runStatusLabel = (status: string) =>
   t(
@@ -35,6 +36,8 @@ export function StudioScriptSequence({
   onOpen,
   onAction,
   canRun,
+  sessionMode = 'current',
+  onSessionModeChange,
 }: {
   scripts: ScenarioScript[];
   sequence: SequenceEntry[];
@@ -47,10 +50,72 @@ export function StudioScriptSequence({
     script: ScenarioScript,
   ) => void;
   canRun: boolean;
+  sessionMode?: SessionMode;
+  onSessionModeChange?: (mode: SessionMode) => void;
 }) {
   const suppressDragClick = useRef(false);
   const [dragged, setDragged] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const [landed, setLanded] = useState<string | null>(null);
+  const rows = useRef(new Map<string, HTMLLIElement>());
+  const animations = useRef<Animation[]>([]);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout>>();
+  const pendingMove = useRef<{
+    id: string;
+    order: string;
+    positions: Map<string, number>;
+  } | null>(null);
+  const reorder = (id: string, targetId: string) => {
+    const next = moveScript(sequence, id, targetId);
+    if (locked || next === sequence) return;
+    pendingMove.current = {
+      id,
+      order: JSON.stringify(next.map((item) => item.id)),
+      positions: new Map(
+        [...rows.current].map(([key, row]) => [
+          key,
+          row.getBoundingClientRect().top,
+        ]),
+      ),
+    };
+    onChange(next);
+  };
+  useLayoutEffect(() => {
+    const move = pendingMove.current;
+    if (!move) return;
+    pendingMove.current = null;
+    // Animate only after the parent has successfully saved and accepted the order.
+    if (JSON.stringify(sequence.map((item) => item.id)) !== move.order) return;
+    animations.current.forEach((animation) => animation.cancel());
+    animations.current = [];
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      for (const [id, row] of rows.current) {
+        const previous = move.positions.get(id);
+        if (previous === undefined) continue;
+        const offset = previous - row.getBoundingClientRect().top;
+        if (offset && row.animate)
+          animations.current.push(
+            row.animate(
+              [
+                { transform: `translateY(${offset}px)` },
+                { transform: 'translateY(0)' },
+              ],
+              { duration: 260, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+            ),
+          );
+      }
+    }
+    clearTimeout(highlightTimer.current);
+    setLanded(move.id);
+    highlightTimer.current = setTimeout(() => setLanded(null), 1400);
+  }, [sequence]);
+  useEffect(
+    () => () => {
+      clearTimeout(highlightTimer.current);
+      animations.current.forEach((animation) => animation.cancel());
+    },
+    [],
+  );
   const byId = new Map(scripts.map((script) => [script.id, script]));
   return (
     <ol
@@ -70,7 +135,20 @@ export function StudioScriptSequence({
         return (
           <li
             key={entry.id}
+            ref={(node) => {
+              if (node) rows.current.set(entry.id, node);
+              else rows.current.delete(entry.id);
+            }}
             className={`studio-sequence-row${over === entry.id && dragged !== entry.id ? ' studio-sequence-drop' : ''}`}
+            data-dragging={dragged === entry.id ? 'true' : undefined}
+            data-landed={landed === entry.id ? 'true' : undefined}
+            data-drop-position={
+              over === entry.id && dragged && dragged !== entry.id
+                ? sequence.findIndex((item) => item.id === dragged) < index
+                  ? 'after'
+                  : 'before'
+                : undefined
+            }
             data-status={result?.status}
             draggable={!locked}
             onPointerDownCapture={() => {
@@ -91,6 +169,8 @@ export function StudioScriptSequence({
               event.dataTransfer.setData('text/plain', entry.id);
               event.dataTransfer.effectAllowed = 'move';
               suppressDragClick.current = true;
+              clearTimeout(highlightTimer.current);
+              setLanded(null);
               setDragged(entry.id);
             }}
             onDragEnd={() => {
@@ -100,13 +180,13 @@ export function StudioScriptSequence({
             onDragOver={(event) => {
               if (!locked && dragged) {
                 event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
                 setOver(entry.id);
               }
             }}
             onDrop={(event) => {
               event.preventDefault();
-              if (!locked && dragged)
-                onChange(moveScript(sequence, dragged, entry.id));
+              if (!locked && dragged) reorder(dragged, entry.id);
               setDragged(null);
               setOver(null);
             }}
@@ -125,8 +205,7 @@ export function StudioScriptSequence({
                     event.preventDefault();
                     const target =
                       sequence[index + (event.key === 'ArrowUp' ? -1 : 1)];
-                    if (target)
-                      onChange(moveScript(sequence, entry.id, target.id));
+                    if (target) reorder(entry.id, target.id);
                   }}
                   onClick={() => onOpen(script)}
                 >
@@ -147,6 +226,7 @@ export function StudioScriptSequence({
                   disabled={locked}
                   overlayClassName="studio-scenario-menu"
                   menu={{
+                    selectedKeys: [`session-${sessionMode}`],
                     items: [
                       { key: 'rename', label: t('Rename'), icon: <EditIcon /> },
                       {
@@ -162,8 +242,20 @@ export function StudioScriptSequence({
                         icon: <ReplayIcon />,
                         disabled: !canRun,
                       },
+                      ...(onSessionModeChange
+                        ? [sessionModeMenu(sessionMode)]
+                        : []),
                     ],
                     onClick: ({ key }) => {
+                      if (
+                        !locked &&
+                        (key === 'session-current' || key === 'session-fresh')
+                      ) {
+                        onSessionModeChange?.(
+                          key === 'session-fresh' ? 'fresh' : 'current',
+                        );
+                        return;
+                      }
                       if (
                         !locked &&
                         (key === 'rename' || key === 'delete' || key === 'run')
@@ -213,8 +305,7 @@ export function StudioScriptSequence({
                       if (key === 'up' || key === 'down') {
                         const target =
                           sequence[index + (key === 'up' ? -1 : 1)];
-                        if (target)
-                          onChange(moveScript(sequence, entry.id, target.id));
+                        if (target) reorder(entry.id, target.id);
                       } else if (key === 'automatic' || key === 'manual')
                         onChange(
                           sequence.map((item) =>

@@ -187,6 +187,17 @@ export async function prepareMultiPlatformPlayground(
   };
 
   const sessionManager: PlaygroundSessionManager = {
+    async switchExecutionSession(mode) {
+      const platformId = activePlatformState.platformId;
+      const prepared = platformId ? preparedCache.get(platformId) : undefined;
+      const manager = activePlatformState.sessionManager;
+      if (!prepared || !manager?.switchExecutionSession)
+        throw new Error('Fresh sessions are not supported by this browser.');
+      return normalizeChildSession(
+        prepared,
+        await manager.switchExecutionSession(mode),
+      );
+    },
     async getSetupSchema(input?: Record<string, unknown>) {
       const platformId =
         typeof input?.[selectorFieldKey] === 'string'

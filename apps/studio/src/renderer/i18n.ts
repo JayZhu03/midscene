@@ -8,10 +8,30 @@ import {
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
+  'Use current session': '沿用当前会话',
+  'Fresh session': '全新会话',
+  'Return to original session': '返回原会话',
+  'Unable to save session preference.': '运行方式保存失败，请重试',
+  'Fresh sessions are not supported by this browser.':
+    '当前浏览器不支持全新会话',
+  'No original session is available.': '原会话已不可用',
+  'Stop the current task before switching sessions.':
+    '请先停止当前任务再切换会话',
+  Execution: '执行',
+  'Execution progress': '执行进度',
+  'Completed steps': '已完成步骤',
+  'Starting execution': '正在启动',
+  'Preparing execution': '正在准备执行…',
+  'Unable to start execution': '执行未启动，请返回后重试',
+  'View execution': '查看执行',
+  'AI summary': 'AI 总结',
+  'Generating summary…': '正在生成总结…',
+  'AI summary unavailable. Execution results are retained.':
+    'AI 总结生成失败，执行结果已保留。',
   Rename: '重命名',
   'Script actions': '脚本操作',
   'Click for actions; drag to reorder': '点击打开菜单，拖动调整顺序',
-  'Run this script': '单独运行',
+  'Run this script': '执行',
   'Rename script': '重命名脚本',
   'Delete script': '删除脚本',
   'Delete this script?': '确认删除此脚本？',
@@ -19,7 +39,7 @@ const webMessages: Record<string, string> = {
   'Sensitive input failed. Check the field and retry.':
     '密码输入失败，请检查输入框后重试',
   'Unable to update script.': '脚本更新失败，请重试',
-  'Run scenario': '执行场景',
+  'Run scenario': '执行',
   'Script sequence': '脚本顺序',
   'Start with scenario': '随场景开始',
   'Automatic continuation': '自动继续',

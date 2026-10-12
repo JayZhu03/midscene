@@ -48,13 +48,14 @@ it('supports accessible reordering and prevents edits during execution', async (
   const change = vi.fn();
   const action = vi.fn();
   const open = vi.fn();
+  let displayedSequence = loadSequence('scene', scripts);
   const render = (locked: boolean) =>
     act(async () =>
       root.render(
         <ConfigProvider theme={{ token: { motion: false } }}>
           <StudioScriptSequence
             scripts={scripts}
-            sequence={loadSequence('scene', scripts)}
+            sequence={displayedSequence}
             locked={locked}
             run={null}
             onChange={change}
@@ -101,6 +102,12 @@ it('supports accessible reordering and prevents edits during execution', async (
   await act(async () =>
     rows[0].querySelector('.studio-sequence-name')!.dispatchEvent(drag),
   );
+  const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
+  Object.defineProperty(dragOver, 'dataTransfer', {
+    value: { dropEffect: '' },
+  });
+  await act(async () => rows[1].dispatchEvent(dragOver));
+  expect(rows[1].getAttribute('data-drop-position')).toBe('after');
   await act(async () =>
     rows[1].dispatchEvent(
       new Event('drop', { bubbles: true, cancelable: true }),
@@ -109,6 +116,11 @@ it('supports accessible reordering and prevents edits during execution', async (
   expect(
     change.mock.calls.at(-1)![0].map((item: { id: string }) => item.id),
   ).toEqual(['b', 'a']);
+  expect(element.querySelector('[data-landed="true"]')).toBeNull();
+  displayedSequence = change.mock.calls.at(-1)![0];
+  await render(false);
+  expect(rows[0].getAttribute('data-landed')).toBe('true');
+  expect(element.querySelector('[data-drop-position]')).toBeNull();
   open.mockClear();
   await act(async () =>
     rows[0]
@@ -193,4 +205,52 @@ it('prevents double start and recovers a lost start response from backend state'
   await act(async () => vi.advanceTimersByTimeAsync(750));
   expect(api.run?.status).toBe('completed');
   expect(busy).toBe(false);
+});
+
+it('refreshes preview metadata once per browser switch, including consecutive fresh sessions and restore', async () => {
+  vi.useFakeTimers();
+  let api!: ReturnType<typeof useScenarioExecution>;
+  function Probe() {
+    api = useScenarioExecution();
+    return null;
+  }
+  let sessionId = 'original';
+  const refresh = vi.fn(async () => {});
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: null,
+        busy: false,
+        previewSessionId: sessionId,
+      }),
+    })),
+  );
+  const context = {
+    phase: 'ready',
+    serverUrl: 'http://localhost:1234',
+    controller: {
+      state: { serverOnline: true, sessionViewState: { connected: true } },
+      actions: { refreshServerState: refresh },
+    },
+  };
+  await act(async () =>
+    root.render(
+      <StudioPlaygroundContext.Provider value={context as any}>
+        <Probe />
+      </StudioPlaygroundContext.Provider>,
+    ),
+  );
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(2500));
+  expect(refresh).toHaveBeenCalledTimes(1);
+  for (const id of ['fresh-1', 'fresh-2']) {
+    sessionId = id;
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+  }
+  expect(refresh).toHaveBeenCalledTimes(3);
+  sessionId = 'restored';
+  await act(async () => api.restoreSession());
+  expect(refresh).toHaveBeenCalledTimes(4);
 });

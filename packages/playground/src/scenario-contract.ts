@@ -18,7 +18,21 @@ export interface ScenarioRunScript {
 }
 export interface ScenarioRunInput {
   scenarioId: string;
+  sessionMode?: 'current' | 'fresh';
+  scenarioName?: string;
+  scope?: 'scenario' | 'script';
+  language?: 'zh' | 'en';
   scripts: ScenarioRunScript[];
+}
+export interface ScenarioStepResult {
+  id: string;
+  type: ScenarioRunStep['type'];
+  description: string;
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'stopped';
+  startedAt?: number;
+  finishedAt?: number;
+  detail?: string;
+  error?: string;
 }
 export type ScenarioRunStatus =
   | 'running'
@@ -30,6 +44,16 @@ export type ScenarioRunStatus =
 export interface ScenarioRunState {
   id: string;
   scenarioId: string;
+  sessionMode?: 'current' | 'fresh';
+  scenarioName?: string;
+  scope?: 'scenario' | 'script';
+  language?: 'zh' | 'en';
+  startedAt?: number;
+  finishedAt?: number;
+  summary?: {
+    status: 'generating' | 'completed' | 'failed';
+    text?: string;
+  };
   status: ScenarioRunStatus;
   scriptIndex: number;
   stepIndex: number;
@@ -41,6 +65,7 @@ export interface ScenarioRunState {
     status: 'pending' | 'running' | 'waiting' | 'passed' | 'failed' | 'stopped';
     completedSteps: number;
     totalSteps: number;
+    steps?: ScenarioStepResult[];
   }>;
 }
 

@@ -84,6 +84,7 @@ import {
   executeScenarioAgentStep,
   validateScenarioRun,
 } from './scenario-runner';
+import { generateScenarioSummary } from './scenario-summary';
 import type { AgentFactory, PlaygroundReportRef } from './types';
 
 import 'dotenv/config';
@@ -1317,6 +1318,8 @@ class PlaygroundServer {
   private currentTaskId: string | null = null;
   private scenarioRunner?: ScenarioRunner;
   private scenarioCompletion?: Promise<void>;
+  private scenarioSummaryAbort?: AbortController;
+  private scenarioSummaryCompletion?: Promise<void>;
   private recorderStarting = false;
   private taskAbortControllers: Record<string, AbortController> = {};
 
@@ -1354,6 +1357,8 @@ class PlaygroundServer {
     sidecars: undefined,
   };
 
+  private previewSessionId = randomUUID();
+
   private setActiveAgent(
     agent: PageAgent | null,
     options: { preserveActiveStream?: boolean } = {},
@@ -1370,6 +1375,7 @@ class PlaygroundServer {
     // disconnect.
     if (!options.preserveActiveStream) {
       this._mjpegHandler.reset();
+      if (agent) this.previewSessionId = randomUUID();
     }
   }
 
@@ -1532,7 +1538,7 @@ class PlaygroundServer {
   }
 
   getRuntimeInfo(): PlaygroundRuntimeInfo {
-    return buildRuntimeInfo({
+    const info = buildRuntimeInfo({
       platformId: this._activeConnection.runtime?.platformId,
       title: this._activeConnection.runtime?.title,
       platformDescription: this._activeConnection.runtime?.description,
@@ -1548,6 +1554,21 @@ class PlaygroundServer {
       mjpegStreamUrl: this._activeConnection.agent?.interface?.mjpegStreamUrl,
       scrcpyPort: this.scrcpyPort,
     });
+    if (info.preview?.kind === 'mjpeg') {
+      // A gracefully ended multipart image can keep its last frame without
+      // firing onError. Give each replacement source a distinct URL so the
+      // renderer reconnects even when the old image still has valid dimensions.
+      const streamPath = info.preview.mjpegPath || '/mjpeg';
+      const url = new URL(streamPath, 'http://localhost');
+      url.searchParams.set('previewSession', this.previewSessionId);
+      info.preview = {
+        ...info.preview,
+        mjpegPath: /^https?:\/\//.test(streamPath)
+          ? url.toString()
+          : `${url.pathname}${url.search}`,
+      };
+    }
+    return info;
   }
 
   /**
@@ -3504,10 +3525,42 @@ class PlaygroundServer {
 
     this._app.get('/scenario-runs', (_req: Request, res: Response) => {
       res.json({
+        previewSessionId: this.previewSessionId,
         run: this.scenarioRunner?.state ?? null,
         busy: Boolean(this.currentTaskId),
+        isolatedSession:
+          this._activeConnection.session?.metadata?.executionSession ===
+          'fresh',
       });
     });
+    this._app.post(
+      '/scenario-runs/session/restore',
+      async (_req: Request, res: Response) => {
+        if (
+          this.currentTaskId ||
+          this._recorderSessionId ||
+          this.recorderStarting
+        )
+          return res.status(409).json({
+            error: 'Stop the current task before switching sessions.',
+          });
+        const taskId = randomUUID();
+        this.currentTaskId = taskId;
+        try {
+          await this.switchScenarioSession('restore');
+          return res.json({
+            run: this.scenarioRunner?.state ?? null,
+            busy: false,
+            isolatedSession: false,
+            previewSessionId: this.previewSessionId,
+          });
+        } catch (error) {
+          return res.status(400).json({ error: formatErrorMessage(error) });
+        } finally {
+          if (this.currentTaskId === taskId) this.currentTaskId = null;
+        }
+      },
+    );
     this._app.post('/scenario-runs', (req: Request, res: Response) => {
       if (
         this.currentTaskId ||
@@ -3527,6 +3580,7 @@ class PlaygroundServer {
         return res.status(400).json({ error: formatErrorMessage(error) });
       }
       this.scenarioRunner = runner;
+      this.scenarioSummaryAbort?.abort();
       this.currentTaskId = runner.state.id;
       this.scenarioCompletion = (async () => {
         let connection:
@@ -3536,6 +3590,10 @@ class PlaygroundServer {
         try {
           await runner.run(async (step, signal, scriptIndex) => {
             if (!prepared) {
+              if (runner.plan.sessionMode === 'fresh') {
+                await this.switchScenarioSession('fresh');
+                signal.throwIfAborted();
+              }
               if (this._configDirty && this._activeConnection.agentFactory) {
                 await this.destroyCurrentAgent();
                 this.setActiveAgent(
@@ -3569,14 +3627,16 @@ class PlaygroundServer {
               }
             } else {
               const agent = this.getActiveAgentOrThrow();
-              await executeScenarioAgentStep(step, async (type, instruction) =>
-                executeAction(
-                  agent,
-                  type,
-                  agent.interface.actionSpace(),
-                  { type, prompt: instruction },
-                  { abortSignal: signal },
-                ),
+              return await executeScenarioAgentStep(
+                step,
+                async (type, instruction) =>
+                  executeAction(
+                    agent,
+                    type,
+                    agent.interface.actionSpace(),
+                    { type, prompt: instruction },
+                    { abortSignal: signal },
+                  ),
               );
             }
           });
@@ -3593,6 +3653,7 @@ class PlaygroundServer {
               this.currentTaskId = null;
           }
         }
+        this.scenarioSummaryCompletion = this.summarizeScenario(runner);
       })();
       res.status(202).json({ run: runner.state, busy: true });
     });
@@ -4526,9 +4587,46 @@ class PlaygroundServer {
   /**
    * Close the server and clean up resources
    */
+  private async switchScenarioSession(
+    mode: 'fresh' | 'restore',
+  ): Promise<void> {
+    if (!this.sessionManager?.switchExecutionSession)
+      throw new Error('Fresh sessions are not supported by this browser.');
+    // Prepare first, so launch failures leave the existing browser usable.
+    const created = await this.sessionManager.switchExecutionSession(mode);
+    this.clearActiveSessionNavigationEvents();
+    await this.destroyCurrentAgent();
+    await this.applyCreatedSession(created);
+    this.setActiveAgent(created.agent || (await created.agentFactory!()));
+    this.bindActiveSessionNavigationEvents();
+  }
+
+  private async summarizeScenario(runner: ScenarioRunner): Promise<void> {
+    const abort = new AbortController();
+    this.scenarioSummaryAbort = abort;
+    runner.state.summary = { status: 'generating' };
+    try {
+      const agent = this.getActiveAgentOrThrow();
+      const config = (
+        agent.modelConfigManager || globalModelConfigManager
+      ).getModelConfig('insight');
+      const text = await generateScenarioSummary(
+        structuredClone(runner.state),
+        getModelRuntime(config),
+        AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]),
+      );
+      runner.state.summary = { status: 'completed', text };
+    } catch {
+      // Summary failure must never replace the authoritative execution result.
+      runner.state.summary = { status: 'failed' };
+    }
+  }
+
   async close(): Promise<void> {
     this.scenarioRunner?.stop();
     await this.scenarioCompletion;
+    this.scenarioSummaryAbort?.abort();
+    await this.scenarioSummaryCompletion;
     await this.destroyCurrentSession().catch((error) => {
       console.warn('Failed to destroy current session during shutdown:', error);
     });

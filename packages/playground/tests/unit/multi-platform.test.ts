@@ -13,6 +13,37 @@ function createAgent(interfaceType: string) {
 }
 
 describe('prepareMultiPlatformPlayground', () => {
+  test('forwards execution-session switching to the active platform with preview metadata', async () => {
+    const agent = createAgent('web');
+    const switchSession = rs.fn(async () => ({
+      agent,
+      metadata: { executionSession: 'fresh' },
+    }));
+    const prepared = await prepareMultiPlatformPlayground([
+      {
+        id: 'web',
+        label: 'Web',
+        prepare: async () => ({
+          platformId: 'web',
+          title: 'Web',
+          preview: { kind: 'mjpeg' },
+          sessionManager: {
+            createSession: async () => ({ agent }),
+            switchExecutionSession: switchSession,
+          },
+        }),
+      },
+    ]);
+    await prepared.sessionManager!.createSession({ platformId: 'web' });
+    const result =
+      await prepared.sessionManager!.switchExecutionSession!('fresh');
+    expect(switchSession).toHaveBeenCalledWith('fresh');
+    expect(result).toMatchObject({
+      platformId: 'web',
+      preview: { kind: 'mjpeg' },
+      metadata: { executionSession: 'fresh' },
+    });
+  });
   test('exposes platform registry metadata and routes child sessions', async () => {
     const childGetSetupSchema = rs.fn(async () => ({
       title: 'Connect Android',

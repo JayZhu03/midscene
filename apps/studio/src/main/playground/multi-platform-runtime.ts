@@ -342,7 +342,7 @@ function createStudioWebPreviewDescriptor(): PlaygroundPreviewDescriptor {
   };
 }
 
-async function prepareStudioWebPlatform({
+export async function prepareStudioWebPlatform({
   loadWebModule,
   getAgentOptions,
   profileRoot,
@@ -364,169 +364,250 @@ async function prepareStudioWebPlatform({
     | Awaited<ReturnType<typeof webModule.launchPuppeteerPage>>['page']
     | null = null;
 
+  let currentInput: Record<string, unknown> = {};
+  let currentCreated:
+    | import('@midscene/playground').PlaygroundCreatedSession
+    | null = null;
+  const capture = () => ({
+    pageCleanup,
+    agentCleanup,
+    currentPage,
+    currentInput,
+    currentCreated,
+  });
+  type SavedSession = ReturnType<typeof capture>;
+  let originalSession: SavedSession | null = null;
+  const restore = (saved: SavedSession) => {
+    ({ pageCleanup, agentCleanup, currentPage, currentInput, currentCreated } =
+      saved);
+  };
+  const clear = () => {
+    pageCleanup = null;
+    agentCleanup = null;
+    currentPage = null;
+    currentCreated = null;
+    currentInput = {};
+  };
+  const dispose = async (saved: SavedSession) => {
+    await runWebCleanup(saved.agentCleanup);
+    await runWebCleanup(saved.pageCleanup);
+  };
+  const sessionManager: NonNullable<
+    PreparedPlaygroundPlatform['sessionManager']
+  > = {
+    async getSetupSchema() {
+      return {
+        title: 'Open a web page',
+        description: 'Start a Chromium page and stream it into Studio.',
+        primaryActionLabel: 'Open Page',
+        fields: [
+          {
+            key: 'url',
+            label: 'URL',
+            type: 'text',
+            required: true,
+            defaultValue: DEFAULT_STUDIO_WEB_URL,
+            placeholder: DEFAULT_STUDIO_WEB_URL,
+          },
+          {
+            key: 'viewportWidth',
+            label: 'Viewport width',
+            type: 'number',
+            defaultValue: DEFAULT_STUDIO_WEB_VIEWPORT.width,
+          },
+          {
+            key: 'viewportHeight',
+            label: 'Viewport height',
+            type: 'number',
+            defaultValue: DEFAULT_STUDIO_WEB_VIEWPORT.height,
+          },
+          {
+            key: 'headed',
+            label: 'Browser window',
+            type: 'select',
+            defaultValue: false,
+            options: [
+              {
+                label: 'Headless',
+                value: false,
+              },
+              {
+                label: 'Visible Chrome window',
+                value: true,
+              },
+            ],
+          },
+        ],
+      };
+    },
+    async createSession(input) {
+      await runWebCleanup(agentCleanup);
+      agentCleanup = null;
+      await runWebCleanup(pageCleanup);
+      pageCleanup = null;
+      currentPage = null;
+
+      const url = normalizeWebUrl(input?.url);
+      const viewportWidth = normalizeViewportDimension(
+        input?.viewportWidth,
+        DEFAULT_STUDIO_WEB_VIEWPORT.width,
+      );
+      const viewportHeight = normalizeViewportDimension(
+        input?.viewportHeight,
+        DEFAULT_STUDIO_WEB_VIEWPORT.height,
+      );
+      const headed = input?.headed === true;
+      currentInput = { url, viewportWidth, viewportHeight, headed };
+
+      const agentFactory = async () => {
+        // Tear down only the previous agent. The page/browser stays
+        // alive across recreate-on-cancel so the MJPEG stream does not
+        // blink and the user does not lose their navigation history.
+        await runWebCleanup(agentCleanup);
+        agentCleanup = null;
+
+        // If the user closed the Chrome window (or it crashed) the
+        // cached page object reports `isClosed()`; in that case we
+        // drop the stale cleanup and launch fresh instead of handing
+        // the new agent a dead page.
+        const pageIsClosed =
+          typeof (currentPage as { isClosed?: () => boolean })?.isClosed ===
+            'function' &&
+          (currentPage as { isClosed: () => boolean }).isClosed();
+        if (!currentPage || pageIsClosed) {
+          await runWebCleanup(pageCleanup);
+          pageCleanup = null;
+          currentPage = null;
+          const { page, freeFn } = await webModule.launchPuppeteerPage(
+            {
+              url,
+              viewportWidth,
+              viewportHeight,
+              ...(profileRoot && input?.executionSession !== 'fresh'
+                ? { chromeArgs: webProfileArgs(profileRoot, url) }
+                : {}),
+            },
+            {
+              headed,
+            },
+          );
+          currentPage = page;
+          pageCleanup = freeFn;
+        }
+
+        const agent = new webModule.PuppeteerAgent(currentPage, {
+          ...getAgentOptions(),
+          cacheId: 'studio-web',
+        });
+        attachWebSiteIcon(agent.interface);
+        agentCleanup = [
+          {
+            name: 'studio_web_agent',
+            fn: () => agent.destroy(),
+          },
+        ];
+        return agent;
+      };
+
+      currentCreated = {
+        agentFactory,
+        subscribeNavigationEvents(listener) {
+          const page = currentPage as StudioWebNavigationEventPage | null;
+          if (!page || typeof page.on !== 'function') {
+            return () => {};
+          }
+          const onFrameNavigated = (frame: StudioWebNavigationFrame) => {
+            if (frame.isMainFrame?.() === false) {
+              return;
+            }
+            const navigatedUrl = frame.url?.();
+            if (navigatedUrl) {
+              listener({ url: navigatedUrl, timestamp: Date.now() });
+            }
+          };
+          page.on('framenavigated', onFrameNavigated);
+          return () => {
+            page.off?.('framenavigated', onFrameNavigated);
+          };
+        },
+        displayName: url,
+        metadata: {
+          interfaceType: 'web',
+          sessionDisplayName: url,
+          executionSession:
+            input?.executionSession === 'fresh' ? 'fresh' : 'current',
+          url,
+        },
+        platformId: 'web',
+        preview: createStudioWebPreviewDescriptor(),
+        title: 'Midscene Web Playground',
+      };
+      return currentCreated;
+    },
+    async switchExecutionSession(mode) {
+      if (!currentCreated || !currentPage)
+        throw new Error('Connect a page before running a scenario.');
+      const previous = capture();
+      if (mode === 'restore') {
+        if (!originalSession)
+          throw new Error('No original session is available.');
+        restore(originalSession);
+        try {
+          const agent = await currentCreated!.agentFactory!();
+          originalSession = null;
+          await dispose(previous);
+          return { ...currentCreated!, agent };
+        } catch (error) {
+          restore(previous);
+          throw error;
+        }
+      }
+      // Keep the original browser alive; a temporary profile also isolates
+      // localStorage, IndexedDB, caches and service workers, not just cookies.
+      const viewport = (
+        currentPage as {
+          viewport?: () => { width: number; height: number } | null;
+        }
+      ).viewport?.();
+      clear();
+      try {
+        const created = await sessionManager.createSession({
+          ...previous.currentInput,
+          ...(viewport
+            ? { viewportWidth: viewport.width, viewportHeight: viewport.height }
+            : {}),
+          executionSession: 'fresh',
+        });
+        const agent = await created.agentFactory!();
+        if (originalSession) await dispose(previous);
+        else originalSession = previous;
+        return { ...created, agent };
+      } catch (error) {
+        await dispose(capture());
+        restore(previous);
+        throw error;
+      }
+    },
+    async destroySession() {
+      // Full session destroy releases both the active and retained browser.
+      if (originalSession) await dispose(originalSession);
+      originalSession = null;
+      await runWebCleanup(agentCleanup);
+      agentCleanup = null;
+      await runWebCleanup(pageCleanup);
+      pageCleanup = null;
+      currentPage = null;
+      currentCreated = null;
+      currentInput = {};
+    },
+  };
   return {
     platformId: 'web',
     title: 'Midscene Web Playground',
     description: 'Open and control a Chromium page',
     preview: createStudioWebPreviewDescriptor(),
-    metadata: {
-      interfaceType: 'web',
-    },
-    sessionManager: {
-      async getSetupSchema() {
-        return {
-          title: 'Open a web page',
-          description: 'Start a Chromium page and stream it into Studio.',
-          primaryActionLabel: 'Open Page',
-          fields: [
-            {
-              key: 'url',
-              label: 'URL',
-              type: 'text',
-              required: true,
-              defaultValue: DEFAULT_STUDIO_WEB_URL,
-              placeholder: DEFAULT_STUDIO_WEB_URL,
-            },
-            {
-              key: 'viewportWidth',
-              label: 'Viewport width',
-              type: 'number',
-              defaultValue: DEFAULT_STUDIO_WEB_VIEWPORT.width,
-            },
-            {
-              key: 'viewportHeight',
-              label: 'Viewport height',
-              type: 'number',
-              defaultValue: DEFAULT_STUDIO_WEB_VIEWPORT.height,
-            },
-            {
-              key: 'headed',
-              label: 'Browser window',
-              type: 'select',
-              defaultValue: false,
-              options: [
-                {
-                  label: 'Headless',
-                  value: false,
-                },
-                {
-                  label: 'Visible Chrome window',
-                  value: true,
-                },
-              ],
-            },
-          ],
-        };
-      },
-      async createSession(input) {
-        await runWebCleanup(agentCleanup);
-        agentCleanup = null;
-        await runWebCleanup(pageCleanup);
-        pageCleanup = null;
-        currentPage = null;
-
-        const url = normalizeWebUrl(input?.url);
-        const viewportWidth = normalizeViewportDimension(
-          input?.viewportWidth,
-          DEFAULT_STUDIO_WEB_VIEWPORT.width,
-        );
-        const viewportHeight = normalizeViewportDimension(
-          input?.viewportHeight,
-          DEFAULT_STUDIO_WEB_VIEWPORT.height,
-        );
-        const headed = input?.headed === true;
-
-        const agentFactory = async () => {
-          // Tear down only the previous agent. The page/browser stays
-          // alive across recreate-on-cancel so the MJPEG stream does not
-          // blink and the user does not lose their navigation history.
-          await runWebCleanup(agentCleanup);
-          agentCleanup = null;
-
-          // If the user closed the Chrome window (or it crashed) the
-          // cached page object reports `isClosed()`; in that case we
-          // drop the stale cleanup and launch fresh instead of handing
-          // the new agent a dead page.
-          const pageIsClosed =
-            typeof (currentPage as { isClosed?: () => boolean })?.isClosed ===
-              'function' &&
-            (currentPage as { isClosed: () => boolean }).isClosed();
-          if (!currentPage || pageIsClosed) {
-            await runWebCleanup(pageCleanup);
-            pageCleanup = null;
-            currentPage = null;
-            const { page, freeFn } = await webModule.launchPuppeteerPage(
-              {
-                url,
-                viewportWidth,
-                viewportHeight,
-                ...(profileRoot
-                  ? { chromeArgs: webProfileArgs(profileRoot, url) }
-                  : {}),
-              },
-              {
-                headed,
-              },
-            );
-            currentPage = page;
-            pageCleanup = freeFn;
-          }
-
-          const agent = new webModule.PuppeteerAgent(currentPage, {
-            ...getAgentOptions(),
-            cacheId: 'studio-web',
-          });
-          attachWebSiteIcon(agent.interface);
-          agentCleanup = [
-            {
-              name: 'studio_web_agent',
-              fn: () => agent.destroy(),
-            },
-          ];
-          return agent;
-        };
-
-        return {
-          agentFactory,
-          subscribeNavigationEvents(listener) {
-            const page = currentPage as StudioWebNavigationEventPage | null;
-            if (!page || typeof page.on !== 'function') {
-              return () => {};
-            }
-            const onFrameNavigated = (frame: StudioWebNavigationFrame) => {
-              if (frame.isMainFrame?.() === false) {
-                return;
-              }
-              const navigatedUrl = frame.url?.();
-              if (navigatedUrl) {
-                listener({ url: navigatedUrl, timestamp: Date.now() });
-              }
-            };
-            page.on('framenavigated', onFrameNavigated);
-            return () => {
-              page.off?.('framenavigated', onFrameNavigated);
-            };
-          },
-          displayName: url,
-          metadata: {
-            interfaceType: 'web',
-            sessionDisplayName: url,
-            url,
-          },
-          platformId: 'web',
-          preview: createStudioWebPreviewDescriptor(),
-          title: 'Midscene Web Playground',
-        };
-      },
-      async destroySession() {
-        // Full session destroy releases everything.
-        await runWebCleanup(agentCleanup);
-        agentCleanup = null;
-        await runWebCleanup(pageCleanup);
-        pageCleanup = null;
-        currentPage = null;
-      },
-    },
+    metadata: { interfaceType: 'web' },
+    sessionManager,
   };
 }
 

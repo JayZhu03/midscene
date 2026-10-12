@@ -1,6 +1,6 @@
 import { Button, Dropdown, Form, Input, Modal } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { t } from '../../i18n';
+import { readStoredLanguage, t } from '../../i18n';
 import type { StudioRecordingSession } from '../../recorder/types';
 import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
 import {
@@ -9,6 +9,7 @@ import {
   RecorderButtonIcon,
   ReplayIcon,
 } from '../Recorder/assets/recorder-icons';
+import { StudioScenarioExecution } from './StudioScenarioExecution';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
 import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
 import {
@@ -33,6 +34,12 @@ import {
   reconcileSequence,
   saveSequence,
 } from './sequence';
+import {
+  type SessionMode,
+  loadSessionMode,
+  saveSessionMode,
+  sessionModeMenu,
+} from './session-mode';
 import type { StudioScenario } from './storage';
 import { useScenarioExecution } from './useScenarioExecution';
 
@@ -49,6 +56,20 @@ export function StudioScenarioScripts({
 }) {
   const recorder = useOptionalStudioRecorder();
   const execution = useScenarioExecution();
+  const [sessionMode, setSessionMode] = useState<SessionMode>(() =>
+    loadSessionMode(scenario.id),
+  );
+  const [executionPage, setExecutionPage] = useState(false);
+  const [startingRun, setStartingRun] = useState(false);
+  const observedRunId = useRef<string | null>(null);
+  useEffect(() => {
+    if (execution.run && execution.run.id !== observedRunId.current) {
+      observedRunId.current = execution.run.id;
+      if (scenarioRunActive(execution.run) || startingRun)
+        setExecutionPage(true);
+      setStartingRun(false);
+    }
+  }, [execution.run?.id, startingRun]);
   const [sequence, setSequence] = useState<SequenceEntry[]>([]);
   const [sequenceReady, setSequenceReady] = useState(false);
   const run =
@@ -367,6 +388,56 @@ export function StudioScenarioScripts({
     }
   };
 
+  const startExecution = (
+    selectedScripts: ScenarioScript[],
+    selectedSequence: SequenceEntry[],
+    scope: 'scenario' | 'script',
+  ) => {
+    if (
+      executionRef.current ||
+      protectedWork ||
+      mutationRef.current ||
+      !execution.canStart
+    )
+      return;
+    setError(null);
+    setViewedScript(null);
+    setPhase('list');
+    setStartingRun(true);
+    setExecutionPage(true);
+    void execution.start({
+      ...buildScenarioRun(scenario.id, selectedScripts, selectedSequence),
+      scenarioName: scenario.name,
+      scope,
+      language: readStoredLanguage(),
+      sessionMode,
+    });
+  };
+  const changeSessionMode = (mode: SessionMode) => {
+    if (executionRef.current) return;
+    try {
+      saveSessionMode(scenario.id, mode);
+      setSessionMode(mode);
+      setError(null);
+    } catch {
+      setError(t('Unable to save session preference.'));
+    }
+  };
+  if (executionPage)
+    return (
+      <StudioScenarioExecution
+        run={startingRun ? null : run}
+        error={execution.error}
+        pending={execution.pending}
+        ready={execution.ready}
+        onBack={() => setExecutionPage(false)}
+        onNext={() => void execution.next()}
+        onStop={() => void execution.stop()}
+        canRestoreSession={execution.isolatedSession && !execution.locked}
+        onRestoreSession={() => void execution.restoreSession()}
+      />
+    );
+
   return (
     <div
       className="studio-scenario-panel studio-scenario-detail"
@@ -412,6 +483,7 @@ export function StudioScenarioScripts({
           trigger={['click']}
           placement="bottomRight"
           menu={{
+            selectedKeys: [`session-${sessionMode}`],
             items: [
               {
                 key: 'execute',
@@ -429,14 +501,22 @@ export function StudioScenarioScripts({
                   loading ||
                   saving,
               },
+              { type: 'divider' },
+              sessionModeMenu(
+                sessionMode,
+                execution.locked || execution.pending || protectedWork,
+              ),
             ],
-            onClick: () => {
+            onClick: ({ key }) => {
+              if (key === 'session-current' || key === 'session-fresh') {
+                changeSessionMode(
+                  key === 'session-fresh' ? 'fresh' : 'current',
+                );
+                return;
+              }
               if (executionRef.current || protectedWork || !sequenceReady)
                 return;
-              setError(null);
-              void execution.start(
-                buildScenarioRun(scenario.id, scripts, sequence),
-              );
+              startExecution(scripts, sequence, 'scenario');
             },
           }}
         >
@@ -516,55 +596,15 @@ export function StudioScenarioScripts({
             </Button>
           ) : null}
         </div>
-        {run ? (
-          <div className="studio-scenario-run-bar" aria-live="polite">
-            <div className="studio-scenario-run-copy">
-              <span>
-                {runStatusLabel(run.status)} ·{' '}
-                {Math.min(run.scriptIndex + 1, run.scripts.length)}/
-                {run.scripts.length}
-              </span>
-              {['running', 'waiting', 'stopping'].includes(run.status) ? (
-                <span
-                  className="studio-scenario-run-step"
-                  title={
-                    run.stepDescription || run.scripts[run.scriptIndex]?.name
-                  }
-                >
-                  {run.status === 'waiting'
-                    ? run.scripts[run.scriptIndex]?.name
-                    : run.stepDescription}
-                </span>
-              ) : null}
-            </div>
-            {run.status === 'waiting' ? (
-              <Button
-                type="primary"
-                size="small"
-                disabled={execution.pending || !execution.ready}
-                onClick={() => void execution.next()}
-              >
-                {t('Next step')}
-              </Button>
-            ) : null}
-            {['running', 'waiting', 'stopping'].includes(run.status) ? (
-              <Button
-                size="small"
-                disabled={execution.pending || run.status === 'stopping'}
-                onClick={() => void execution.stop()}
-              >
-                {t('Stop')}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-        {execution.error || run?.error ? (
-          <div
-            className="studio-scenario-error studio-script-error"
-            role="alert"
+        {run || startingRun ? (
+          <Button
+            className="studio-execution-reopen"
+            type="text"
+            onClick={() => setExecutionPage(true)}
           >
-            {t(execution.error || run?.error || '')}
-          </div>
+            {t('View execution')}
+            {run && !startingRun ? ` · ${runStatusLabel(run.status)}` : ''}
+          </Button>
         ) : null}
         {error || preview.error ? (
           <div
@@ -579,6 +619,8 @@ export function StudioScenarioScripts({
             <div className="studio-scenario-empty">{t('Loading scripts')}</div>
           ) : scripts.length ? (
             <StudioScriptSequence
+              sessionMode={sessionMode}
+              onSessionModeChange={changeSessionMode}
               scripts={scripts}
               sequence={sequence}
               locked={execution.locked || execution.pending || !sequenceReady}
@@ -586,13 +628,10 @@ export function StudioScenarioScripts({
               onAction={(action, script) => {
                 if (executionRef.current || mutationRef.current) return;
                 if (action === 'run') {
-                  setError(null);
-                  void execution.start(
-                    buildScenarioRun(
-                      scenario.id,
-                      [script],
-                      [{ id: script.id, startMode: 'automatic' }],
-                    ),
+                  startExecution(
+                    [script],
+                    [{ id: script.id, startMode: 'automatic' }],
+                    'script',
                   );
                 } else {
                   setScriptAction({ type: action, script });

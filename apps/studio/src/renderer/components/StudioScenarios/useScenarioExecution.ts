@@ -34,6 +34,8 @@ export function useScenarioExecutionBusy() {
 interface ResponseState {
   run: ScenarioRunState | null;
   busy: boolean;
+  isolatedSession?: boolean;
+  previewSessionId?: string;
 }
 export function useScenarioExecution() {
   const playground = useContext(StudioPlaygroundContext);
@@ -48,11 +50,26 @@ export function useScenarioExecution() {
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [isolatedSession, setIsolatedSession] = useState(false);
   const inFlight = useRef(false);
   const alive = useRef(true);
   const generation = useRef(0);
+  const acceptedRunId = useRef<string | undefined>(undefined);
+  const previewSessionId = useRef<string | undefined>(undefined);
   const accept = (state: ResponseState) => {
+    if (
+      state.previewSessionId &&
+      previewSessionId.current !== state.previewSessionId
+    ) {
+      previewSessionId.current = state.previewSessionId;
+      if (playground?.phase === 'ready')
+        void playground.controller.actions.refreshServerState();
+    }
+    if (state.run && acceptedRunId.current !== state.run.id) setError(null);
+    acceptedRunId.current = state.run?.id;
     setRun(state.run);
+    if (state.isolatedSession !== undefined)
+      setIsolatedSession(state.isolatedSession);
     setLocked(state.busy || scenarioRunActive(state.run));
     publishBusy(
       scenarioRunActive(state.run) || Boolean(state.run && state.busy),
@@ -73,7 +90,9 @@ export function useScenarioExecution() {
             ? undefined
             : { 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(
+          path === '/session/restore' ? 60000 : 15000,
+        ),
       },
     );
     const result = await response.json();
@@ -121,7 +140,7 @@ export function useScenarioExecution() {
     generation.current++;
     setPending(true);
     setError(null);
-    if (path === '') {
+    if (path === '' || path === '/session/restore') {
       publishBusy(true);
       setLocked(true);
     }
@@ -154,6 +173,8 @@ export function useScenarioExecution() {
     ready,
     canStart: ready && connected,
     locked,
+    isolatedSession,
+    restoreSession: () => command('/session/restore', {}),
     start: (plan: ScenarioRunInput) => command('', plan),
     next: () =>
       run
