@@ -10,8 +10,14 @@ import {
   generateStudioRecorderCodeWithAI,
   generateStudioRecorderMetadataWithAI,
 } from '../src/renderer/recorder/codegen';
-import { getStudioRecorderSessions } from '../src/renderer/recorder/storage';
-import type { StudioRecorderContextValue } from '../src/renderer/recorder/types';
+import {
+  getCurrentStudioRecorderSessionId,
+  getStudioRecorderSessions,
+} from '../src/renderer/recorder/storage';
+import type {
+  StudioRecorderContextValue,
+  StudioRecordingSession,
+} from '../src/renderer/recorder/types';
 import { useStudioRecorder } from '../src/renderer/recorder/useStudioRecorder';
 
 type ReadyStudioPlaygroundContext = Extract<
@@ -2415,5 +2421,336 @@ describe('StudioRecorderProvider preview recording', () => {
     );
 
     await mounted.cleanup();
+  });
+});
+
+describe('StudioRecorderProvider scenario recording', () => {
+  it('serializes checkpoint insertion behind an in-flight SDK poll and keeps instruction order', async () => {
+    const event = {
+      type: 'click',
+      source: 'studio-preview',
+      timestamp: 123,
+      hashId: 'scenario-barrier-click',
+      semantic: {
+        source: 'aiDescribe',
+        status: 'ready',
+        elementDescription: 'Confirm',
+      },
+    };
+    const poll = createDeferred<{ events: unknown[]; nextIndex: number }>();
+    const { context, getRecorderEvents } = createConnectedStudioContext();
+    getRecorderEvents.mockImplementationOnce(() => poll.promise);
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording({
+          scenarioId: 'scenario-barrier',
+        });
+      });
+      const id = mounted.recorder!.currentSession!.id;
+      let first!: ReturnType<StudioRecorderContextValue['addCheckpoint']>;
+      let second!: ReturnType<StudioRecorderContextValue['addCheckpoint']>;
+      await act(async () => {
+        first = mounted.recorder!.addCheckpoint(id, 'First assertion');
+        second = mounted.recorder!.addCheckpoint(id, 'Second assertion');
+      });
+      expect(mounted.recorder!.getSessionSnapshot(id)!.checkpoints).toEqual([]);
+      await act(async () => {
+        poll.resolve({ events: [event], nextIndex: 1 });
+        await Promise.all([first, second]);
+      });
+      expect(
+        mounted.recorder!.getSessionSnapshot(id)!.checkpoints,
+      ).toMatchObject([
+        {
+          instruction: 'First assertion',
+          afterEventHashIds: ['scenario-barrier-click'],
+        },
+        {
+          instruction: 'Second assertion',
+          afterEventHashIds: ['scenario-barrier-click'],
+        },
+      ]);
+      expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
+      expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
+      await act(async () => {
+        await mounted.recorder!.stopScenarioRecording(id);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it('keeps original history, selection and storage unchanged through recording and release', async () => {
+    const { context, startRecorderSession, getRecorderEvents } =
+      createConnectedStudioContext({
+        events: [
+          {
+            type: 'click',
+            source: 'studio-preview',
+            timestamp: 123,
+            hashId: 'scenario-original-click',
+            semantic: {
+              source: 'aiDescribe',
+              status: 'ready',
+              elementDescription: 'Original button',
+            },
+          },
+        ],
+      });
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording();
+      });
+      const originalId = mounted.recorder!.currentSession!.id;
+      await act(async () => {
+        await mounted.recorder!.stopRecording();
+        await mounted.recorder!.generateSessionCode(originalId, {
+          type: 'markdown',
+        });
+      });
+      const originalHistory = mounted.recorder!.state.sessions;
+      const stored = await getStudioRecorderSessions();
+      const storedSelection = await getCurrentStudioRecorderSessionId();
+      vi.mocked(generateStudioRecorderMetadataWithAI).mockClear();
+      getRecorderEvents.mockImplementation(async (since = 0) => ({
+        events: [],
+        nextIndex: since,
+      }));
+      await act(async () => {
+        await mounted.recorder!.startRecording({
+          scenarioId: 'scenario-owned',
+        });
+      });
+      const scenarioId = mounted.recorder!.currentSession!.id;
+      expect(mounted.recorder!.state.sessions).toBe(originalHistory);
+      expect(mounted.recorder!.state.currentSessionId).toBe(originalId);
+      await act(async () => {
+        await mounted.recorder!.addCheckpoint(
+          scenarioId,
+          '  Dialog is visible  ',
+        );
+      });
+      let completed!: StudioRecordingSession;
+      await act(async () => {
+        completed = await mounted.recorder!.stopScenarioRecording(scenarioId);
+      });
+      expect(completed).toMatchObject({
+        scenarioId: 'scenario-owned',
+        status: 'completed',
+        checkpoints: [
+          { instruction: '  Dialog is visible  ', afterEventHashIds: [] },
+        ],
+      });
+      expect(mounted.recorder!.getSessionSnapshot(scenarioId)).toBe(completed);
+      expect(mounted.recorder!.state.sessions).toBe(originalHistory);
+      expect(await getStudioRecorderSessions()).toEqual(stored);
+      expect(await getCurrentStudioRecorderSessionId()).toBe(storedSelection);
+      expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
+      expect(startRecorderSession).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await mounted.recorder!.releaseScenarioSession(scenarioId);
+      });
+      expect(mounted.recorder!.currentSession!.id).toBe(originalId);
+      expect(mounted.recorder!.getSessionSnapshot(scenarioId)).toBeNull();
+      expect(await getStudioRecorderSessions()).toEqual(stored);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it('awaits SDK startup and leaves no falsely active draft after unsupported startup', async () => {
+    const { context, startRecorderSession } = createConnectedStudioContext();
+    const started = createDeferred<{
+      ok: boolean;
+      supported: boolean;
+      error: string;
+    }>();
+    startRecorderSession.mockImplementation(() => started.promise);
+    const mounted = await mountRecorder(context);
+    try {
+      let starting!: Promise<StudioRecordingSession | null>;
+      await act(async () => {
+        starting = mounted.recorder!.startRecording({
+          scenarioId: 'scenario-start',
+        });
+      });
+      expect(mounted.recorder!.state.isRecording).toBe(false);
+      expect(mounted.recorder!.state.scenarioSession).toBeFalsy();
+      const rejection = expect(starting).rejects.toThrow('Capture unavailable');
+      await act(async () => {
+        started.resolve({
+          ok: true,
+          supported: false,
+          error: 'Capture unavailable',
+        });
+        await rejection;
+      });
+      expect(mounted.recorder!.state.isRecording).toBe(false);
+      expect(mounted.recorder!.state.scenarioSession).toBeFalsy();
+      expect(mounted.recorder!.state.error).toBe('Capture unavailable');
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it('flushes pending input at checkpoints without merging across that boundary', async () => {
+    const makeInput = (hashId: string, value: string, timestamp: number) => ({
+      type: 'input',
+      source: 'studio-preview',
+      actionType: 'Input',
+      rawPayload: { actionType: 'Input', mode: 'typeOnly', value },
+      value,
+      url: 'https://example.com',
+      pageInfo: { width: 1200, height: 800 },
+      elementRect: { x: 100, y: 200 },
+      timestamp,
+      hashId,
+      screenshotAfter: 'data:image/png;base64,test',
+    });
+    const events = [
+      makeInput('scenario-input-a', 'a', 123),
+      makeInput('scenario-input-b', 'b', 124),
+    ];
+    const { context, getRecorderEvents } = createConnectedStudioContext({
+      events,
+    });
+    getRecorderEvents.mockImplementation(async (since = 0) => ({
+      events: events.slice(since),
+      nextIndex: events.length,
+    }));
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording({
+          scenarioId: 'scenario-input',
+        });
+      });
+      const id = mounted.recorder!.currentSession!.id;
+      await act(async () => {
+        await mounted.recorder!.addCheckpoint(id, 'First input is ab');
+      });
+      expect(
+        mounted.recorder!.getSessionSnapshot(id)!.checkpoints![0]
+          .afterEventHashIds,
+      ).toEqual(['scenario-input-a', 'scenario-input-b']);
+      events.push(makeInput('scenario-input-c', 'c', 122));
+      let completed!: StudioRecordingSession;
+      await act(async () => {
+        completed = await mounted.recorder!.stopScenarioRecording(id);
+      });
+      expect(completed.events.map((event) => event.value)).toEqual(['ab', 'c']);
+      expect(completed.checkpoints![0].afterEventHashIds).toEqual([
+        'scenario-input-a',
+        'scenario-input-b',
+      ]);
+      expect(
+        completed.events.every((event) => event.semantic?.status === 'ready'),
+      ).toBe(true);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it('waits for final SDK events and all normal AI descriptions before finalizing', async () => {
+    const finalEvent = {
+      type: 'click',
+      source: 'studio-preview',
+      timestamp: 123,
+      hashId: 'scenario-final-click',
+      elementRect: { x: 10, y: 20 },
+      pageInfo: { width: 1200, height: 800 },
+      screenshotAsset: {
+        id: 'scenario-final-asset',
+        sessionId: 'source',
+        timestamp: 123,
+      },
+    };
+    const describedEvent = {
+      ...finalEvent,
+      semantic: {
+        source: 'aiDescribe',
+        status: 'ready',
+        elementDescription: 'Save',
+      },
+    };
+    const describeDeferred = createDeferred<{
+      ok: boolean;
+      event: typeof describedEvent;
+    }>();
+    const describeRecorderEventAtPoint = vi.fn(() => describeDeferred.promise);
+    const { context, stopRecorderSession, getRecorderEvents } =
+      createConnectedStudioContext({ describeRecorderEventAtPoint });
+    let stopped = false;
+    stopRecorderSession.mockImplementation(async () => {
+      stopped = true;
+      return { ok: true };
+    });
+    getRecorderEvents.mockImplementation(async (since = 0) => ({
+      events: stopped && since === 0 ? [finalEvent] : [],
+      nextIndex: stopped ? 1 : since,
+    }));
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording({
+          scenarioId: 'scenario-final',
+        });
+      });
+      const id = mounted.recorder!.currentSession!.id;
+      let finalized = false;
+      let stopping!: Promise<StudioRecordingSession>;
+      await act(async () => {
+        stopping = mounted.recorder!.stopScenarioRecording(id);
+        void stopping.then(() => {
+          finalized = true;
+        });
+      });
+      expect(finalized).toBe(false);
+      expect(describeRecorderEventAtPoint).toHaveBeenCalledTimes(1);
+      expect(mounted.recorder!.currentSession!.status).toBe('recording');
+      let completed!: StudioRecordingSession;
+      await act(async () => {
+        describeDeferred.resolve({ ok: true, event: describedEvent });
+        completed = await stopping;
+      });
+      expect(completed.status).toBe('completed');
+      expect(completed.events[0]).toMatchObject({
+        screenshotAsset: { id: 'scenario-final-asset' },
+        semantic: { status: 'ready', elementDescription: 'Save' },
+      });
+      expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
+      expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
+      expect(stopRecorderSession).toHaveBeenCalledTimes(1);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it('rejects failed final drains and allows stopping to be retried', async () => {
+    const { context, getRecorderEvents } = createConnectedStudioContext();
+    const mounted = await mountRecorder(context);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording({
+          scenarioId: 'scenario-retry',
+        });
+      });
+      const id = mounted.recorder!.currentSession!.id;
+      getRecorderEvents.mockRejectedValueOnce(new Error('Final poll failed'));
+      await act(async () => {
+        await expect(
+          mounted.recorder!.stopScenarioRecording(id),
+        ).rejects.toThrow('Final poll failed');
+      });
+      expect(mounted.recorder!.currentSession!.status).toBe('recording');
+      await act(async () => {
+        await mounted.recorder!.stopScenarioRecording(id);
+      });
+      expect(mounted.recorder!.currentSession!.status).toBe('completed');
+    } finally {
+      await mounted.cleanup();
+    }
   });
 });

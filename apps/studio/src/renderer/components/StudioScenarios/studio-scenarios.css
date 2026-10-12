@@ -1,0 +1,309 @@
+.studio-scenarios {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  /* The right panel already provides 10px of bottom padding. */
+  padding-bottom: 2px;
+  color: var(--midscene-text-primary);
+}
+
+.studio-scenario-panel {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--midscene-border-subtle);
+  border-radius: 20px;
+  background: var(--midscene-app-bg);
+}
+
+.studio-scenario-toolbar {
+  display: flex;
+  height: 44px;
+  min-width: 0;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 8px 8px 8px 12px;
+}
+
+.studio-scenario-panel-title {
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.studio-scenario-toolbar svg {
+  width: 16px;
+  height: 16px;
+}
+
+.studio-scenario-toolbar .ant-btn {
+  height: 28px;
+  min-width: 0;
+  gap: 4px;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--midscene-text-secondary);
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.studio-scenario-toolbar .ant-btn:hover {
+  background: var(--midscene-surface-hover-strong);
+  color: var(--midscene-text-primary);
+}
+
+.studio-scenario-toolbar .ant-btn:focus-visible {
+  outline: 2px solid var(--midscene-brand);
+  outline-offset: 2px;
+}
+
+.studio-scenario-toolbar-detail {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  padding: 8px 16px;
+}
+
+.studio-scenario-toolbar .studio-scenario-back {
+  width: 28px;
+  padding: 0;
+}
+
+.studio-scenario-detail-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-scenario-panel-body {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--midscene-border-subtle);
+  border-radius: 16px;
+  background: var(--midscene-surface);
+}
+
+.studio-scenario-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.studio-scenario-row {
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding-right: 4px;
+}
+
+.studio-scenario-row:hover,
+.studio-scenario-row:focus-within {
+  background: var(--midscene-surface-hover);
+}
+
+.studio-scenario-select {
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-scenario-select > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--midscene-text-secondary);
+}
+
+.studio-scenario-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.studio-scenario-name,
+.studio-scenario-description {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-scenario-name {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.studio-scenario-description {
+  color: var(--midscene-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.studio-scenario-actions {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 6px;
+  color: var(--midscene-text-secondary);
+  cursor: pointer;
+}
+
+.studio-scenario-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.studio-scenario-select:focus-visible,
+.studio-scenario-actions:focus-visible {
+  outline: 2px solid var(--midscene-brand);
+}
+
+.studio-scenario-actions:hover:not(:disabled),
+.studio-scenario-actions:focus-visible,
+.studio-scenario-actions[aria-expanded="true"] {
+  background: var(--midscene-surface-hover-strong);
+  color: var(--midscene-text-primary);
+}
+
+.studio-scenario-actions:disabled {
+  color: var(--midscene-text-tertiary);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.studio-scenario-delete-name {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.studio-scenario-empty {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px 16px;
+  color: var(--midscene-text-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.studio-scenario-delete-name {
+  font-weight: 500;
+}
+
+.studio-scenario-error {
+  color: var(--midscene-status-error);
+  font-size: 13px;
+}
+
+.studio-script-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.studio-script-actions:empty {
+  display: none;
+}
+
+.studio-script-actions .ant-btn {
+  height: 32px;
+  border-radius: 12px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.studio-script-error {
+  padding: 0 12px 8px;
+}
+
+.studio-script-row {
+  min-height: 40px;
+  flex: 0 0 auto;
+  justify-content: space-between;
+}
+
+.studio-script-count {
+  flex: 0 0 auto;
+  color: var(--midscene-text-tertiary);
+  font-size: 11px;
+}
+
+.studio-scenario-timeline {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.studio-scenario-checkpoint-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: var(--midscene-brand);
+}
+
+.studio-scenario-checkpoint-icon svg {
+  width: 16px;
+  height: 16px;
+}

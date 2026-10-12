@@ -6,4 +6,4 @@ export {
   convertToChromeEvent,
   convertToChromeEvents,
 } from './recorder';
-export { RecordTimeline } from './RecordTimeline';
+export { RecordTimeline, type RecordTimelineEntry } from './RecordTimeline';

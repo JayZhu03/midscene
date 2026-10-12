@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   timelineWrapperState: { empty: true } as { empty: boolean },
 }));
 
-vi.mock('antd', () => ({
+vi.mock('antd', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('antd')>()),
   App: {
     useApp: () => ({
       message: {
@@ -54,7 +55,21 @@ vi.mock('@midscene/playground-app', () => ({
 vi.mock('../src/renderer/components/Recorder', () => ({
   StudioReplayPanel: (props: any) => {
     mocks.latestReplayPanelProps = props;
-    return createElement('div', { 'data-testid': 'studio-replay-panel' });
+    return createElement(
+      'div',
+      { 'data-testid': 'studio-replay-panel' },
+      props.sessions[0]
+        ? createElement(
+            'button',
+            {
+              'data-testid': 'select-replay-session',
+              type: 'button',
+              onClick: () => props.onSelectSession(props.sessions[0]),
+            },
+            props.sessions[0].name,
+          )
+        : null,
+    );
   },
   StudioRecorderPanel: () =>
     createElement('div', { 'data-testid': 'studio-recorder-panel' }),
@@ -109,6 +124,9 @@ const { default: StudioModePanel } = await import(
   '../src/renderer/components/StudioModePanel'
 );
 const { StudioModeTab } = await import('../src/renderer/recorder/types');
+const { StudioWorkspace, StudioWorkspaceSwitch } = await import(
+  '../src/renderer/components/StudioWorkspace'
+);
 
 const target = {
   deviceId: 'https://www.douyin.com/jingxuan',
@@ -227,6 +245,77 @@ async function renderReplayWithHeaderChange() {
 }
 
 describe('Studio Playground imported replay', () => {
+  it('keeps the actual replay selection when leaving and returning to the original workspace', async () => {
+    const session = {
+      createdAt: Date.now(),
+      events: [],
+      generatedCode: { markdown: '# Selected replay' },
+      id: 'selected-replay',
+      name: 'Selected replay',
+      status: 'completed',
+      target,
+      updatedAt: Date.now(),
+    };
+    mocks.recorder.state.sessions = [session];
+    const onOpenStudioRightPanel = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    function Workspace() {
+      const [mode, setMode] = useState<'original' | 'workbench'>('original');
+      return (
+        <>
+          <StudioWorkspaceSwitch
+            busy={false}
+            mode={mode}
+            onModeChange={setMode}
+          />
+          <StudioWorkspace
+            menu="scenarios"
+            mode={mode}
+            originalMode={StudioModeTab.Replay}
+          >
+            <StudioModePanel
+              onOpenStudioRightPanel={onOpenStudioRightPanel}
+              onStudioModeChange={() => undefined}
+              studioMode={StudioModeTab.Replay}
+            />
+          </StudioWorkspace>
+        </>
+      );
+    }
+    await act(async () => root.render(<Workspace />));
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="select-replay-session"]',
+        )!
+        .click();
+    });
+    expect(mocks.latestReplayPanelProps.selectedSessionId).toBe(session.id);
+    const replayPanel = container.querySelector(
+      '[data-testid="studio-replay-panel"]',
+    );
+    mocks.recorder.stopRecording.mockClear();
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>('.ant-segmented-item:last-child')!
+        .click();
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>('.ant-segmented-item:first-child')!
+        .click();
+    });
+    expect(mocks.latestReplayPanelProps.selectedSessionId).toBe(session.id);
+    expect(container.querySelector('[data-testid="studio-replay-panel"]')).toBe(
+      replayPanel,
+    );
+    expect(mocks.recorder.stopRecording).not.toHaveBeenCalled();
+    expect(onOpenStudioRightPanel).toHaveBeenCalledTimes(1);
+    await act(async () => root.unmount());
+  });
+
   beforeEach(() => {
     mocks.latestExternalRunRequest = null;
     mocks.latestApiPlaygroundConfig = null;

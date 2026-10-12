@@ -21,7 +21,13 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { ShinyText } from './components/shiny-text';
 import type { RecordedEvent } from './recorder';
 import './RecordTimeline.css';
@@ -30,9 +36,24 @@ const { Text } = Typography;
 
 interface RecordTimelineProps {
   events: RecordedEvent[];
+  /** Ordered display entries, including annotations that are not recorded actions. */
+  entries?: RecordTimelineEntry[];
+  layout?: 'bounded' | 'parent-scroll';
+  scrollContainerRef?: RefObject<HTMLElement>;
   onEventClick?: (event: RecordedEvent, index: number) => void;
   variant?: 'default' | 'chrome-extension';
 }
+
+export type RecordTimelineEntry =
+  | { event: RecordedEvent; details?: string }
+  | {
+      id: string;
+      description: ReactNode;
+      descriptionText: string;
+      icon: ReactNode;
+      color: string;
+      details: string;
+    };
 
 function TwoLineEventDescription({
   children,
@@ -74,16 +95,21 @@ function TwoLineEventDescription({
 
 export const RecordTimeline = ({
   events,
+  entries,
+  layout = 'bounded',
+  scrollContainerRef,
   onEventClick,
   variant = 'default',
 }: RecordTimelineProps) => {
   const { message } = AntdApp.useApp();
   const [expandedEvents, setExpandedEvents] = useState<Set<number>>(new Set());
   const timelineRootRef = useRef<HTMLDivElement>(null);
+  const entryCount = entries?.length ?? events.length;
 
   useEffect(() => {
-    if (events.length > 0) {
+    if (entryCount > 0) {
       const timeline =
+        scrollContainerRef?.current ??
         timelineRootRef.current?.querySelector<HTMLElement>('.ant-timeline');
       if (timeline) {
         const nextScrollTop = timeline.scrollHeight;
@@ -97,7 +123,7 @@ export const RecordTimeline = ({
         }
       }
     }
-  }, [events.length]);
+  }, [entryCount, scrollContainerRef]);
 
   const toggleEventExpansion = (index: number) => {
     const newExpanded = new Set(expandedEvents);
@@ -128,11 +154,11 @@ export const RecordTimeline = ({
     return obj;
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, plainText = false) => {
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        message.success('JSON 已复制到剪贴板');
+        message.success(plainText ? '已复制到剪贴板' : 'JSON 已复制到剪贴板');
       })
       .catch(() => {
         message.error('复制失败');
@@ -380,16 +406,31 @@ export const RecordTimeline = ({
     }
   };
 
-  const timelineItems = events.map((event, index) => {
-    const boxedImage = event.screenshotWithBox;
-    const afterImage = event.screenshotAfter;
+  const displayEntries: RecordTimelineEntry[] =
+    entries ?? events.map((event) => ({ event }));
+  const timelineItems = displayEntries.map((entry, index) => {
+    const event = 'event' in entry ? entry.event : null;
+    const boxedImage = event?.screenshotWithBox;
+    const afterImage = event?.screenshotAfter;
     const isExpanded = expandedEvents.has(index);
-    const eventDescription = getEventDescription(event);
-    const eventDescriptionText = getEventDescriptionText(event);
+    const eventDescription =
+      'event' in entry ? getEventDescription(entry.event) : entry.description;
+    const eventDescriptionText =
+      'event' in entry
+        ? getEventDescriptionText(entry.event)
+        : entry.descriptionText;
+    const eventColor =
+      'event' in entry ? getEventColor(entry.event.type) : entry.color;
+    const detailText =
+      entry.details ??
+      (isExpanded ? JSON.stringify(truncateJsonStrings(event), null, 2) : '');
 
     return {
-      dot: getEventIcon(event.type),
-      color: getEventColor(event.type),
+      ...(entries
+        ? { key: 'event' in entry ? entry.event.hashId : entry.id }
+        : {}),
+      dot: 'event' in entry ? getEventIcon(entry.event.type) : entry.icon,
+      color: eventColor,
       children: (
         <div>
           <Card
@@ -399,7 +440,7 @@ export const RecordTimeline = ({
             style={{ marginBottom: isExpanded ? 8 : 8, cursor: 'pointer' }}
             onClick={() => {
               toggleEventExpansion(index);
-              onEventClick?.(event, index);
+              if (event) onEventClick?.(event, index);
             }}
             styles={{
               body: {
@@ -463,7 +504,7 @@ export const RecordTimeline = ({
                         onMouseEnter={(e) => {
                           const target = e.currentTarget as HTMLElement;
                           target.style.transform = 'scale(1.2)';
-                          target.style.boxShadow = `0 2px 8px ${getEventColor(event.type)}60`;
+                          target.style.boxShadow = `0 2px 8px ${eventColor}60`;
                         }}
                         onMouseLeave={(e) => {
                           const target = e.currentTarget as HTMLElement;
@@ -553,11 +594,15 @@ export const RecordTimeline = ({
                         // paddingRight: '50px',
                         borderRadius: '8px',
                         // border: '1px solid #d9d9d9',
-                        maxHeight: '250px',
-                        overflow: 'auto',
+                        maxHeight:
+                          layout === 'parent-scroll' ? undefined : '250px',
+                        overflow:
+                          layout === 'parent-scroll' ? 'visible' : 'auto',
+                        overflowWrap:
+                          layout === 'parent-scroll' ? 'anywhere' : undefined,
                       }}
                     >
-                      {JSON.stringify(truncateJsonStrings(event), null, 2)}
+                      {detailText}
                     </pre>
                     <Button
                       type="text"
@@ -565,7 +610,10 @@ export const RecordTimeline = ({
                       icon={<CopyOutlined />}
                       onClick={(e) => {
                         e.stopPropagation();
-                        copyToClipboard(JSON.stringify(event, null, 2));
+                        copyToClipboard(
+                          entry.details ?? JSON.stringify(event, null, 2),
+                          entry.details !== undefined,
+                        );
                       }}
                       style={{
                         position: 'absolute',
@@ -574,7 +622,7 @@ export const RecordTimeline = ({
                         background: 'rgba(255, 255, 255, 0.9)',
                         border: '1px solid #d9d9d9',
                       }}
-                      title="复制 JSON"
+                      title={entry.details === undefined ? '复制 JSON' : '复制'}
                     />
                   </div>
                 </Card>
@@ -589,7 +637,7 @@ export const RecordTimeline = ({
   return (
     <div
       ref={timelineRootRef}
-      className={`record-timeline-${variant}`}
+      className={`record-timeline-${variant}${layout === 'parent-scroll' ? ' record-timeline-parent-scroll' : ''}`}
       style={{ minHeight: 0, padding: '3px' }}
     >
       <Space direction="vertical" size="large" style={{ width: '100%' }}>

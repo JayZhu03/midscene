@@ -29,6 +29,12 @@ import {
   StudioRightPanelViewType,
   getStudioRightPanelWidth,
 } from '../StudioRightPanel';
+import { navigateStudio } from '../StudioScenarios/navigation';
+import {
+  type StudioWorkspaceMode,
+  loadStudioWorkspacePreferences,
+  saveStudioWorkspacePreferences,
+} from '../StudioWorkspace/preferences';
 import { ModelEnvConfigModal } from './ModelEnvConfigModal';
 import { loadAgentOptions, saveAgentOptions } from './agent-options-storage';
 import { hasCompleteModelEnvConfig } from './connectivity-env';
@@ -176,6 +182,12 @@ export default function ShellLayout() {
   const titlebarInsetRight = getRendererTitlebarRightInset();
   const isWindows = titlebarInsetRight > 0;
   const [activeView, setActiveView] = useState<ShellActiveView>('overview');
+  const [workspacePreferences, setWorkspacePreferences] = useState(
+    loadStudioWorkspacePreferences,
+  );
+  useEffect(() => {
+    saveStudioWorkspacePreferences(workspacePreferences);
+  }, [workspacePreferences]);
   const [studioMode, setStudioMode] = useState<StudioMode>(
     StudioModeTab.Record,
   );
@@ -234,6 +246,18 @@ export default function ShellLayout() {
       studioRightPanelCloseTimerRef.current = null;
     }
   }, []);
+  const changeWorkspaceMode = useCallback(
+    (mode: StudioWorkspaceMode) => {
+      if (mode === workspacePreferences.mode) return;
+      navigateStudio(() => {
+        clearStudioRightPanelCloseTimer();
+        setStudioRightPanelView(null);
+        setStudioRightPanelClosing(false);
+        setWorkspacePreferences((current) => ({ ...current, mode }));
+      });
+    },
+    [clearStudioRightPanelCloseTimer, workspacePreferences.mode],
+  );
   const openStudioRightPanel = useCallback(
     (view: StudioRightPanelView) => {
       clearStudioRightPanelCloseTimer();
@@ -312,8 +336,10 @@ export default function ShellLayout() {
   // Opening the Web form should not throw away the live page or interrupt a
   // recording. Actual page switching handles stopping work and browser cleanup.
   const selectOverview = useCallback(() => {
-    setActiveView('overview');
-    setPendingCreatePlatform(undefined);
+    navigateStudio(() => {
+      setActiveView('overview');
+      setPendingCreatePlatform(undefined);
+    });
   }, []);
 
   const openExternalUrl = useCallback(
@@ -379,7 +405,9 @@ export default function ShellLayout() {
 
   const shouldShowRightPanel = activeView !== 'overview';
   const shouldShowStudioRightPanel =
-    shouldShowRightPanel && Boolean(studioRightPanelView);
+    shouldShowRightPanel &&
+    workspacePreferences.mode === 'original' &&
+    Boolean(studioRightPanelView);
   const studioRightPanelWidth =
     shouldShowStudioRightPanel && studioRightPanelView
       ? getStudioRightPanelWidth(studioRightPanelView)
@@ -498,6 +526,15 @@ export default function ShellLayout() {
       >
         <MainContent
           activeView={activeView}
+          workspaceMode={workspacePreferences.mode}
+          workbenchMenu={workspacePreferences.menu}
+          onWorkspaceModeChange={changeWorkspaceMode}
+          onWorkbenchMenuChange={(menu) => {
+            if (menu === workspacePreferences.menu) return;
+            navigateStudio(() => {
+              setWorkspacePreferences((current) => ({ ...current, menu }));
+            });
+          }}
           modelConfigComplete={modelConfigComplete}
           modelEnvText={modelEnvText}
           floatingStudioModePanel={shouldFloatStudioModePanel}

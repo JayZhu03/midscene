@@ -53,6 +53,7 @@ import type {
   StudioRecorderGenerationProgress,
   StudioRecorderState,
   StudioRecorderTarget,
+  StudioRecordingCheckpoint,
   StudioRecordingSession,
 } from './types';
 import { StudioRecorderContext } from './useStudioRecorder';
@@ -77,6 +78,7 @@ type StudioRecorderAction =
   | { type: 'upsert-session'; session: StudioRecordingSession }
   | { type: 'delete-session'; sessionId: string }
   | { type: 'discard-draft-sessions' }
+  | { type: 'release-scenario-session'; sessionId: string }
   | { type: 'select-session'; sessionId: string | null }
   | { type: 'set-recording'; isRecording: boolean }
   | { type: 'set-error'; error: string | null };
@@ -94,6 +96,14 @@ function upsertSessionInState(
   state: StudioRecorderState,
   session: StudioRecordingSession,
 ): StudioRecorderState {
+  if (session.scenarioId) {
+    return {
+      ...state,
+      scenarioSession: session,
+      isRecording: session.status === 'recording',
+      error: null,
+    };
+  }
   const sessions = [
     session,
     ...state.sessions.filter((item) => item.id !== session.id),
@@ -105,6 +115,21 @@ function upsertSessionInState(
     isRecording: session.status === 'recording',
     error: null,
   };
+}
+
+function findRecorderSession(
+  state: StudioRecorderState,
+  sessionId: string | null,
+) {
+  return state.scenarioSession?.id === sessionId
+    ? state.scenarioSession
+    : (state.sessions.find((session) => session.id === sessionId) ?? null);
+}
+
+function selectCurrentRecorderSession(state: StudioRecorderState) {
+  return (
+    state.scenarioSession ?? findRecorderSession(state, state.currentSessionId)
+  );
 }
 
 function isReplayableRecorderSession(session: StudioRecordingSession) {
@@ -180,6 +205,10 @@ function reducer(
     }
     case 'discard-draft-sessions':
       return discardDraftSessions(state);
+    case 'release-scenario-session':
+      return state.scenarioSession?.id === action.sessionId
+        ? { ...state, scenarioSession: null, isRecording: false }
+        : state;
     case 'select-session':
       return {
         ...state,
@@ -469,7 +498,8 @@ function normalizeSessionEventOrder(
   session: StudioRecordingSession,
 ): StudioRecordingSession {
   const normalizedEvents = mergeAdjacentRecorderInputEvents(
-    sortRecorderEventsByTimestamp(session.events),
+    sortSessionRecorderEvents(session, session.events),
+    session.checkpoints,
   );
   if (
     normalizedEvents.every((event, index) => event === session.events[index])
@@ -627,6 +657,7 @@ type StudioRecorderRuntime = {
   preserveUntilExplicitClear?: boolean;
   drainAgain?: boolean;
   drainPromise?: Promise<void>;
+  boundaryPromise?: Promise<unknown>;
   getRecorderEvents: (since?: number) => Promise<{
     events: PlaygroundPageRecordedEvent[];
     nextIndex: number;
@@ -809,11 +840,51 @@ function mergeRecorderInputEvents(
   };
 }
 
-function mergeAdjacentRecorderInputEvents(events: StudioRecordedEvent[]) {
+function sortSessionRecorderEvents(
+  session: StudioRecordingSession,
+  events: StudioRecordedEvent[],
+) {
+  const lastBoundary = session.checkpoints?.at(-1);
+  if (!lastBoundary?.afterEventHashIds.length) {
+    return sortRecorderEventsByTimestamp(events);
+  }
+  const anchorIndex = events.reduce(
+    (lastIndex, event, index) =>
+      lastBoundary.afterEventHashIds.some((id) =>
+        recorderEventHashMatches(event, id),
+      )
+        ? index
+        : lastIndex,
+    -1,
+  );
+  // Earlier checkpoint segments have already been flushed and ordered. A late
+  // event with an older timestamp belongs to the new segment, never before an
+  // already inserted assertion.
+  return [
+    ...events.slice(0, anchorIndex + 1),
+    ...sortRecorderEventsByTimestamp(events.slice(anchorIndex + 1)),
+  ];
+}
+
+function mergeAdjacentRecorderInputEvents(
+  events: StudioRecordedEvent[],
+  checkpoints: StudioRecordingCheckpoint[] = [],
+) {
   const mergedEvents: StudioRecordedEvent[] = [];
   for (const event of events) {
     const previous = mergedEvents.at(-1);
-    if (previous && canMergeAdjacentRecorderInputEvents(previous, event)) {
+    const atCheckpoint =
+      previous &&
+      checkpoints.some((checkpoint) =>
+        checkpoint.afterEventHashIds.some((id) =>
+          recorderEventHashMatches(previous, id),
+        ),
+      );
+    if (
+      previous &&
+      !atCheckpoint &&
+      canMergeAdjacentRecorderInputEvents(previous, event)
+    ) {
       mergedEvents[mergedEvents.length - 1] = mergeRecorderInputEvents(
         previous,
         event,
@@ -838,7 +909,8 @@ function upsertEvent(
   return {
     ...session,
     events: mergeAdjacentRecorderInputEvents(
-      sortRecorderEventsByTimestamp([...session.events, event]),
+      sortSessionRecorderEvents(session, [...session.events, event]),
+      session.checkpoints,
     ),
     updatedAt: Date.now(),
   };
@@ -885,7 +957,8 @@ function updateEvent(
   return {
     ...session,
     events: mergeAdjacentRecorderInputEvents(
-      sortRecorderEventsByTimestamp(events),
+      sortSessionRecorderEvents(session, events),
+      session.checkpoints,
     ),
     updatedAt: Date.now(),
   };
@@ -914,10 +987,8 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   );
 
   const currentSession = useMemo(
-    () =>
-      state.sessions.find((session) => session.id === state.currentSessionId) ??
-      null,
-    [state.currentSessionId, state.sessions],
+    () => selectCurrentRecorderSession(state),
+    [state],
   );
   const recordPageEventRef = useRef<
     (event: PlaygroundPageRecordedEvent) => Promise<void>
@@ -928,6 +999,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const descriptionInFlightRef = useRef(0);
   const descriptionIdleResolversRef = useRef<Set<() => void>>(new Set());
   const pendingDescriptionRetryKeysRef = useRef<Set<string>>(new Set());
+  const scenarioStartPendingRef = useRef(false);
+  const scenarioStopsRef = useRef(
+    new Map<string, Promise<StudioRecordingSession>>(),
+  );
 
   const notifyDescriptionIdle = useCallback(() => {
     if (
@@ -961,6 +1036,9 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
   const persistStudioRecorderSession = useCallback(
     async (session: StudioRecordingSession) => {
+      if (session.scenarioId) {
+        return;
+      }
       const trimmedSessionIds = await upsertStudioRecorderSession(session);
       await Promise.all(
         trimmedSessionIds.map((sessionId) =>
@@ -993,7 +1071,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const updateRecordedEvent = useCallback(
     async (sessionId: string, event: StudioRecordedEvent) => {
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find((item) => item.id === sessionId);
+      const session = findRecorderSession(snapshot, sessionId);
       if (!session) {
         return null;
       }
@@ -1218,9 +1296,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       descriptionInFlightRef.current += 1;
       void (async () => {
         try {
-          const session = stateRef.current.sessions.find(
-            (item) => item.id === task.sessionId,
-          );
+          const session = findRecorderSession(stateRef.current, task.sessionId);
           if (!session) {
             return;
           }
@@ -1260,7 +1336,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const persistRecordedEvent = useCallback(
     async (sessionId: string, event: StudioRecordedEvent) => {
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find((item) => item.id === sessionId);
+      const session = findRecorderSession(snapshot, sessionId);
       if (!snapshot.isRecording || !session || !hasRecorderSession(session)) {
         return null;
       }
@@ -1298,7 +1374,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const markPendingDescriptionsAsFallback = useCallback(
     async (sessionId: string, reason: string) => {
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find((item) => item.id === sessionId);
+      const session = findRecorderSession(snapshot, sessionId);
       if (!session) {
         return null;
       }
@@ -1328,9 +1404,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         descriptionQueueRef.current.length === 0 &&
         descriptionInFlightRef.current === 0
       ) {
-        const session = stateRef.current.sessions.find(
-          (item) => item.id === sessionId,
-        );
+        const session = findRecorderSession(stateRef.current, sessionId);
         return !session?.events.some((event) =>
           hasUnresolvedRecorderSemantic(getMidsceneRecorderSemantic(event)),
         );
@@ -1364,9 +1438,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       if (!settled) {
         return false;
       }
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       return !session?.events.some((event) =>
         hasUnresolvedRecorderSemantic(getMidsceneRecorderSemantic(event)),
       );
@@ -1374,44 +1446,50 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     [flushPendingRecorderInput],
   );
 
-  const drainRecorderRuntime = useCallback(async (sessionId: string) => {
-    const runtime = recorderRuntimeRef.current;
-    if (!runtime || runtime.sessionId !== sessionId) {
-      return;
-    }
-
-    if (runtime.drainPromise) {
-      runtime.drainAgain = true;
-      await runtime.drainPromise;
-      return;
-    }
-
-    const drainPromise = (async () => {
-      do {
-        runtime.drainAgain = false;
-        if (
-          recorderRuntimeRef.current !== runtime ||
-          runtime.sessionId !== sessionId
-        ) {
-          return;
-        }
-
-        const result = await runtime.getRecorderEvents(runtime.cursor);
-        runtime.cursor = result.nextIndex;
-        for (const event of result.events) {
-          await recordPageEventRef.current(event);
-        }
-      } while (runtime.drainAgain);
-    })();
-
-    runtime.drainPromise = drainPromise.finally(() => {
-      if (recorderRuntimeRef.current === runtime) {
-        runtime.drainPromise = undefined;
-        runtime.drainAgain = false;
+  const drainRecorderRuntime = useCallback(
+    async (sessionId: string, skipBoundary = false) => {
+      const runtime = recorderRuntimeRef.current;
+      if (!runtime || runtime.sessionId !== sessionId) {
+        return;
       }
-    });
-    await runtime.drainPromise;
-  }, []);
+      if (!skipBoundary && runtime.boundaryPromise) {
+        await runtime.boundaryPromise;
+      }
+
+      if (runtime.drainPromise) {
+        runtime.drainAgain = true;
+        await runtime.drainPromise;
+        return;
+      }
+
+      const drainPromise = (async () => {
+        do {
+          runtime.drainAgain = false;
+          if (
+            recorderRuntimeRef.current !== runtime ||
+            runtime.sessionId !== sessionId
+          ) {
+            return;
+          }
+
+          const result = await runtime.getRecorderEvents(runtime.cursor);
+          runtime.cursor = result.nextIndex;
+          for (const event of result.events) {
+            await recordPageEventRef.current(event);
+          }
+        } while (runtime.drainAgain);
+      })();
+
+      runtime.drainPromise = drainPromise.finally(() => {
+        if (recorderRuntimeRef.current === runtime) {
+          runtime.drainPromise = undefined;
+          runtime.drainAgain = false;
+        }
+      });
+      await runtime.drainPromise;
+    },
+    [],
+  );
 
   const stopRecorderRuntime = useCallback(
     async (
@@ -1432,12 +1510,18 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           try {
             await runtime.stopRecorderSession?.();
           } catch (error) {
+            if (findRecorderSession(stateRef.current, sessionId)?.scenarioId) {
+              throw error;
+            }
             debugRecorder('failed to stop server recorder session:', error);
           }
 
           try {
             await drainRecorderRuntime(sessionId);
           } catch (error) {
+            if (findRecorderSession(stateRef.current, sessionId)?.scenarioId) {
+              throw error;
+            }
             debugRecorder('failed to drain recorder events:', error);
           }
         })();
@@ -1523,8 +1607,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     async (session: StudioRecordingSession) => {
       await flushPendingRecorderInput(session.id);
       const latestSession =
-        stateRef.current.sessions.find((item) => item.id === session.id) ??
-        session;
+        findRecorderSession(stateRef.current, session.id) ?? session;
       const candidates = latestSession.events.filter((event) =>
         shouldDescribeRecorderEvent(event),
       );
@@ -1562,7 +1645,11 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
-    if (!currentSession || currentSession.status === 'recording') {
+    if (
+      !currentSession ||
+      currentSession.scenarioId ||
+      currentSession.status === 'recording'
+    ) {
       return;
     }
 
@@ -1605,12 +1692,171 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     })();
   }, [currentSession, describeUndescribedSessionEvents, upsertSessionSnapshot]);
 
+  const getSessionSnapshot = useCallback(
+    (sessionId: string) => findRecorderSession(stateRef.current, sessionId),
+    [],
+  );
+
+  const addCheckpoint = useCallback(
+    (
+      sessionId: string,
+      instruction: string,
+    ): Promise<StudioRecordingCheckpoint> => {
+      const session = findRecorderSession(stateRef.current, sessionId);
+      const runtime = recorderRuntimeRef.current;
+      if (!instruction.trim()) {
+        return Promise.reject(
+          new Error('A checkpoint instruction is required.'),
+        );
+      }
+      if (
+        !session?.scenarioId ||
+        session.status !== 'recording' ||
+        runtime?.sessionId !== sessionId ||
+        runtime.stopping ||
+        scenarioStopsRef.current.has(sessionId)
+      ) {
+        return Promise.reject(new Error('Scenario recording is not active.'));
+      }
+      const previousBoundary = runtime.boundaryPromise;
+      const boundary = (async () => {
+        await previousBoundary;
+        await drainRecorderRuntime(sessionId, true);
+        await flushPendingRecorderInput(sessionId);
+        const latest = findRecorderSession(stateRef.current, sessionId);
+        if (!latest || latest.status !== 'recording') {
+          throw new Error('Scenario recording is not active.');
+        }
+        const lastEvent = latest.events.at(-1);
+        const checkpoint: StudioRecordingCheckpoint = {
+          id: createSecureRecorderId('studio-checkpoint'),
+          instruction,
+          timestamp: Date.now(),
+          afterEventHashIds: lastEvent
+            ? getRecorderEventHashLineage(lastEvent)
+            : [],
+        };
+        const updatedSession = {
+          ...latest,
+          checkpoints: [...(latest.checkpoints ?? []), checkpoint],
+          updatedAt: Date.now(),
+        };
+        stateRef.current = upsertSessionInState(
+          stateRef.current,
+          updatedSession,
+        );
+        dispatch({ type: 'upsert-session', session: updatedSession });
+        return checkpoint;
+      })();
+      runtime.boundaryPromise = boundary;
+      void boundary
+        .finally(() => {
+          if (runtime.boundaryPromise === boundary) {
+            runtime.boundaryPromise = undefined;
+          }
+        })
+        .catch(() => undefined);
+      return boundary;
+    },
+    [drainRecorderRuntime, flushPendingRecorderInput],
+  );
+
+  const stopScenarioRecording = useCallback(
+    (sessionId: string): Promise<StudioRecordingSession> => {
+      const session = findRecorderSession(stateRef.current, sessionId);
+      if (!session?.scenarioId) {
+        return Promise.reject(new Error('Scenario recording is unavailable.'));
+      }
+      if (session.status === 'completed') {
+        return Promise.resolve(session);
+      }
+      const existingStop = scenarioStopsRef.current.get(sessionId);
+      if (existingStop) {
+        return existingStop;
+      }
+      const stopped = (async () => {
+        try {
+          await recorderRuntimeRef.current?.boundaryPromise;
+          await stopRecorderRuntime(sessionId, { preserveRuntime: true });
+          await flushPendingRecorderInput(sessionId);
+          // Each normal description task has its own timeout. Wait for actual
+          // queue completion so finalized scenario data cannot change afterwards.
+          while (
+            descriptionQueueRef.current.length ||
+            descriptionInFlightRef.current
+          ) {
+            await new Promise<void>((resolve) =>
+              descriptionIdleResolversRef.current.add(resolve),
+            );
+          }
+          await markPendingDescriptionsAsFallback(
+            sessionId,
+            'Recorder description is unavailable.',
+          );
+          const latest = findRecorderSession(stateRef.current, sessionId);
+          if (!latest) {
+            throw new Error('Scenario recording is unavailable.');
+          }
+          const completed: StudioRecordingSession = {
+            ...latest,
+            status: 'completed',
+            stoppedAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          stateRef.current = upsertSessionInState(stateRef.current, completed);
+          dispatch({ type: 'upsert-session', session: completed });
+          clearRecorderRuntime(sessionId);
+          return completed;
+        } catch (error) {
+          // Keep the draft available for recovery; never report a partial stop
+          // as a completed recording, nor allow a rejected stop to mask retries.
+          const runtime = recorderRuntimeRef.current;
+          if (runtime?.sessionId === sessionId) {
+            runtime.stopPromise = undefined;
+            runtime.stopping = false;
+          }
+          throw error;
+        } finally {
+          scenarioStopsRef.current.delete(sessionId);
+        }
+      })();
+      scenarioStopsRef.current.set(sessionId, stopped);
+      return stopped;
+    },
+    [
+      clearRecorderRuntime,
+      flushPendingRecorderInput,
+      markPendingDescriptionsAsFallback,
+      stopRecorderRuntime,
+    ],
+  );
+
+  const releaseScenarioSession = useCallback(
+    async (sessionId: string) => {
+      const session = findRecorderSession(stateRef.current, sessionId);
+      if (!session?.scenarioId) {
+        return;
+      }
+      if (session.status === 'recording') {
+        await stopScenarioRecording(sessionId);
+      }
+      stateRef.current = reducer(stateRef.current, {
+        type: 'release-scenario-session',
+        sessionId,
+      });
+      dispatch({ type: 'release-scenario-session', sessionId });
+    },
+    [stopScenarioRecording],
+  );
+
   const stopRecording = useCallback(async () => {
     const snapshot = stateRef.current;
-    const session = snapshot.sessions.find(
-      (item) => item.id === snapshot.currentSessionId,
-    );
+    const session = selectCurrentRecorderSession(snapshot);
     if (!snapshot.isRecording || !session) {
+      return;
+    }
+    if (session.scenarioId) {
+      await stopScenarioRecording(session.id);
       return;
     }
 
@@ -1630,7 +1876,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     }
     const latestSnapshot = stateRef.current;
     const latestSession =
-      latestSnapshot.sessions.find((item) => item.id === session.id) ?? session;
+      findRecorderSession(latestSnapshot, session.id) ?? session;
 
     const updatedSession: StudioRecordingSession = {
       ...latestSession,
@@ -1642,7 +1888,9 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     dispatch({ type: 'upsert-session', session: updatedSession });
     dispatch({ type: 'set-recording', isRecording: false });
     await persistStudioRecorderSession(updatedSession);
-    await generateSessionMetadata(updatedSession);
+    if (!session.scenarioId) {
+      await generateSessionMetadata(updatedSession);
+    }
   }, [
     generateSessionMetadata,
     markPendingDescriptionsAsFallback,
@@ -1650,6 +1898,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     stopRecorderRuntime,
     waitForRecorderEventDescriptions,
     persistStudioRecorderSession,
+    stopScenarioRecording,
   ]);
 
   const stopRecordingRef = useRef(stopRecording);
@@ -1709,39 +1958,130 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     return () => {
-      void stopRecordingRef.current();
+      void stopRecordingRef
+        .current()
+        .catch((error) =>
+          debugRecorder('failed to stop recorder on unmount:', error),
+        );
     };
   }, []);
 
-  const startRecording = useCallback(async () => {
-    if (!canStartRecording || !currentTarget) {
-      return null;
-    }
+  const startRecording = useCallback(
+    async (options: { scenarioId?: string } = {}) => {
+      if (
+        !canStartRecording ||
+        !currentTarget ||
+        stateRef.current.isRecording ||
+        scenarioStartPendingRef.current
+      ) {
+        return null;
+      }
 
-    stateRef.current = discardDraftSessions(stateRef.current);
-    dispatch({ type: 'discard-draft-sessions' });
-    const now = Date.now();
-    const session: StudioRecordingSession = {
-      id: createSessionId(),
-      name: createSessionName(currentTarget),
-      description: '',
-      url: createSessionUrl(currentTarget),
-      status: 'recording',
-      target: currentTarget,
-      events: [],
-      createdAt: now,
-      updatedAt: now,
-      startedAt: now,
-    };
-    await persistStudioRecorderSession(session);
-    await setCurrentStudioRecorderSessionId(session.id);
-    stateRef.current = upsertSessionInState(stateRef.current, session);
-    dispatch({ type: 'upsert-session', session });
-    return session;
-  }, [canStartRecording, currentTarget, persistStudioRecorderSession]);
+      const scenarioId = options.scenarioId?.trim();
+      if (options.scenarioId !== undefined && !scenarioId) {
+        throw new Error('A scenario ID is required.');
+      }
+      if (!scenarioId && stateRef.current.scenarioSession) {
+        throw new Error(
+          'Release the scenario draft before starting an original recording.',
+        );
+      }
+      if (!scenarioId) {
+        stateRef.current = discardDraftSessions(stateRef.current);
+        dispatch({ type: 'discard-draft-sessions' });
+      } else if (stateRef.current.scenarioSession) {
+        throw new Error(
+          'Release the previous scenario draft before starting another.',
+        );
+      }
+      const now = Date.now();
+      const session: StudioRecordingSession = {
+        id: createSessionId(),
+        ...(scenarioId ? { scenarioId, checkpoints: [] } : {}),
+        name: createSessionName(currentTarget),
+        description: '',
+        url: createSessionUrl(currentTarget),
+        status: 'recording',
+        target: currentTarget,
+        events: [],
+        createdAt: now,
+        updatedAt: now,
+        startedAt: now,
+      };
+      if (scenarioId) {
+        if (studioPlayground.phase !== 'ready') {
+          return null;
+        }
+        const { playgroundSDK } = studioPlayground.controller.state;
+        if (
+          typeof playgroundSDK.startRecorderSession !== 'function' ||
+          typeof playgroundSDK.getRecorderEvents !== 'function' ||
+          typeof playgroundSDK.stopRecorderSession !== 'function'
+        ) {
+          throw new Error('Recorder is unavailable for the current target.');
+        }
+        scenarioStartPendingRef.current = true;
+        try {
+          const result = await playgroundSDK.startRecorderSession(session.id);
+          if (!result.ok || result.supported === false) {
+            throw new Error(
+              result.error || 'Recorder is unavailable for the current target.',
+            );
+          }
+          recorderRuntimeRef.current = {
+            sessionId: session.id,
+            cursor: 0,
+            stopping: false,
+            getRecorderEvents:
+              playgroundSDK.getRecorderEvents.bind(playgroundSDK),
+            describeRecorderEventAtPoint:
+              typeof playgroundSDK.describeRecorderEventAtPoint === 'function'
+                ? playgroundSDK.describeRecorderEventAtPoint.bind(playgroundSDK)
+                : undefined,
+            stopRecorderSession:
+              playgroundSDK.stopRecorderSession.bind(playgroundSDK),
+          };
+        } catch (error) {
+          try {
+            await playgroundSDK.stopRecorderSession();
+          } catch {
+            /* Failed startup has no draft to finalize. */
+          }
+          const reason =
+            error instanceof Error
+              ? error.message
+              : 'Failed to start scenario recording.';
+          stateRef.current = reducer(stateRef.current, {
+            type: 'set-error',
+            error: reason,
+          });
+          dispatch({ type: 'set-error', error: reason });
+          throw error;
+        } finally {
+          scenarioStartPendingRef.current = false;
+        }
+      } else {
+        await persistStudioRecorderSession(session);
+        await setCurrentStudioRecorderSessionId(session.id);
+      }
+      stateRef.current = upsertSessionInState(stateRef.current, session);
+      dispatch({ type: 'upsert-session', session });
+      return session;
+    },
+    [
+      canStartRecording,
+      currentTarget,
+      persistStudioRecorderSession,
+      studioPlayground,
+    ],
+  );
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
+      if (findRecorderSession(stateRef.current, sessionId)?.scenarioId) {
+        await releaseScenarioSession(sessionId);
+        return;
+      }
       if (stateRef.current.currentSessionId === sessionId) {
         await stopRecordingRef.current();
       }
@@ -1757,7 +2097,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       await setCurrentStudioRecorderSessionId(nextCurrentSessionId);
       dispatch({ type: 'delete-session', sessionId });
     },
-    [clearRecorderScreenshotAssets, stopRecording],
+    [clearRecorderScreenshotAssets, releaseScenarioSession, stopRecording],
   );
 
   const renameSession = useCallback(
@@ -1768,7 +2108,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       }
       await flushPendingRecorderInput(sessionId);
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find((item) => item.id === sessionId);
+      const session = findRecorderSession(snapshot, sessionId);
       if (!session || session.name === nextName) {
         return;
       }
@@ -1785,9 +2125,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   );
 
   const selectSession = useCallback((sessionId: string) => {
-    const session = stateRef.current.sessions.find(
-      (item) => item.id === sessionId,
-    );
+    if (stateRef.current.scenarioSession) {
+      return;
+    }
+    const session = findRecorderSession(stateRef.current, sessionId);
     void setCurrentStudioRecorderSessionId(
       session && isReplayableRecorderSession(session) ? session.id : null,
     );
@@ -1807,9 +2148,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     ) => {
       const type = options.type || 'markdown';
       await flushPendingRecorderInput(sessionId);
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       if (!session) {
         throw new Error('Recorder session not found.');
       }
@@ -1872,8 +2211,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         session.id,
       );
       const latestSessionForCodegen =
-        stateRef.current.sessions.find((item) => item.id === session.id) ??
-        session;
+        findRecorderSession(stateRef.current, session.id) ?? session;
       let sessionForCodegen = normalizeSessionEventOrder(
         await describeUndescribedSessionEvents(latestSessionForCodegen),
       );
@@ -1888,7 +2226,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           'Timed out while draining recorder description queue.',
         );
         sessionForCodegen =
-          stateRef.current.sessions.find((item) => item.id === session.id) ??
+          findRecorderSession(stateRef.current, session.id) ??
           sessionForCodegen;
       }
       sessionForCodegen =
@@ -2037,7 +2375,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
     async (sessionId: string, type: StudioRecorderCodeType) => {
       await flushPendingRecorderInput(sessionId);
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find((item) => item.id === sessionId);
+      const session = findRecorderSession(snapshot, sessionId);
       if (!session?.generatedCode?.[type]) {
         return;
       }
@@ -2063,7 +2401,11 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       stateRef.current = upsertSessionInState(snapshot, updatedSession);
       dispatch({ type: 'upsert-session', session: updatedSession });
       await persistStudioRecorderSession(updatedSession);
-      if (type === 'markdown' && !isReplayableRecorderSession(updatedSession)) {
+      if (
+        !updatedSession.scenarioId &&
+        type === 'markdown' &&
+        !isReplayableRecorderSession(updatedSession)
+      ) {
         await setCurrentStudioRecorderSessionId(null);
       }
     },
@@ -2073,9 +2415,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const recordPageEvent = useCallback(
     async (event: PlaygroundPageRecordedEvent) => {
       const snapshot = stateRef.current;
-      const session = snapshot.sessions.find(
-        (item) => item.id === snapshot.currentSessionId,
-      );
+      const session = selectCurrentRecorderSession(snapshot);
       if (!snapshot.isRecording || !session || !hasRecorderSession(session)) {
         return;
       }
@@ -2170,9 +2510,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   recordPageEventRef.current = recordPageEvent;
 
   useEffect(() => {
-    const session = state.sessions.find(
-      (item) => item.id === state.currentSessionId,
-    );
+    const session = selectCurrentRecorderSession(state);
     if (
       studioPlayground.phase !== 'ready' ||
       !state.isRecording ||
@@ -2201,6 +2539,19 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
     const startPreviewRecorder = async () => {
       if (!session) {
+        return;
+      }
+
+      if (session.scenarioId) {
+        // Scenario startup already awaited the SDK before exposing recording.
+        await pollEvents();
+        if (!cancelled) {
+          pollTimer = setInterval(() => {
+            void pollEvents().catch((error) =>
+              debugRecorder('failed to poll scenario recorder:', error),
+            );
+          }, 500);
+        }
         return;
       }
 
@@ -2253,7 +2604,9 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       }, 500);
     };
 
-    void startPreviewRecorder();
+    void startPreviewRecorder().catch((error) =>
+      debugRecorder('failed to start recorder polling:', error),
+    );
 
     return () => {
       cancelled = true;
@@ -2261,12 +2614,15 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         clearInterval(pollTimer);
       }
       if (session) {
-        void stopRecorderRuntime(session.id);
+        void stopRecorderRuntime(session.id).catch((error) =>
+          debugRecorder('failed to stop recorder runtime:', error),
+        );
       }
     };
   }, [
     state.isRecording,
     state.currentSessionId,
+    state.scenarioSession?.id,
     currentSession?.target.platformId,
     studioPlayground.phase === 'ready'
       ? studioPlayground.controller.state.playgroundSDK
@@ -2278,9 +2634,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const exportSessionJson = useCallback(
     async (sessionId: string) => {
       await flushPendingRecorderInput(sessionId);
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       if (!session) {
         return;
       }
@@ -2301,9 +2655,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const exportSessionYaml = useCallback(
     async (sessionId: string) => {
       await flushPendingRecorderInput(sessionId);
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       if (!session) {
         return;
       }
@@ -2333,9 +2685,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const exportSessionCode = useCallback(
     async (sessionId: string, type: StudioRecorderCodeType) => {
       await flushPendingRecorderInput(sessionId);
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       if (!session) {
         return;
       }
@@ -2402,9 +2752,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const loadSessionScreenshots = useCallback(
     async (sessionId: string) => {
       await flushPendingRecorderInput(sessionId);
-      const session = stateRef.current.sessions.find(
-        (item) => item.id === sessionId,
-      );
+      const session = findRecorderSession(stateRef.current, sessionId);
       if (!session) {
         throw new Error(`Recorder session is unavailable: ${sessionId}`);
       }
@@ -2467,6 +2815,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       canStartRecording,
       startRecording,
       stopRecording,
+      stopScenarioRecording,
+      addCheckpoint,
+      getSessionSnapshot,
+      releaseScenarioSession,
       deleteSession,
       renameSession,
       selectSession,
@@ -2499,6 +2851,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       startRecording,
       state,
       stopRecording,
+      stopScenarioRecording,
+      addCheckpoint,
+      getSessionSnapshot,
+      releaseScenarioSession,
     ],
   );
 

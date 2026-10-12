@@ -45,3 +45,21 @@
   max-height: inherit;
   overflow-y: auto;
 }
+
+.record-timeline-parent-scroll {
+  display: flex;
+  min-width: 0;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.record-timeline-parent-scroll > .ant-space {
+  min-width: 0;
+  flex: 1 0 auto;
+}
+
+.record-timeline-parent-scroll .timeline-scrollable,
+.record-timeline-parent-scroll .timeline-scrollable > div {
+  max-height: none;
+  overflow: visible;
+}

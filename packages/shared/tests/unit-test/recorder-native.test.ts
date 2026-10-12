@@ -19,6 +19,51 @@ const event = (
 });
 
 describe('native Playwright compiler', () => {
+  it('compiles scoped operations on the existing page without a new test', () => {
+    const code = compileRecorderNativePlaywright({
+      events: [event()],
+      format: 'operation',
+    });
+    expect(code).toContain('const target1 = page.locator(');
+    expect(code).toContain('await target1.click();');
+    expect(code.startsWith('{\n')).toBe(true);
+    expect(code.endsWith('\n}')).toBe(true);
+    expect(code).not.toMatch(/import |test\(|test.use|newPage/);
+    const password = compileRecorderNativePlaywright({
+      events: [
+        event({
+          type: 'input',
+          value: 'private-value',
+          nativeTarget: {
+            locator: { selector: 'input' },
+            editable: true,
+            sensitive: true,
+          },
+        }),
+      ],
+      format: 'operation',
+    });
+    expect(password).toContain('function requiredEnv(name: string)');
+    expect(password).toContain('await target1.fill(requiredEnv(');
+    expect(password).not.toContain('private-value');
+    const laterPassword = compileRecorderNativePlaywright({
+      events: [
+        event({
+          type: 'input',
+          value: 'private-value',
+          nativeTarget: {
+            locator: { selector: 'input' },
+            editable: true,
+            sensitive: true,
+          },
+        }),
+      ],
+      format: 'operation',
+      stepOffset: 8,
+    });
+    expect(laterPassword).toContain('MIDSCENE_INPUT_009');
+    expect(laterPassword).toContain('target9.fill(');
+  });
   it('preserves explicit navigation and waits for observed navigation instead of repeating goto', () => {
     const code = compileRecorderNativePlaywright({
       events: [

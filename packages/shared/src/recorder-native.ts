@@ -50,16 +50,26 @@ export function compileRecorderNativePlaywright(input: {
   events: MidsceneRecorderEvent[];
   testName?: string;
   platformId?: string;
+  /** Same-page statements for a mixed scenario, without creating a test/page. */
+  format?: 'test' | 'operation';
+  /** Preserve operation numbering (including sensitive-input environment keys). */
+  stepOffset?: number;
 }) {
   if (input.platformId && input.platformId !== 'web')
     throw new Error('原生 Playwright 仅支持 Web 录制。');
   if (!input.events.length) throw new Error('请先录制操作。');
+  if (
+    input.stepOffset !== undefined &&
+    (!Number.isSafeInteger(input.stepOffset) || input.stepOffset < 0)
+  ) {
+    throw new Error('Invalid recorded operation offset.');
+  }
   const errors: string[] = [];
   const lines: string[] = [];
   const envKeys: string[] = [];
   const quoted = JSON.stringify;
   input.events.forEach((event, index) => {
-    const step = index + 1;
+    const step = index + 1 + (input.stepOffset ?? 0);
     const fail = (message: string) =>
       errors.push(
         `第 ${step} 步 (${event.actionType || event.type})：${message}`,
@@ -297,6 +307,11 @@ export function compileRecorderNativePlaywright(input: {
       ]
     : [];
   const viewport = input.events[0].pageInfo;
+  if (input.format === 'operation') {
+    // Scope generated target variables and sensitive-input helpers so separately
+    // compiled operations can be concatenated on the same page safely.
+    return ['{', ...prelude, ...lines, '}'].join('\n');
+  }
   return [
     "import { test, expect } from '@playwright/test';",
     '// Generated with Playwright 1.58.1 selector support.',

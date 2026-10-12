@@ -58,6 +58,8 @@ export interface StudioRecordedEvent extends MidsceneRecorderEvent {
 
 export interface StudioRecordingSession {
   id: string;
+  scenarioId?: string;
+  checkpoints?: StudioRecordingCheckpoint[];
   name: string;
   description?: string;
   url?: string;
@@ -72,10 +74,19 @@ export interface StudioRecordingSession {
   stoppedAt?: number;
 }
 
+export interface StudioRecordingCheckpoint {
+  id: string;
+  instruction: string;
+  timestamp: number;
+  afterEventHashIds: string[];
+}
+
 export interface StudioRecorderState {
   initialized: boolean;
   initializing: boolean;
   sessions: StudioRecordingSession[];
+  /** Temporary scenario draft; original history and selection stay untouched. */
+  scenarioSession?: StudioRecordingSession | null;
   currentSessionId: string | null;
   isRecording: boolean;
   error: string | null;
@@ -86,8 +97,17 @@ export interface StudioRecorderContextValue {
   currentSession: StudioRecordingSession | null;
   currentTarget: StudioRecorderTarget | null;
   canStartRecording: boolean;
-  startRecording: () => Promise<StudioRecordingSession | null>;
+  startRecording: (options?: {
+    scenarioId?: string;
+  }) => Promise<StudioRecordingSession | null>;
   stopRecording: () => Promise<void>;
+  stopScenarioRecording: (sessionId: string) => Promise<StudioRecordingSession>;
+  addCheckpoint: (
+    sessionId: string,
+    instruction: string,
+  ) => Promise<StudioRecordingCheckpoint>;
+  getSessionSnapshot: (sessionId: string) => StudioRecordingSession | null;
+  releaseScenarioSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, name: string) => Promise<void>;
   selectSession: (sessionId: string) => void;

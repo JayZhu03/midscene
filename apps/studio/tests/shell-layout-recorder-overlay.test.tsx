@@ -63,6 +63,7 @@ vi.mock('../src/renderer/components/MainContent', () => ({
     onStudioModeChange,
     onSelectDeviceView,
     studioMode,
+    onWorkspaceModeChange,
   }: {
     activeView: 'overview' | 'device';
     floatingStudioModePanel?: boolean;
@@ -70,6 +71,7 @@ vi.mock('../src/renderer/components/MainContent', () => ({
     onStudioModeChange: (mode: 'playground' | 'record' | 'replay') => void;
     onSelectDeviceView: () => void;
     studioMode: 'playground' | 'record' | 'replay';
+    onWorkspaceModeChange: (mode: 'original' | 'workbench') => void;
   }) =>
     createElement(
       'div',
@@ -77,6 +79,15 @@ vi.mock('../src/renderer/components/MainContent', () => ({
         'data-testid': 'main-content',
         'data-floating-studio-mode-panel': String(floatingStudioModePanel),
       },
+      createElement(
+        'button',
+        {
+          'data-testid': 'switch-workbench',
+          onClick: () => onWorkspaceModeChange('workbench'),
+          type: 'button',
+        },
+        'workbench',
+      ),
       createElement(
         'button',
         {
@@ -228,7 +239,47 @@ describe('ShellLayout right panel tabs', () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     mocks.modelEnvModalProps = null;
+    localStorage.clear();
   });
+
+  it.each(['open-markdown', 'open-screenshots'])(
+    'immediately removes %s and its floating width when entering the workbench',
+    async (opener) => {
+      const { container, root } = await renderShellLayout();
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="select-device-view"]',
+          )!
+          .click();
+      });
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`[data-testid="${opener}"]`)!
+          .click();
+      });
+      const main = container.querySelector('[data-testid="main-content"]')!;
+      expect(main.getAttribute('data-floating-studio-mode-panel')).toBe('true');
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('[data-testid="switch-workbench"]')!
+          .click();
+      });
+      expect(main.getAttribute('data-floating-studio-mode-panel')).toBe(
+        'false',
+      );
+      expect(
+        container.querySelector(
+          'button[aria-label="Close studio right panel"]',
+        ),
+      ).toBeNull();
+      expect(JSON.parse(localStorage.getItem('studio.workspace')!)).toEqual({
+        mode: 'workbench',
+        menu: 'scenarios',
+      });
+      await act(async () => root.unmount());
+    },
+  );
 
   it('waits for runtime Agent options synchronization before persisting', async () => {
     let resolveRuntimeUpdate: (() => void) | undefined;

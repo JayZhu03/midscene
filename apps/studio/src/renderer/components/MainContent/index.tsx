@@ -40,14 +40,15 @@ import ConnectingPreview from '../ConnectingPreview';
 import ConnectionFailedPreview from '../ConnectionFailedPreview';
 import DisconnectedPreview from '../DisconnectedPreview';
 import type { ConnectionStatus } from '../PlaygroundShell';
-import {
-  ApiPlaygroundModeIcon,
-  RecorderModeIcon,
-  ReplayModeIcon,
-} from '../PlaygroundShell/mode-icons';
 import type { ShellActiveView } from '../ShellLayout/types';
 import StudioModePanel from '../StudioModePanel';
 import type { StudioRightPanelView } from '../StudioRightPanel';
+import { canNavigateStudio } from '../StudioScenarios/navigation';
+import { StudioWorkspace, StudioWorkspaceSwitch } from '../StudioWorkspace';
+import type {
+  StudioWorkbenchMenu,
+  StudioWorkspaceMode,
+} from '../StudioWorkspace/preferences';
 import { WebSiteIcon as WebsiteIcon } from '../WebSiteIcon';
 import { DeviceList } from './DeviceList';
 import { MobilePreviewFrame } from './MobilePreviewFrame';
@@ -69,6 +70,10 @@ const idleTimelineExecutionStatus: PlaygroundExecutionStatus = {
 
 export interface MainContentProps {
   activeView: ShellActiveView;
+  workspaceMode?: StudioWorkspaceMode;
+  workbenchMenu?: StudioWorkbenchMenu;
+  onWorkspaceModeChange?: (mode: StudioWorkspaceMode) => void;
+  onWorkbenchMenuChange?: (menu: StudioWorkbenchMenu) => void;
   /** Shell-level "user just clicked this platform" hint. Bridges the gap
    * between a click in Sidebar (or Overview cards) and antd Form.useWatch
    * actually propagating the new platformId — without it, ConnectingPreview
@@ -250,41 +255,6 @@ function getDisconnectedPreviewTitle(platform?: string): string {
   }
 }
 
-function PreviewToolbarIcon({
-  label,
-  onClick,
-  selected,
-  children,
-}: {
-  label: string;
-  onClick?: () => void;
-  selected?: boolean;
-  children: ReactNode;
-}) {
-  useStudioLanguage();
-
-  const backgroundClassName = selected
-    ? 'bg-[#EAEAEB] dark:bg-white/[0.12]'
-    : 'bg-transparent hover:bg-surface-hover';
-  const textClassName = selected
-    ? 'text-[#1A1A1A] dark:text-text-primary'
-    : 'text-[#6D6D6D]';
-
-  return (
-    <button
-      aria-label={label}
-      aria-pressed={selected}
-      className={`inline-flex h-[28px] w-[28px] shrink-0 cursor-pointer appearance-none items-center justify-center rounded-[8px] border-0 p-0 [&>img]:h-[16px] [&>img]:w-[16px] [&>svg]:h-[16px] [&>svg]:w-[16px] ${backgroundClassName} ${textClassName}`}
-      data-selected={selected ? 'true' : undefined}
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
-
 function WebNavigationButton({
   'aria-label': ariaLabel,
   disabled,
@@ -314,6 +284,10 @@ function WebNavigationButton({
 
 export default function MainContent({
   activeView,
+  workspaceMode = 'original',
+  workbenchMenu = 'scenarios',
+  onWorkspaceModeChange,
+  onWorkbenchMenuChange,
   pendingCreatePlatform,
   onPendingCreatePlatformChange,
   onSelectDeviceView,
@@ -545,27 +519,6 @@ export default function MainContent({
     },
   };
   const pillColors = pillPalette[connectionStatus];
-  const selectedPreviewToolbarKey = activeStudioMode;
-  const previewToolbarIcons = [
-    {
-      icon: <RecorderModeIcon />,
-      key: StudioModeTab.Record,
-      label: t('Record'),
-      mode: StudioModeTab.Record,
-    },
-    {
-      icon: <ReplayModeIcon />,
-      key: StudioModeTab.Replay,
-      label: t('Replay'),
-      mode: StudioModeTab.Replay,
-    },
-    {
-      icon: <ApiPlaygroundModeIcon />,
-      key: StudioModeTab.Playground,
-      label: t('API Playground'),
-      mode: StudioModeTab.Playground,
-    },
-  ];
   const stopActiveTimelineExecution = async () => {
     if (
       !timelineExecutionStatus.running ||
@@ -599,12 +552,13 @@ export default function MainContent({
           }
 
           void (async () => {
+            if (!(await canNavigateStudio())) return;
             await stopStudioActivityBeforeSessionDestroy();
             await studioPlayground.controller.actions.destroySession();
+            onSelectOverview?.();
           })();
           // After tearing down the session, jump back to the Overview page so
           // the user lands on a meaningful screen instead of an empty device pane.
-          onSelectOverview?.();
         }}
         style={{
           background: pillColors.bg,
@@ -802,6 +756,7 @@ export default function MainContent({
 
   const openWebPage = async (input: SavedWebPage) => {
     if (!isReady || studioPlayground.controller.state.sessionMutating) return;
+    if (!(await canNavigateStudio())) return;
     const { headed, url, viewportHeight, viewportWidth } = input;
     const { actions, state } = studioPlayground.controller;
     const selectionValues = {
@@ -918,6 +873,7 @@ export default function MainContent({
             if (!isReady) {
               return;
             }
+            if (!(await canNavigateStudio())) return;
             const { actions, state } = studioPlayground.controller;
             const selectionValues = buildDeviceSelectionFormValues(
               platform,
@@ -946,6 +902,7 @@ export default function MainContent({
             if (!isReady) {
               return;
             }
+            if (!(await canNavigateStudio())) return;
             const { actions, state } = studioPlayground.controller;
             if (state.sessionViewState.connected) {
               await stopStudioActivityBeforeSessionDestroy();
@@ -1077,22 +1034,20 @@ export default function MainContent({
           ) : null}
         </div>
 
-        <div className="app-no-drag flex h-[28px] shrink-0 items-center gap-[8px]">
-          {studioModeHeaderActions ? (
-            <div className="app-no-drag flex shrink-0 items-center gap-[8px]">
-              {studioModeHeaderActions}
-            </div>
-          ) : null}
-          {previewToolbarIcons.map((item) => (
-            <PreviewToolbarIcon
-              key={item.key}
-              label={item.label}
-              onClick={() => onStudioModeChange?.(item.mode)}
-              selected={item.key === selectedPreviewToolbarKey}
-            >
-              {item.icon}
-            </PreviewToolbarIcon>
-          ))}
+        <div
+          className="app-no-drag flex h-[28px] shrink-0 items-center pl-[8px]"
+          style={{
+            width: Math.max(
+              200,
+              STUDIO_MODE_PANEL_WIDTH - 10 - (titlebarInsetRight || 16),
+            ),
+          }}
+        >
+          <StudioWorkspaceSwitch
+            busy={previewBoundaryActive}
+            mode={workspaceMode}
+            onModeChange={onWorkspaceModeChange}
+          />
         </div>
       </div>
 
@@ -1222,14 +1177,23 @@ export default function MainContent({
             .join(' ')}
           style={{ width: STUDIO_MODE_PANEL_WIDTH }}
         >
-          <StudioModePanel
-            onHeaderChange={syncStudioModeHeaderActions}
-            onCloseStudioRightPanel={onCloseStudioRightPanel}
-            onOpenStudioRightPanel={onOpenStudioRightPanel}
-            onStudioModeChange={handleStudioModeChange}
-            onTimelineExecutionStatusChange={setTimelineExecutionStatus}
-            studioMode={activeStudioMode}
-          />
+          <StudioWorkspace
+            actions={studioModeHeaderActions}
+            menu={workbenchMenu}
+            mode={workspaceMode}
+            onMenuChange={onWorkbenchMenuChange}
+            onOriginalModeChange={handleStudioModeChange}
+            originalMode={activeStudioMode}
+          >
+            <StudioModePanel
+              onHeaderChange={syncStudioModeHeaderActions}
+              onCloseStudioRightPanel={onCloseStudioRightPanel}
+              onOpenStudioRightPanel={onOpenStudioRightPanel}
+              onStudioModeChange={handleStudioModeChange}
+              onTimelineExecutionStatusChange={setTimelineExecutionStatus}
+              studioMode={activeStudioMode}
+            />
+          </StudioWorkspace>
         </div>
       </div>
     </div>
