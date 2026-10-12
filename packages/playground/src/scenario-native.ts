@@ -1,6 +1,7 @@
 import type { MidsceneRecorderNativeLocator } from '@midscene/shared/recorder';
 import { type Locator, type Page, chromium } from 'playwright-core';
 import type { ScenarioRunStep } from './scenario-contract';
+import { observeScenarioReadiness } from './scenario-readiness';
 
 type PuppeteerPage = {
   browser(): { wsEndpoint(): string };
@@ -44,9 +45,13 @@ export async function connectScenarioPage(iface: unknown, signal: AbortSignal) {
           ) {
             page.setDefaultTimeout(10000);
             page.setDefaultNavigationTimeout(20000);
+            const readiness = observeScenarioReadiness(page);
             return {
               page,
+              waitForAssertionReady: (signal: AbortSignal) =>
+                readiness.wait(signal),
               close: async () => {
+                readiness.dispose();
                 signal.removeEventListener('abort', disconnect);
                 await browser.close();
               },

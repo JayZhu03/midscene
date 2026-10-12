@@ -58,6 +58,26 @@ export function StudioScenarioTimeline({
         ? assetUrls[value.slice('scenario-asset:'.length)]
         : value;
     return steps.map((step) => {
+      if (step.type === 'agent-operation' && !step.sourceEvent) {
+        const instruction = step.instruction;
+        const label = t('Agent operation');
+        return {
+          id: step.id,
+          description: (
+            <span>
+              {label} - {instruction}
+            </span>
+          ),
+          descriptionText: `${label} - ${instruction}`,
+          icon: (
+            <span className="studio-scenario-checkpoint-icon">
+              <CheckIcon />
+            </span>
+          ),
+          details: instruction,
+          color: 'var(--midscene-brand)',
+        };
+      }
       if (step.type === 'agent-assertion') {
         return {
           id: step.id,
@@ -76,7 +96,7 @@ export function StudioScenarioTimeline({
           details: step.instruction,
         };
       }
-      const source = step.sourceEvent;
+      const source = step.sourceEvent!;
       const screenshotAssetUrl = source.screenshotAsset
         ? script
           ? assetUrls[source.screenshotAsset.id]
@@ -85,6 +105,17 @@ export function StudioScenarioTimeline({
       return {
         event: {
           ...source,
+          ...(step.type === 'agent-operation'
+            ? {
+                semantic: {
+                  ...source.semantic,
+                  source: 'heuristic' as const,
+                  status: 'ready' as const,
+                  actionSummary: step.instruction,
+                  replayInstruction: step.instruction,
+                },
+              }
+            : {}),
           screenshotWithBox: imageUrl(source.screenshotWithBox),
           screenshotAfter:
             imageUrl(source.screenshotAfter) ||

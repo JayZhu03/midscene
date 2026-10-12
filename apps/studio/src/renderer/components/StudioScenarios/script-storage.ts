@@ -3,6 +3,8 @@ import {
   type ScenarioScreenshotField,
   type ScenarioScript,
   type ScenarioScriptAssetRef,
+  type ScenarioScriptStep,
+  editScenarioScript,
   validateScenarioIdentifier,
   validateScenarioScript,
 } from './script-model';
@@ -11,6 +13,45 @@ export const SCENARIO_SCRIPTS_DATABASE = 'midscene-studio-scenario-scripts';
 const SCRIPT_STORE = 'scripts';
 const ASSET_STORE = 'assets';
 const ASSET_PREFIX = 'scenario-asset:';
+
+/** Only changes the flow; screenshot blobs and recorded operations stay intact. */
+export async function updateScenarioScriptSteps(
+  original: ScenarioScript,
+  steps: ScenarioScriptStep[],
+): Promise<ScenarioScript> {
+  let failure: Error | undefined;
+  try {
+    return await transaction<ScenarioScript>(
+      [SCRIPT_STORE],
+      'readwrite',
+      (tx, setResult) => {
+        const store = tx.objectStore(SCRIPT_STORE);
+        const request = store.get(original.id);
+        request.onsuccess = () => {
+          try {
+            const latest = validateScenarioScript(request.result);
+            if (
+              latest.updatedAt !== original.updatedAt ||
+              latest.scenarioId !== original.scenarioId
+            )
+              throw new Error('This script changed. Reopen it before editing.');
+            const saved = editScenarioScript(latest, steps);
+            store.put(saved);
+            setResult(saved);
+          } catch (cause) {
+            failure =
+              cause instanceof Error
+                ? cause
+                : new Error('Unable to update script.');
+            tx.abort();
+          }
+        };
+      },
+    );
+  } catch (cause) {
+    throw failure || cause;
+  }
+}
 
 export async function renameScenarioScript(
   id: string,
@@ -269,10 +310,11 @@ export async function saveScenarioScript(
       else event[field] = `${ASSET_PREFIX}${id}`;
     }
   }
-  for (const step of script.steps) {
-    if ('sourceEvent' in step) {
+  for (const step of [...script.steps, ...(script.recordedSteps || [])]) {
+    if ('sourceEvent' in step && step.sourceEvent) {
+      const hashId = step.sourceEvent.hashId;
       step.sourceEvent = script.sourceSession.events.find(
-        (event) => event.hashId === step.sourceEvent.hashId,
+        (event) => event.hashId === hashId,
       )!;
     }
   }

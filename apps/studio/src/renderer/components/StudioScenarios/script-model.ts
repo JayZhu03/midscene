@@ -27,6 +27,7 @@ interface ScenarioStepBase {
   id: string;
   description: string;
   code: string;
+  manual?: boolean;
 }
 
 export type ScenarioScriptStep =
@@ -37,12 +38,12 @@ export type ScenarioScriptStep =
   | (ScenarioStepBase & {
       type: 'agent-operation';
       instruction: string;
-      sourceEvent: StudioRecordedEvent;
+      sourceEvent?: StudioRecordedEvent;
     })
   | (ScenarioStepBase & {
       type: 'agent-assertion';
       instruction: string;
-      sourceCheckpoint: ScenarioCheckpoint;
+      sourceCheckpoint?: ScenarioCheckpoint;
     });
 
 export type ScenarioScreenshotField =
@@ -69,6 +70,8 @@ export interface ScenarioScript {
   sourceSession: ScenarioSourceSession;
   steps: ScenarioScriptStep[];
   assets: ScenarioScriptAssetRef[];
+  /** Frozen recording before the first flow edit. */
+  recordedSteps?: ScenarioScriptStep[];
 }
 
 function invalid(): never {
@@ -588,6 +591,16 @@ export function validateScenarioScript(value: unknown): ScenarioScript {
     !Array.isArray(script.assets)
   )
     invalid();
+  if (script.recordedSteps !== undefined) {
+    if (!Array.isArray(script.recordedSteps)) invalid();
+    const { recordedSteps, ...rest } = script;
+    const original = validateScenarioScript({ ...rest, steps: recordedSteps });
+    return {
+      ...original,
+      recordedSteps: original.steps,
+      steps: validateEditedSteps(original.steps, script.steps),
+    };
+  }
   const sourceSession = snapshotScenarioSession(script.sourceSession);
   const name = text(script.name, SCENARIO_SCRIPT_NAME_MAX_LENGTH).trim();
   const createdAt = timestamp(script.createdAt);
@@ -601,10 +614,10 @@ export function validateScenarioScript(value: unknown): ScenarioScript {
     invalid();
   const sources = orderedSources(sourceSession);
   if (!sources.length || sources.length !== script.steps.length) invalid();
-  // Saved execution remains frozen across compiler upgrades. Validate its source
-  // linkage and ordered union without recompiling or replacing saved code.
+  // Preserve saved native code across compiler upgrades.
   const steps = script.steps.map((value, index): ScenarioScriptStep => {
     const step = record(value);
+    if (step.manual !== undefined) invalid();
     const source = sources[index];
     const base = {
       id: text(step.id, 256),
@@ -716,4 +729,98 @@ export function validateScenarioScript(value: unknown): ScenarioScript {
     }
   }
   return rebuilt;
+}
+
+export function agentStepInstruction(
+  step: ScenarioScriptStep,
+  instruction: string,
+): ScenarioScriptStep {
+  if (step.type === 'playwright-operation')
+    throw new Error('Playwright steps cannot be edited.');
+  return {
+    ...step,
+    instruction,
+    description: instruction,
+    code: `await agent.${step.type === 'agent-assertion' ? 'aiAssert' : 'aiAct'}(${JSON.stringify(instruction)});`,
+  };
+}
+
+export function createAgentStep(
+  type: 'agent-operation' | 'agent-assertion',
+): ScenarioScriptStep {
+  return agentStepInstruction(
+    {
+      id: `manual:${crypto.randomUUID()}`,
+      type,
+      manual: true,
+      instruction: '',
+      description: '',
+      code: '',
+    },
+    '',
+  );
+}
+
+function validateEditedSteps(
+  original: ScenarioScriptStep[],
+  values: unknown[],
+): ScenarioScriptStep[] {
+  if (!values.length || values.length > 10000) invalid();
+  const byId = new Map(original.map((step) => [step.id, step]));
+  const ids = new Set<string>();
+  const result = values.map((value) => {
+    const step = record(value);
+    const id = text(step.id, 256);
+    if (ids.has(id)) invalid();
+    ids.add(id);
+    const source = byId.get(id);
+    if (source?.type === 'playwright-operation') {
+      if (
+        step.type !== source.type ||
+        step.manual !== undefined ||
+        step.description !== source.description ||
+        step.code !== source.code ||
+        JSON.stringify(eventSnapshot(step.sourceEvent)) !==
+          JSON.stringify(source.sourceEvent)
+      )
+        throw new Error('Playwright steps cannot be edited.');
+      return source;
+    }
+    if (!['agent-operation', 'agent-assertion'].includes(String(step.type)))
+      invalid();
+    if (source && source.type !== step.type) invalid();
+    if (!source && (step.manual !== true || !id.startsWith('manual:')))
+      invalid();
+    const instruction = text(step.instruction, Number.MAX_SAFE_INTEGER);
+    if (!instruction.trim())
+      throw new Error('Please enter a step instruction.');
+    return agentStepInstruction(
+      source || {
+        id,
+        type: step.type as 'agent-operation' | 'agent-assertion',
+        manual: true,
+        description: '',
+        code: '',
+        instruction: '',
+      },
+      instruction,
+    );
+  });
+  const nativeIds = (steps: ScenarioScriptStep[]) =>
+    steps.filter((s) => s.type === 'playwright-operation').map((s) => s.id);
+  if (JSON.stringify(nativeIds(original)) !== JSON.stringify(nativeIds(result)))
+    throw new Error('Playwright steps cannot be edited.');
+  return result;
+}
+
+export function editScenarioScript(
+  script: ScenarioScript,
+  steps: ScenarioScriptStep[],
+): ScenarioScript {
+  return validateScenarioScript({
+    ...script,
+    recordedSteps: script.recordedSteps || script.steps,
+    steps,
+    updatedAt: Math.max(Date.now(), script.updatedAt + 1),
+  });
 }

@@ -1,0 +1,84 @@
+import { EventEmitter } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
+import { describe, expect, rs, test } from '@rstest/core';
+import type { Page } from 'playwright-core';
+import {
+  SCENARIO_PAGE_NOT_READY,
+  observeScenarioReadiness,
+} from '../../src/scenario-readiness';
+
+function fixture() {
+  const page = new EventEmitter();
+  const state = { loading: false, content: '总 1 条' };
+  const evaluate = rs.fn(async () => ({ ...state }));
+  Object.assign(page, { evaluate });
+  const readiness = observeScenarioReadiness(page as unknown as Page);
+  return { page, state, evaluate, readiness };
+}
+
+describe('scenario assertion readiness', () => {
+  test('waits for a query started before the assertion and its final rendered data', async () => {
+    const { page, state, readiness } = fixture();
+    const request = { resourceType: () => 'xhr' };
+    page.emit('request', request);
+    const settled = rs.fn();
+    const waiting = readiness
+      .wait(new AbortController().signal, 2000, 30)
+      .then(settled);
+    await delay(150);
+    expect(settled).not.toHaveBeenCalled();
+    state.loading = true;
+    page.emit('requestfinished', request);
+    await delay(150);
+    expect(settled).not.toHaveBeenCalled();
+    state.loading = false;
+    state.content = '总 2165 条';
+    await waiting;
+    expect(settled).toHaveBeenCalledTimes(1);
+    readiness.dispose();
+    expect(page.listenerCount('request')).toBe(0);
+    expect(page.listenerCount('requestfinished')).toBe(0);
+    expect(page.listenerCount('requestfailed')).toBe(0);
+  });
+
+  test('does not wait for an expected count or hide an actual mismatch', async () => {
+    const { state, readiness } = fixture();
+    await readiness.wait(new AbortController().signal, 1000, 30);
+    expect(state.content).toBe('总 1 条');
+    readiness.dispose();
+  });
+
+  test('times out when the spinner stays visible', async () => {
+    const { state, readiness } = fixture();
+    state.loading = true;
+    await expect(
+      readiness.wait(new AbortController().signal, 150, 30),
+    ).rejects.toThrow(SCENARIO_PAGE_NOT_READY);
+    readiness.dispose();
+  });
+
+  test('timeout and stop also interrupt an unresponsive renderer', async () => {
+    const { evaluate, readiness } = fixture();
+    evaluate.mockImplementation(() => new Promise(() => {}));
+    await expect(
+      readiness.wait(new AbortController().signal, 50, 30),
+    ).rejects.toThrow(SCENARIO_PAGE_NOT_READY);
+    const controller = new AbortController();
+    const stopped = expect(
+      readiness.wait(controller.signal, 2000, 30),
+    ).rejects.toThrow('Stopped');
+    controller.abort(new Error('Stopped'));
+    await stopped;
+    readiness.dispose();
+  });
+
+  test('ignores streaming resources and releases failed queries', async () => {
+    const { page, readiness } = fixture();
+    const request = { resourceType: () => 'fetch' };
+    page.emit('request', { resourceType: () => 'eventsource' });
+    page.emit('request', request);
+    page.emit('requestfailed', request);
+    await readiness.wait(new AbortController().signal, 1000, 30);
+    readiness.dispose();
+  });
+});

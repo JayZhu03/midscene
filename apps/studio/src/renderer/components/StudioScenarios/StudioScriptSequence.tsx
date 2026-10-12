@@ -46,7 +46,7 @@ export function StudioScriptSequence({
   onChange: (value: SequenceEntry[]) => void;
   onOpen: (script: ScenarioScript) => void;
   onAction: (
-    action: 'rename' | 'delete' | 'run',
+    action: 'rename' | 'delete' | 'run' | 'edit',
     script: ScenarioScript,
   ) => void;
   canRun: boolean;
@@ -228,6 +228,11 @@ export function StudioScriptSequence({
                   menu={{
                     selectedKeys: [`session-${sessionMode}`],
                     items: [
+                      {
+                        key: 'edit',
+                        label: t('Edit script'),
+                        icon: <EditIcon />,
+                      },
                       { key: 'rename', label: t('Rename'), icon: <EditIcon /> },
                       {
                         key: 'delete',
@@ -258,7 +263,10 @@ export function StudioScriptSequence({
                       }
                       if (
                         !locked &&
-                        (key === 'rename' || key === 'delete' || key === 'run')
+                        (key === 'rename' ||
+                          key === 'delete' ||
+                          key === 'run' ||
+                          key === 'edit')
                       )
                         onAction(key, script);
                     },

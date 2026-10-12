@@ -5,7 +5,10 @@ import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StudioScenarioScripts } from '../src/renderer/components/StudioScenarios/StudioScenarioScripts';
-import { compileScenarioScript } from '../src/renderer/components/StudioScenarios/script-model';
+import {
+  compileScenarioScript,
+  editScenarioScript,
+} from '../src/renderer/components/StudioScenarios/script-model';
 import { setStudioLanguage } from '../src/renderer/i18n';
 import { scenarioSession } from './fixtures/scenario-script';
 
@@ -22,13 +25,14 @@ const execution = vi.hoisted(() => ({
   next: vi.fn(),
   stop: vi.fn(),
 }));
-const persistence = vi.hoisted(() => ({ list: vi.fn() }));
+const persistence = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn() }));
 vi.mock(
   '../src/renderer/components/StudioScenarios/useScenarioExecution',
   () => ({ useScenarioExecution: () => execution }),
 );
 vi.mock('../src/renderer/components/StudioScenarios/script-storage', () => ({
   listScenarioScripts: persistence.list,
+  updateScenarioScriptSteps: persistence.update,
 }));
 
 (
@@ -75,6 +79,11 @@ beforeEach(() => {
   execution.locked = false;
   execution.isolatedSession = false;
   execution.restoreSession.mockReset();
+  persistence.update
+    .mockReset()
+    .mockImplementation(async (script, steps) =>
+      editScenarioScript(script, steps),
+    );
   execution.start
     .mockReset()
     .mockImplementation(async (plan: ScenarioRunInput) => {
@@ -116,6 +125,85 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
+});
+
+async function typeInstruction(value: string) {
+  const field = document.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Step instruction"]',
+  )!;
+  expect(field).toBeTruthy();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value',
+    )!.set!.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+it('edits a script flow, runs the saved Agent step and can edit from results without rewriting the result', async () => {
+  await render();
+  await click('Script actions');
+  await click('Edit script');
+  expect(container.querySelectorAll('.studio-script-editor-row')).toHaveLength(
+    1,
+  );
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.querySelector('[aria-label="Step actions 1"]')).toBeNull();
+  await click('Insert step 2');
+  await click('Add assertion');
+  await typeInstruction('Order quantity is 20');
+  await click('Save changes');
+  expect(persistence.update).toHaveBeenCalledTimes(1);
+  expect(execution.start).not.toHaveBeenCalled();
+  await click('Back to scenario');
+  await click('Script actions');
+  await click('Run this script');
+  expect(execution.start.mock.calls[0][0].scripts[0].steps[1].instruction).toBe(
+    'Order quantity is 20',
+  );
+  execution.run!.status = 'completed';
+  execution.locked = false;
+  await render();
+  await click('Edit step 2');
+  await typeInstruction('Order quantity is 30');
+  await click('Save changes');
+  expect(container.querySelector('.studio-execution-page')).toBeTruthy();
+  expect(container.textContent).toContain('Order quantity is 20');
+  expect(container.textContent).not.toContain('Order quantity is 30');
+  expect(persistence.update.mock.calls[1][1][1].instruction).toBe(
+    'Order quantity is 30',
+  );
+});
+
+it('keeps unsaved edits on storage failure, allows deletion and confirms discarding changes', async () => {
+  await render();
+  await click('Script actions');
+  await click('Edit script');
+  await click('Insert step 1');
+  await click('Add Agent operation');
+  await typeInstruction('Open orders');
+  persistence.update.mockRejectedValueOnce(
+    new Error('Unable to update script.'),
+  );
+  await click('Save changes');
+  expect(container.textContent).toContain('Unable to update script.');
+  expect(container.querySelector('textarea')?.value).toBe('Open orders');
+  await click('Step actions 1');
+  await click('Delete');
+  expect(container.querySelectorAll('.studio-script-editor-row')).toHaveLength(
+    1,
+  );
+  await click('Insert step 2');
+  await click('Add assertion');
+  await typeInstruction('Ready');
+  await click('Cancel');
+  await click('Keep editing');
+  expect(container.querySelector('textarea')?.value).toBe('Ready');
+  await click('Cancel');
+  await click('Discard');
+  expect(container.querySelector('.studio-script-editor')).toBeNull();
+  expect(persistence.update).toHaveBeenCalledTimes(1);
 });
 afterEach(async () => {
   await act(async () => root.unmount());

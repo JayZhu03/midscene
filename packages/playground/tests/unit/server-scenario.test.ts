@@ -1,11 +1,16 @@
 import { describe, expect, rs, test } from '@rstest/core';
 import type { ScenarioRunInput } from '../../src/scenario-contract';
 import { connectScenarioPage } from '../../src/scenario-native';
+import { SCENARIO_PAGE_NOT_READY } from '../../src/scenario-readiness';
 import { generateScenarioSummary } from '../../src/scenario-summary';
 import { PlaygroundServer } from '../../src/server';
 
 rs.mock('../../src/scenario-native', () => ({
-  connectScenarioPage: rs.fn(async () => ({ page: {}, close: async () => {} })),
+  connectScenarioPage: rs.fn(async () => ({
+    page: {},
+    waitForAssertionReady: async () => {},
+    close: async () => {},
+  })),
   executeScenarioNative: rs.fn(async () => {}),
 }));
 rs.mock('../../src/scenario-summary', () => ({
@@ -69,6 +74,48 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('does not ask the model for a verdict until the page is ready', async () => {
+    const { server, agent, status } = await setup();
+    let ready!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    rs.mocked(connectScenarioPage).mockResolvedValueOnce({
+      page: {} as any,
+      waitForAssertionReady: () => waiting,
+      close: async () => {},
+    });
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: plan() }, response());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+      ready();
+      await until(() => status().run.status === 'waiting');
+      expect(agent.aiAssert).toHaveBeenCalledTimes(1);
+    } finally {
+      ready();
+      await server.close();
+    }
+  });
+  test('reports a readiness blocker without invoking the assertion model', async () => {
+    const { server, agent, status } = await setup();
+    rs.mocked(connectScenarioPage).mockResolvedValueOnce({
+      page: {} as any,
+      waitForAssertionReady: async () => {
+        throw new Error(SCENARIO_PAGE_NOT_READY);
+      },
+      close: async () => {},
+    });
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: plan() }, response());
+      await until(() => !status().busy);
+      expect(status().run.status).toBe('failed');
+      expect(status().run.error).toBe(SCENARIO_PAGE_NOT_READY);
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
   test('switches once for a whole scenario, rebinds preview and restores only after execution', async () => {
     const { server, agent, status } = await setup();
     const freshAgent = { ...agent, destroy: rs.fn(async () => {}) };

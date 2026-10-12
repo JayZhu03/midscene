@@ -685,6 +685,121 @@
   width: 16px;
   height: 16px;
 }
+.studio-script-editor {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0 16px 12px;
+  overflow-y: auto;
+}
+.studio-script-editor-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  position: relative;
+  padding: 8px 0;
+}
+.studio-script-editor-row::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 32px;
+  bottom: 0;
+  width: 1px;
+  background: var(--midscene-border-subtle);
+}
+.studio-script-editor-index {
+  flex: 0 0 24px;
+  height: 24px;
+  line-height: 22px;
+  border: 1px solid var(--midscene-border-subtle);
+  border-radius: 50%;
+  color: var(--midscene-text-tertiary);
+  background: var(--midscene-surface);
+  font-size: 11px;
+  text-align: center;
+}
+.studio-script-editor-content {
+  flex: 1;
+  min-width: 0;
+}
+.studio-script-editor-type {
+  color: var(--midscene-text-tertiary);
+  font-size: 11px;
+  margin: 3px 0 5px;
+}
+.studio-script-editor-description {
+  color: var(--midscene-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.studio-script-editor-row > .ant-btn {
+  color: var(--midscene-text-tertiary);
+  width: 26px;
+  padding: 0;
+}
+.studio-script-insert {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+.studio-script-insert::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--midscene-border-subtle);
+}
+.studio-script-insert::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  margin-left: 10px;
+  background: var(--midscene-border-subtle);
+  opacity: 0;
+}
+.studio-script-insert:hover::after,
+.studio-script-insert:focus-within::after {
+  opacity: 1;
+}
+.studio-script-insert .ant-btn {
+  background: var(--midscene-surface);
+  border-radius: 50%;
+  padding: 0;
+  width: 24px;
+  color: var(--midscene-text-tertiary);
+}
+.studio-script-editor-footer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--midscene-border-subtle);
+}
+.studio-script-editor-footer .ant-btn {
+  border-radius: 8px;
+  box-shadow: none;
+}
+.studio-script-editor .ant-input {
+  font-size: 13px;
+  border-radius: 8px;
+}
+.studio-execution-steps .ant-btn {
+  font-size: 11px;
+  height: 24px;
+  padding: 0 4px;
+}
+.studio-execution-steps .ant-btn svg {
+  width: 14px;
+  height: 14px;
+}
 .studio-scenario-menu .ant-dropdown-menu-item {
   display: flex;
   align-items: center;

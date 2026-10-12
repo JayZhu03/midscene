@@ -38,7 +38,6 @@ const webMessages: Record<string, string> = {
   'Recorded input value is missing.': '脚本缺少录制输入值，请重新录制此步骤',
   'Sensitive input failed. Check the field and retry.':
     '密码输入失败，请检查输入框后重试',
-  'Unable to update script.': '脚本更新失败，请重试',
   'Run scenario': '执行',
   'Script sequence': '脚本顺序',
   'Start with scenario': '随场景开始',
@@ -65,6 +64,8 @@ const webMessages: Record<string, string> = {
     '暂时无法获取执行状态，正在重连',
   'Stop the current task before running a scenario.': '请先停止当前任务',
   'The checkpoint did not pass.': '检查点未通过',
+  'The page is still loading or changing. The assertion was not evaluated.':
+    '页面加载未完成或持续变化，尚未判断断言',
   'Recorded operation no longer matches its saved script. Re-record this script.':
     '录制操作与脚本不一致，请重新录制',
   'The recorded target is missing or is not unique.':
@@ -94,6 +95,26 @@ const webMessages: Record<string, string> = {
   'Record new script': '录制新脚本',
   'Insert checkpoint': '插入检查点',
   Checkpoint: '检查点',
+  'Agent operation': 'Agent 操作',
+  'Edit script': '编辑脚本',
+  'Edit steps': '编辑步骤',
+  'Edit step': '编辑',
+  'Step actions': '步骤操作',
+  'Step instruction': '步骤要求',
+  'Insert step': '插入步骤',
+  Assertion: '断言',
+  'Describe the expected result': '描述需要检查的预期结果',
+  'Describe what Agent should do': '描述需要 Agent 完成的操作',
+  'Please enter a step instruction.': '请输入步骤要求',
+  'Playwright steps cannot be edited.': 'Playwright 步骤不可修改',
+  'This script changed. Reopen it before editing.':
+    '脚本已更新，请重新打开后编辑',
+  'Add assertion': '添加断言',
+  'Add Agent operation': '添加 Agent 操作',
+  'Playwright step is read-only': 'Playwright 步骤只读',
+  'Save changes': '保存修改',
+  'No changes to save.': '没有需要保存的修改',
+  'Unable to update script.': '脚本更新失败，请重试',
   Insert: '插入',
   'Expected result': '预期结果',
   'Please enter an expectation.': '请输入预期结果',

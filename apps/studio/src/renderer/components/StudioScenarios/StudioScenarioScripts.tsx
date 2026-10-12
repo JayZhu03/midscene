@@ -11,6 +11,7 @@ import {
 } from '../Recorder/assets/recorder-icons';
 import { StudioScenarioExecution } from './StudioScenarioExecution';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
+import { StudioScriptEditor } from './StudioScriptEditor';
 import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
 import {
   SCENARIO_NAVIGATION_EVENT,
@@ -26,6 +27,7 @@ import {
   listScenarioScripts,
   renameScenarioScript,
   saveScenarioScript,
+  updateScenarioScriptSteps,
 } from './script-storage';
 import {
   type SequenceEntry,
@@ -86,6 +88,16 @@ export function StudioScenarioScripts({
   const [stoppedSession, setStoppedSession] =
     useState<StudioRecordingSession | null>(null);
   const [viewedScript, setViewedScript] = useState<ScenarioScript | null>(null);
+  const [editingScript, setEditingScript] = useState<ScenarioScript | null>(
+    null,
+  );
+  const [editingSteps, setEditingSteps] = useState<ScenarioScript['steps']>([]);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editFocus, setEditFocus] = useState<string>();
+  const [editFromExecution, setEditFromExecution] = useState(false);
+  const editingRef = useRef(false);
+  editingRef.current = Boolean(editingScript);
+
   const [error, setError] = useState<string | null>(null);
   const [checkpointOpen, setCheckpointOpen] = useState(false);
   const [expectation, setExpectation] = useState('');
@@ -141,7 +153,8 @@ export function StudioScenarioScripts({
     phase === 'starting' ||
     phase === 'recording' ||
     phase === 'stopping' ||
-    phase === 'draft';
+    phase === 'draft' ||
+    Boolean(editingScript);
   const busy = phase === 'starting' || phase === 'stopping';
 
   useEffect(() => {
@@ -186,7 +199,7 @@ export function StudioScenarioScripts({
       ) {
         setError(t('Stop recording before leaving.'));
         request.respond(false);
-      } else if (phaseRef.current === 'draft') {
+      } else if (phaseRef.current === 'draft' || editingRef.current) {
         request.respond(
           new Promise<boolean>((resolve) => {
             // A second click must not leave a first navigation promise unresolved.
@@ -203,6 +216,7 @@ export function StudioScenarioScripts({
           phaseRef.current,
         ) ||
         mutationRef.current ||
+        editingRef.current ||
         executionRef.current
       ) {
         event.preventDefault();
@@ -218,7 +232,45 @@ export function StudioScenarioScripts({
     };
   }, []);
 
+  const closeEditor = () => {
+    setEditingScript(null);
+    setEditingSteps([]);
+    setEditFocus(undefined);
+    setError(null);
+    if (editFromExecution) setExecutionPage(true);
+    setEditFromExecution(false);
+  };
+  const cancelEditor = () => {
+    if (mutationRef.current) return;
+    if (JSON.stringify(editingSteps) === JSON.stringify(editingScript?.steps)) {
+      closeEditor();
+      return;
+    }
+    discardRequestRef.current?.(false);
+    const resolve = (_allowed: boolean) => {};
+    discardRequestRef.current = resolve;
+    setDiscardRequest(() => resolve);
+  };
+  const beginEdit = (
+    script: ScenarioScript,
+    stepId?: string,
+    fromExecution = false,
+  ) => {
+    if (executionRef.current || mutationRef.current || protectedWork) return;
+    setViewedScript(script);
+    setPhase('saved');
+    setEditingScript(script);
+    setEditingSteps(script.steps.map((step) => ({ ...step })));
+    setEditFocus(stepId);
+    setEditFromExecution(fromExecution);
+    setExecutionPage(false);
+    setError(null);
+  };
   const clearDraft = async () => {
+    if (editingRef.current) {
+      closeEditor();
+      return;
+    }
     if (sessionId) await recorder?.releaseScenarioSession(sessionId);
     setSessionId(null);
     setStoppedSession(null);
@@ -388,6 +440,37 @@ export function StudioScenarioScripts({
     }
   };
 
+  const saveEditedScript = async () => {
+    if (
+      !editingScript ||
+      editBusy ||
+      mutationRef.current ||
+      executionRef.current
+    )
+      return;
+    mutationRef.current = true;
+    setEditBusy(true);
+    setError(null);
+    try {
+      const saved = await updateScenarioScriptSteps(
+        editingScript,
+        editingSteps,
+      );
+      setScripts((current) =>
+        current.map((item) => (item.id === saved.id ? saved : item)),
+      );
+      setViewedScript(saved);
+      closeEditor();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : t('Unable to update script.'),
+      );
+    } finally {
+      setEditBusy(false);
+      mutationRef.current = false;
+    }
+  };
+
   const startExecution = (
     selectedScripts: ScenarioScript[],
     selectedSequence: SequenceEntry[],
@@ -433,6 +516,14 @@ export function StudioScenarioScripts({
         onBack={() => setExecutionPage(false)}
         onNext={() => void execution.next()}
         onStop={() => void execution.stop()}
+        onEditStep={
+          !execution.locked && !execution.pending
+            ? (scriptId, stepId) => {
+                const script = scripts.find((item) => item.id === scriptId);
+                if (script) beginEdit(script, stepId, true);
+              }
+            : undefined
+        }
         canRestoreSession={execution.isolatedSession && !execution.locked}
         onRestoreSession={() => void execution.restoreSession()}
       />
@@ -457,7 +548,9 @@ export function StudioScenarioScripts({
           icon={<BackIcon />}
           type="text"
           onClick={() => {
-            if (phase === 'list') {
+            if (editingScript) {
+              cancelEditor();
+            } else if (phase === 'list') {
               if (executionRef.current)
                 setError(t('Stop the scenario before leaving.'));
               else onBack();
@@ -479,12 +572,22 @@ export function StudioScenarioScripts({
           {viewedScript?.name ?? scenario.name}
         </h3>
         <Dropdown
+          disabled={Boolean(editingScript)}
           overlayClassName="studio-scenario-menu"
           trigger={['click']}
           placement="bottomRight"
           menu={{
             selectedKeys: [`session-${sessionMode}`],
             items: [
+              ...(phase === 'saved' && viewedScript
+                ? [
+                    {
+                      key: 'edit',
+                      label: t('Edit script'),
+                      disabled: execution.locked || execution.pending,
+                    },
+                  ]
+                : []),
               {
                 key: 'execute',
                 label: t('Run scenario'),
@@ -508,6 +611,10 @@ export function StudioScenarioScripts({
               ),
             ],
             onClick: ({ key }) => {
+              if (key === 'edit' && viewedScript) {
+                beginEdit(viewedScript);
+                return;
+              }
               if (key === 'session-current' || key === 'session-fresh') {
                 changeSessionMode(
                   key === 'session-fresh' ? 'fresh' : 'current',
@@ -596,7 +703,7 @@ export function StudioScenarioScripts({
             </Button>
           ) : null}
         </div>
-        {run || startingRun ? (
+        {!editingScript && (run || startingRun) ? (
           <Button
             className="studio-execution-reopen"
             type="text"
@@ -627,7 +734,9 @@ export function StudioScenarioScripts({
               canRun={execution.canStart && !actionBusy}
               onAction={(action, script) => {
                 if (executionRef.current || mutationRef.current) return;
-                if (action === 'run') {
+                if (action === 'edit') {
+                  beginEdit(script);
+                } else if (action === 'run') {
                   startExecution(
                     [script],
                     [{ id: script.id, startMode: 'automatic' }],
@@ -659,6 +768,15 @@ export function StudioScenarioScripts({
           ) : (
             <div className="studio-scenario-empty">{t('No scripts yet')}</div>
           )
+        ) : editingScript ? (
+          <StudioScriptEditor
+            steps={editingSteps}
+            focusStepId={editFocus}
+            onChange={setEditingSteps}
+            onCancel={cancelEditor}
+            onSave={() => void saveEditedScript()}
+            busy={editBusy || execution.locked || execution.pending}
+          />
         ) : (
           <StudioScenarioTimeline
             steps={preview.steps}

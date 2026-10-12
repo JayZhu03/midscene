@@ -3627,6 +3627,10 @@ class PlaygroundServer {
               }
             } else {
               const agent = this.getActiveAgentOrThrow();
+              if (step.type === 'agent-assertion') {
+                await connection!.waitForAssertionReady(signal);
+                signal.throwIfAborted();
+              }
               return await executeScenarioAgentStep(
                 step,
                 async (type, instruction) =>

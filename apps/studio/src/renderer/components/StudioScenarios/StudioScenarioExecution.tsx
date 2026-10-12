@@ -2,7 +2,7 @@ import { type ScenarioRunState, scenarioRunActive } from '@midscene/playground';
 import { Button, Progress } from 'antd';
 import { useEffect, useRef } from 'react';
 import { t } from '../../i18n';
-import { BackIcon } from '../Recorder/assets/recorder-icons';
+import { BackIcon, EditIcon } from '../Recorder/assets/recorder-icons';
 import { runStatusLabel } from './StudioScriptSequence';
 
 export function StudioScenarioExecution({
@@ -15,6 +15,7 @@ export function StudioScenarioExecution({
   onStop,
   canRestoreSession,
   onRestoreSession,
+  onEditStep,
 }: {
   run: ScenarioRunState | null;
   error: string | null;
@@ -25,6 +26,7 @@ export function StudioScenarioExecution({
   onStop: () => void;
   canRestoreSession?: boolean;
   onRestoreSession?: () => void;
+  onEditStep?: (scriptId: string, stepId: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const active = scenarioRunActive(run);
@@ -223,6 +225,16 @@ export function StudioScenarioExecution({
                       <span className="studio-execution-step-status">
                         {runStatusLabel(step.status)}
                       </span>
+                      {!active && onEditStep ? (
+                        <Button
+                          type="text"
+                          size="small"
+                          title={t('Edit steps')}
+                          icon={<EditIcon />}
+                          aria-label={`${t('Edit step')} ${stepIndex + 1}`}
+                          onClick={() => onEditStep(script.id, step.id)}
+                        />
+                      ) : null}
                     </li>
                   ))}
                 </ol>
