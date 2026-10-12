@@ -267,7 +267,7 @@ describe('scenario script compiler', () => {
     );
   });
 
-  it('uses distinct environment keys for different sensitive input operations', () => {
+  it('retains test passwords directly in scenario operations', () => {
     const input = scenarioEvent({
       type: 'input',
       actionType: 'Input',
@@ -285,10 +285,10 @@ describe('scenario script compiler', () => {
         events: [input, { ...input, hashId: 'event-2' }],
       }),
     });
-    expect(script.steps[0].code).toContain('MIDSCENE_INPUT_001');
-    expect(script.steps[1].code).toContain('MIDSCENE_INPUT_002');
+    expect(script.steps[0].code).toContain('fill("private")');
+    expect(script.steps[1].code).toContain('fill("private")');
     expect(script.steps.map((step) => step.code).join('\n')).not.toContain(
-      'private',
+      'MIDSCENE_INPUT_',
     );
   });
 });

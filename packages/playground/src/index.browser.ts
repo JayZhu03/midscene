@@ -1,4 +1,5 @@
 // Browser-safe version of playground exports (excludes server)
+export * from './scenario-contract';
 export {
   dataExtractionAPIs,
   noReplayAPIs,

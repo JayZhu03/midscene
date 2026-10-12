@@ -1,10 +1,16 @@
-import { Button, Form, Input, Modal } from 'antd';
+import { Button, Dropdown, Form, Input, Modal } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../i18n';
 import type { StudioRecordingSession } from '../../recorder/types';
 import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
-import { BackIcon } from '../Recorder/assets/recorder-icons';
+import {
+  BackIcon,
+  CheckIcon,
+  RecorderButtonIcon,
+  ReplayIcon,
+} from '../Recorder/assets/recorder-icons';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
+import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
 import {
   SCENARIO_NAVIGATION_EVENT,
   type ScenarioNavigationRequest,
@@ -14,8 +20,21 @@ import {
   type ScenarioScript,
   compileScenarioScript,
 } from './script-model';
-import { listScenarioScripts, saveScenarioScript } from './script-storage';
+import {
+  deleteScenarioScript,
+  listScenarioScripts,
+  renameScenarioScript,
+  saveScenarioScript,
+} from './script-storage';
+import {
+  type SequenceEntry,
+  buildScenarioRun,
+  loadSequence,
+  reconcileSequence,
+  saveSequence,
+} from './sequence';
 import type { StudioScenario } from './storage';
+import { useScenarioExecution } from './useScenarioExecution';
 
 type Phase = 'list' | 'starting' | 'recording' | 'stopping' | 'draft' | 'saved';
 
@@ -29,6 +48,16 @@ export function StudioScenarioScripts({
   onBack: () => void;
 }) {
   const recorder = useOptionalStudioRecorder();
+  const execution = useScenarioExecution();
+  const [sequence, setSequence] = useState<SequenceEntry[]>([]);
+  const [sequenceReady, setSequenceReady] = useState(false);
+  const run =
+    execution.run?.scenarioId === scenario.id ||
+    scenarioRunActive(execution.run)
+      ? execution.run
+      : null;
+  const executionRef = useRef(false);
+  executionRef.current = execution.locked || execution.pending;
   const [phase, setPhase] = useState<Phase>('list');
   const [scripts, setScripts] = useState<ScenarioScript[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +74,13 @@ export function StudioScenarioScripts({
   const [scriptName, setScriptName] = useState('');
   const [nameInvalid, setNameInvalid] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [scriptAction, setScriptAction] = useState<{
+    type: 'rename' | 'delete';
+    script: ScenarioScript;
+  } | null>(null);
+  const [actionName, setActionName] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const [discardRequest, setDiscardRequest] = useState<
     ((allowed: boolean) => void) | null
   >(null);
@@ -93,6 +129,8 @@ export function StudioScenarioScripts({
       .then((result) => {
         if (!disposed) {
           setScripts(result);
+          setSequence(loadSequence(scenario.id, result));
+          setSequenceReady(true);
           setLoading(false);
         }
       })
@@ -116,6 +154,11 @@ export function StudioScenarioScripts({
   useEffect(() => {
     const beforeNavigation = (event: Event) => {
       const request = (event as CustomEvent<ScenarioNavigationRequest>).detail;
+      if (executionRef.current) {
+        setError(t('Stop the scenario before leaving.'));
+        request.respond(false);
+        return;
+      }
       if (
         ['starting', 'recording', 'stopping'].includes(phaseRef.current) ||
         mutationRef.current
@@ -138,7 +181,8 @@ export function StudioScenarioScripts({
         ['starting', 'recording', 'stopping', 'draft'].includes(
           phaseRef.current,
         ) ||
-        mutationRef.current
+        mutationRef.current ||
+        executionRef.current
       ) {
         event.preventDefault();
         event.returnValue = '';
@@ -164,7 +208,7 @@ export function StudioScenarioScripts({
     setPhase('list');
   };
   const start = async () => {
-    if (!recorder || mutationRef.current) return;
+    if (!recorder || mutationRef.current || executionRef.current) return;
     mutationRef.current = true;
     setPhase('starting');
     phaseRef.current = 'starting';
@@ -257,6 +301,7 @@ export function StudioScenarioScripts({
       });
       if (sessionId) await recorder?.releaseScenarioSession(sessionId);
       setScripts((current) => [...current, saved]);
+      setSequence((current) => reconcileSequence([...scripts, saved], current));
       setViewedScript(saved);
       setStoppedSession(null);
       setSessionId(null);
@@ -274,10 +319,62 @@ export function StudioScenarioScripts({
     }
   };
 
+  const applyScriptAction = async () => {
+    if (!scriptAction || mutationRef.current || executionRef.current) return;
+    if (scriptAction.type === 'rename' && !actionName.trim()) {
+      setActionError(t('Please enter a script name.'));
+      return;
+    }
+    mutationRef.current = true;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      if (scriptAction.type === 'rename') {
+        const renamed = await renameScenarioScript(
+          scriptAction.script.id,
+          actionName,
+        );
+        setScripts((current) =>
+          current.map((script) =>
+            script.id === renamed.id ? renamed : script,
+          ),
+        );
+        setViewedScript((current) =>
+          current?.id === renamed.id ? renamed : current,
+        );
+      } else {
+        await deleteScenarioScript(scriptAction.script.id);
+        setScripts((current) =>
+          current.filter((script) => script.id !== scriptAction.script.id),
+        );
+        // Reconciliation removes stale IDs on the next load; no second write can undo a successful deletion.
+        setSequence((current) =>
+          current.filter((entry) => entry.id !== scriptAction.script.id),
+        );
+        if (viewedScript?.id === scriptAction.script.id) {
+          setViewedScript(null);
+          setPhase('list');
+        }
+      }
+      setScriptAction(null);
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error ? cause.message : t('Unable to update script.'),
+      );
+    } finally {
+      mutationRef.current = false;
+      setActionBusy(false);
+    }
+  };
+
   return (
     <div
       className="studio-scenario-panel studio-scenario-detail"
-      data-scenario-draft={protectedWork ? 'true' : undefined}
+      data-scenario-draft={
+        protectedWork || execution.locked || execution.pending
+          ? 'true'
+          : undefined
+      }
     >
       <header className="studio-scenario-toolbar studio-scenario-toolbar-detail">
         <Button
@@ -289,8 +386,11 @@ export function StudioScenarioScripts({
           icon={<BackIcon />}
           type="text"
           onClick={() => {
-            if (phase === 'list') onBack();
-            else if (phase === 'saved') {
+            if (phase === 'list') {
+              if (executionRef.current)
+                setError(t('Stop the scenario before leaving.'));
+              else onBack();
+            } else if (phase === 'saved') {
               setViewedScript(null);
               setPhase('list');
             } else if (phase === 'draft') {
@@ -307,21 +407,61 @@ export function StudioScenarioScripts({
         >
           {viewedScript?.name ?? scenario.name}
         </h3>
-        <button
-          aria-label={t('Scenario actions')}
-          className="studio-scenario-actions"
-          disabled
-          type="button"
+        <Dropdown
+          overlayClassName="studio-scenario-menu"
+          trigger={['click']}
+          placement="bottomRight"
+          menu={{
+            items: [
+              {
+                key: 'execute',
+                label: t('Run scenario'),
+                icon: <ReplayIcon />,
+                disabled:
+                  !scripts.length ||
+                  !sequenceReady ||
+                  !execution.canStart ||
+                  actionBusy ||
+                  Boolean(scriptAction) ||
+                  execution.locked ||
+                  execution.pending ||
+                  protectedWork ||
+                  loading ||
+                  saving,
+              },
+            ],
+            onClick: () => {
+              if (executionRef.current || protectedWork || !sequenceReady)
+                return;
+              setError(null);
+              void execution.start(
+                buildScenarioRun(scenario.id, scripts, sequence),
+              );
+            },
+          }}
         >
-          •••
-        </button>
+          <Button
+            aria-label={t('Scenario actions')}
+            className="studio-scenario-actions"
+            type="text"
+          >
+            •••
+          </Button>
+        </Dropdown>
       </header>
       <div className="studio-scenario-panel-body">
-        <div className="studio-script-actions">
+        <div className="studio-script-actions studio-script-record-strip">
           {phase === 'list' ? (
             <Button
               type="primary"
-              disabled={!recorder?.canStartRecording || loading}
+              block
+              icon={<RecorderButtonIcon />}
+              disabled={
+                !recorder?.canStartRecording ||
+                loading ||
+                execution.locked ||
+                execution.pending
+              }
               onClick={() => void start()}
             >
               {t('Record new script')}
@@ -330,16 +470,21 @@ export function StudioScenarioScripts({
           {phase === 'recording' ? (
             <>
               <Button
+                className="studio-script-checkpoint"
+                aria-label={t('Insert checkpoint')}
+                icon={<CheckIcon />}
+                title={t('Insert checkpoint')}
                 disabled={checkpointBusy}
                 onClick={() => {
                   setCheckpointError(null);
                   setCheckpointOpen(true);
                 }}
-              >
-                {t('Insert checkpoint')}
-              </Button>
+              />
               <Button
-                type="primary"
+                className="studio-script-stop-recording"
+                icon={
+                  <span className="studio-recorder-floating-stop-button-icon" />
+                }
                 disabled={checkpointBusy}
                 onClick={() => void stop()}
               >
@@ -371,6 +516,56 @@ export function StudioScenarioScripts({
             </Button>
           ) : null}
         </div>
+        {run ? (
+          <div className="studio-scenario-run-bar" aria-live="polite">
+            <div className="studio-scenario-run-copy">
+              <span>
+                {runStatusLabel(run.status)} ·{' '}
+                {Math.min(run.scriptIndex + 1, run.scripts.length)}/
+                {run.scripts.length}
+              </span>
+              {['running', 'waiting', 'stopping'].includes(run.status) ? (
+                <span
+                  className="studio-scenario-run-step"
+                  title={
+                    run.stepDescription || run.scripts[run.scriptIndex]?.name
+                  }
+                >
+                  {run.status === 'waiting'
+                    ? run.scripts[run.scriptIndex]?.name
+                    : run.stepDescription}
+                </span>
+              ) : null}
+            </div>
+            {run.status === 'waiting' ? (
+              <Button
+                type="primary"
+                size="small"
+                disabled={execution.pending || !execution.ready}
+                onClick={() => void execution.next()}
+              >
+                {t('Next step')}
+              </Button>
+            ) : null}
+            {['running', 'waiting', 'stopping'].includes(run.status) ? (
+              <Button
+                size="small"
+                disabled={execution.pending || run.status === 'stopping'}
+                onClick={() => void execution.stop()}
+              >
+                {t('Stop')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {execution.error || run?.error ? (
+          <div
+            className="studio-scenario-error studio-script-error"
+            role="alert"
+          >
+            {t(execution.error || run?.error || '')}
+          </div>
+        ) : null}
         {error || preview.error ? (
           <div
             className="studio-scenario-error studio-script-error"
@@ -383,28 +578,45 @@ export function StudioScenarioScripts({
           loading ? (
             <div className="studio-scenario-empty">{t('Loading scripts')}</div>
           ) : scripts.length ? (
-            <div className="studio-scenario-list">
-              {scripts.map((script) => (
-                <button
-                  key={script.id}
-                  aria-label={script.name}
-                  className="studio-scenario-select studio-script-row"
-                  type="button"
-                  onClick={() => {
-                    setViewedScript(script);
-                    setPhase('saved');
-                    setError(null);
-                  }}
-                >
-                  <span className="studio-scenario-name" title={script.name}>
-                    {script.name}
-                  </span>
-                  <span className="studio-script-count">
-                    {script.steps.length}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <StudioScriptSequence
+              scripts={scripts}
+              sequence={sequence}
+              locked={execution.locked || execution.pending || !sequenceReady}
+              canRun={execution.canStart && !actionBusy}
+              onAction={(action, script) => {
+                if (executionRef.current || mutationRef.current) return;
+                if (action === 'run') {
+                  setError(null);
+                  void execution.start(
+                    buildScenarioRun(
+                      scenario.id,
+                      [script],
+                      [{ id: script.id, startMode: 'automatic' }],
+                    ),
+                  );
+                } else {
+                  setScriptAction({ type: action, script });
+                  setActionName(script.name);
+                  setActionError(null);
+                }
+              }}
+              run={run}
+              onOpen={(script) => {
+                setViewedScript(script);
+                setPhase('saved');
+                setError(null);
+              }}
+              onChange={(next) => {
+                if (executionRef.current) return;
+                try {
+                  saveSequence(scenario.id, next);
+                  setSequence(next);
+                  setError(null);
+                } catch {
+                  setError(t('Unable to save script order.'));
+                }
+              }}
+            />
           ) : (
             <div className="studio-scenario-empty">{t('No scripts yet')}</div>
           )
@@ -416,6 +628,53 @@ export function StudioScenarioScripts({
           />
         )}
       </div>
+      <Modal
+        open={active && Boolean(scriptAction)}
+        title={t(
+          scriptAction?.type === 'rename' ? 'Rename script' : 'Delete script',
+        )}
+        okText={t(scriptAction?.type === 'rename' ? 'Save' : 'Delete')}
+        cancelText={t('Cancel')}
+        width={400}
+        okButtonProps={{ danger: scriptAction?.type === 'delete' }}
+        confirmLoading={actionBusy}
+        closable={!actionBusy}
+        maskClosable={false}
+        cancelButtonProps={{ disabled: actionBusy }}
+        onCancel={() => setScriptAction(null)}
+        onOk={() => void applyScriptAction()}
+      >
+        {scriptAction?.type === 'rename' ? (
+          <Form component="div" layout="vertical">
+            <Form.Item label={t('Script name')} required>
+              <Input
+                aria-label={t('Script name')}
+                autoFocus
+                value={actionName}
+                maxLength={SCENARIO_SCRIPT_NAME_MAX_LENGTH}
+                disabled={actionBusy}
+                onChange={(event) => setActionName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    void applyScriptAction();
+                  }
+                }}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <p>
+            {t('Delete this script?')}{' '}
+            <strong>{scriptAction?.script.name}</strong>
+          </p>
+        )}
+        {actionError ? (
+          <div className="studio-scenario-error" role="alert">
+            {t(actionError)}
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         open={active && checkpointOpen}
         title={t('Insert checkpoint')}
@@ -529,3 +788,4 @@ export function StudioScenarioScripts({
     </div>
   );
 }
+import { scenarioRunActive } from '@midscene/playground';

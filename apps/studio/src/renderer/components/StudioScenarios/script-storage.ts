@@ -1,4 +1,5 @@
 import {
+  SCENARIO_SCRIPT_NAME_MAX_LENGTH,
   type ScenarioScreenshotField,
   type ScenarioScript,
   type ScenarioScriptAssetRef,
@@ -10,6 +11,58 @@ export const SCENARIO_SCRIPTS_DATABASE = 'midscene-studio-scenario-scripts';
 const SCRIPT_STORE = 'scripts';
 const ASSET_STORE = 'assets';
 const ASSET_PREFIX = 'scenario-asset:';
+
+export async function renameScenarioScript(
+  id: string,
+  name: string,
+): Promise<ScenarioScript> {
+  validateScenarioIdentifier(id);
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > SCENARIO_SCRIPT_NAME_MAX_LENGTH)
+    throw new Error('Please enter a script name.');
+  return transaction<ScenarioScript>(
+    [SCRIPT_STORE],
+    'readwrite',
+    (tx, setResult) => {
+      const store = tx.objectStore(SCRIPT_STORE);
+      const request = store.get(id);
+      request.onsuccess = () => {
+        if (!request.result) {
+          tx.abort();
+          return;
+        }
+        try {
+          const updated = validateScenarioScript({
+            ...request.result,
+            name: trimmed,
+            updatedAt: Date.now(),
+          });
+          store.put(updated);
+          setResult(updated);
+        } catch {
+          tx.abort();
+        }
+      };
+    },
+  );
+}
+
+export async function deleteScenarioScript(id: string): Promise<void> {
+  validateScenarioIdentifier(id);
+  return transaction<void>([SCRIPT_STORE, ASSET_STORE], 'readwrite', (tx) => {
+    const scripts = tx.objectStore(SCRIPT_STORE);
+    const request = scripts.get(id);
+    request.onsuccess = () => {
+      try {
+        for (const asset of request.result?.assets || [])
+          tx.objectStore(ASSET_STORE).delete(asset.id);
+        scripts.delete(id);
+      } catch {
+        tx.abort();
+      }
+    };
+  });
+}
 
 export type ScenarioScriptAssetLoader = (
   assetId: string,

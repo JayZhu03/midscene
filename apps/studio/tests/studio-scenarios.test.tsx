@@ -190,9 +190,12 @@ describe('local scenario management', () => {
     expect(back.textContent).toBe('');
     expect(back.title).toBe('Back to scenarios');
     const detailActions = button('Scenario actions', detail);
-    expect(detailActions.disabled).toBe(true);
+    expect(detailActions.disabled).toBe(false);
     await act(async () => detailActions.click());
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(
+      document.querySelector('[role="menuitem"][aria-disabled="true"]')
+        ?.textContent,
+    ).toContain('Run scenario');
     await click('Back to scenarios', container);
     expect(container.querySelector('.studio-scenario-list')).not.toBeNull();
     await act(async () => root.unmount());

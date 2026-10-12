@@ -54,6 +54,10 @@ export function compileRecorderNativePlaywright(input: {
   format?: 'test' | 'operation';
   /** Preserve operation numbering (including sensitive-input environment keys). */
   stepOffset?: number;
+  /** Studio scenarios may retain recorded test credentials for repeatable local runs. */
+  sensitiveInputs?: 'environment' | 'recorded';
+  /** Scenario snapshots describe navigation; only explicit checkpoints assert it. */
+  navigationMode?: 'recorded' | 'scenario';
 }) {
   if (input.platformId && input.platformId !== 'web')
     throw new Error('原生 Playwright 仅支持 Web 录制。');
@@ -87,7 +91,20 @@ export function compileRecorderNativePlaywright(input: {
         event.actionType === 'NavigationChanged' ||
         event.rawPayload?.implicitNavigationState
       ) {
-        lines.push(`  await expect(page).toHaveURL(${quoted(event.url)});`);
+        lines.push(
+          input.navigationMode === 'scenario'
+            ? "  await page.waitForLoadState('domcontentloaded');"
+            : `  await expect(page).toHaveURL(${quoted(event.url)});`,
+        );
+      } else if (
+        input.navigationMode === 'scenario' &&
+        event.actionType === 'InitialNavigation'
+      ) {
+        lines.push(
+          `  if (page.url() !== new URL(${quoted(event.url)}).href) {`,
+          `    await page.goto(${quoted(event.url)}, { waitUntil: 'domcontentloaded' });`,
+          '  }',
+        );
       } else lines.push(`  await page.goto(${quoted(event.url)});`);
       return;
     }
@@ -199,7 +216,11 @@ export function compileRecorderNativePlaywright(input: {
         let value = quoted(
           event.rawPayload?.mode === 'clear' ? '' : event.value,
         );
-        if (target.sensitive && event.rawPayload?.mode !== 'clear') {
+        if (
+          target.sensitive &&
+          event.rawPayload?.mode !== 'clear' &&
+          input.sensitiveInputs !== 'recorded'
+        ) {
           const key = `MIDSCENE_INPUT_${String(step).padStart(3, '0')}`;
           envKeys.push(key);
           value = `requiredEnv(${quoted(key)})`;

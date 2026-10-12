@@ -78,6 +78,12 @@ import {
   type PlaygroundRuntimeInfo,
   buildRuntimeInfo,
 } from './runtime-metadata';
+import { connectScenarioPage, executeScenarioNative } from './scenario-native';
+import {
+  ScenarioRunner,
+  executeScenarioAgentStep,
+  validateScenarioRun,
+} from './scenario-runner';
 import type { AgentFactory, PlaygroundReportRef } from './types';
 
 import 'dotenv/config';
@@ -1309,6 +1315,9 @@ class PlaygroundServer {
 
   // Track current running task
   private currentTaskId: string | null = null;
+  private scenarioRunner?: ScenarioRunner;
+  private scenarioCompletion?: Promise<void>;
+  private recorderStarting = false;
   private taskAbortControllers: Record<string, AbortController> = {};
 
   // Flag to pause MJPEG polling during agent recreation or task execution
@@ -3493,7 +3502,126 @@ class PlaygroundServer {
       },
     );
 
+    this._app.get('/scenario-runs', (_req: Request, res: Response) => {
+      res.json({
+        run: this.scenarioRunner?.state ?? null,
+        busy: Boolean(this.currentTaskId),
+      });
+    });
+    this._app.post('/scenario-runs', (req: Request, res: Response) => {
+      if (
+        this.currentTaskId ||
+        this._recorderSessionId ||
+        this.recorderStarting
+      ) {
+        return res
+          .status(409)
+          .json({ error: 'Stop the current task before running a scenario.' });
+      }
+      let runner: ScenarioRunner;
+      try {
+        this.getActiveAgentOrThrow();
+        const plan = validateScenarioRun(req.body);
+        runner = new ScenarioRunner(plan);
+      } catch (error) {
+        return res.status(400).json({ error: formatErrorMessage(error) });
+      }
+      this.scenarioRunner = runner;
+      this.currentTaskId = runner.state.id;
+      this.scenarioCompletion = (async () => {
+        let connection:
+          | Awaited<ReturnType<typeof connectScenarioPage>>
+          | undefined;
+        let prepared = false;
+        try {
+          await runner.run(async (step, signal, scriptIndex) => {
+            if (!prepared) {
+              if (this._configDirty && this._activeConnection.agentFactory) {
+                await this.destroyCurrentAgent();
+                this.setActiveAgent(
+                  await this._activeConnection.agentFactory(),
+                );
+                this._configDirty = false;
+              }
+              signal.throwIfAborted();
+              const agent = this.getActiveAgentOrThrow();
+              // Attach once, including Agent-only runs, to validate the shared web target.
+              connection = await connectScenarioPage(agent.interface, signal);
+              agent.resetDump?.();
+              await this._activeConnection.executionHooks?.beforeExecute?.();
+              prepared = true;
+            }
+            signal.throwIfAborted();
+            if (step.type === 'playwright-operation') {
+              try {
+                await executeScenarioNative(
+                  connection!.page,
+                  step,
+                  signal,
+                  scriptIndex,
+                );
+              } catch (error) {
+                if (step.event?.nativeTarget?.sensitive)
+                  throw new Error(
+                    'Sensitive input failed. Check the field and retry.',
+                  );
+                throw error;
+              }
+            } else {
+              const agent = this.getActiveAgentOrThrow();
+              await executeScenarioAgentStep(step, async (type, instruction) =>
+                executeAction(
+                  agent,
+                  type,
+                  agent.interface.actionSpace(),
+                  { type, prompt: instruction },
+                  { abortSignal: signal },
+                ),
+              );
+            }
+          });
+        } finally {
+          try {
+            await connection?.close().catch(() => {});
+            if (prepared)
+              await this._activeConnection.executionHooks?.afterExecute?.();
+          } catch (error) {
+            runner.state.status = 'failed';
+            runner.state.error = formatErrorMessage(error);
+          } finally {
+            if (this.currentTaskId === runner.state.id)
+              this.currentTaskId = null;
+          }
+        }
+      })();
+      res.status(202).json({ run: runner.state, busy: true });
+    });
+    this._app.post(
+      '/scenario-runs/:id/:action',
+      (req: Request, res: Response) => {
+        const runner = this.scenarioRunner;
+        if (!runner || runner.state.id !== req.params.id)
+          return res.status(404).json({ error: 'Scenario run not found.' });
+        try {
+          if (req.params.action === 'next') runner.next(req.body?.scriptIndex);
+          else if (req.params.action === 'stop') runner.stop();
+          else
+            return res.status(404).json({ error: 'Unknown scenario action.' });
+          return res.json({
+            run: runner.state,
+            busy: Boolean(this.currentTaskId),
+          });
+        } catch (error) {
+          return res.status(409).json({ error: formatErrorMessage(error) });
+        }
+      },
+    );
+
     this._app.post('/execute', async (req: Request, res: Response) => {
+      if (this.currentTaskId)
+        return res
+          .status(409)
+          .json({ error: 'Another task is already running' });
       let agent: PageAgent;
       try {
         agent = this.getActiveAgentOrThrow();
@@ -3507,7 +3635,7 @@ class PlaygroundServer {
         type,
         prompt,
         params,
-        requestId,
+        requestId: suppliedRequestId,
         deepLocate,
         deepThink,
         screenshotIncluded,
@@ -3516,11 +3644,19 @@ class PlaygroundServer {
         reportDisplay,
       } = req.body;
 
+      const requestId =
+        typeof suppliedRequestId === 'string' && suppliedRequestId.trim()
+          ? suppliedRequestId
+          : randomUUID();
+
       if (!type) {
         return res.status(400).json({
           error: 'type is required',
         });
       }
+
+      // Reserve before configuration recreation, so a scene cannot attach halfway through it.
+      this.currentTaskId = requestId;
 
       // Recreate agent only when AI config has changed (via /config API)
       if (this._activeConnection.agentFactory && this._configDirty) {
@@ -3536,6 +3672,7 @@ class PlaygroundServer {
         } catch (error) {
           this._agentReady = true;
           console.error('Failed to recreate agent:', error);
+          if (this.currentTaskId === requestId) this.currentTaskId = null;
           return res.status(500).json({
             error: `Failed to create agent: ${error instanceof Error ? error.message : 'Unknown error'}`,
           });
@@ -3551,14 +3688,6 @@ class PlaygroundServer {
           ...(iface.options || {}),
           ...deviceOptions,
         };
-      }
-
-      // Check if another task is running
-      if (this.currentTaskId) {
-        return res.status(409).json({
-          error: 'Another task is already running',
-          currentTaskId: this.currentTaskId,
-        });
       }
 
       // Lock this task
@@ -3696,6 +3825,11 @@ class PlaygroundServer {
       async (req: Request, res: Response) => {
         const { requestId } = req.params;
 
+        if (this.scenarioRunner?.state.id === requestId) {
+          this.scenarioRunner.stop();
+          return res.json({ status: 'stopping' });
+        }
+
         if (!requestId) {
           return res.status(400).json({
             error: 'requestId is required',
@@ -3781,6 +3915,10 @@ class PlaygroundServer {
     );
 
     this._app.post('/recorder/start', async (req: Request, res: Response) => {
+      if (this.currentTaskId || this.recorderStarting)
+        return res
+          .status(409)
+          .json({ error: 'Another task is already running' });
       const { sessionId } = req.body ?? {};
       if (typeof sessionId !== 'string' || !sessionId.trim()) {
         return res.status(400).json({
@@ -3789,36 +3927,41 @@ class PlaygroundServer {
         });
       }
 
-      const capabilities = await this.getRecorderCapabilities();
-      if (!capabilities.supported) {
-        this.resetRecorderState();
-        return res.json({
-          ok: false,
-          supported: false,
-          source: capabilities.source,
-          platformId: capabilities.platformId,
-          error: capabilities.error,
-        });
-      }
-
+      this.recorderStarting = true;
       try {
-        this.resetRecorderState();
-        await this.startStudioPreviewRecorder(sessionId);
-        res.json({
-          ok: true,
-          supported: true,
-          source: 'studio-preview',
-          platformId: capabilities.platformId,
-        });
-      } catch (error: unknown) {
-        this.resetRecorderState();
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        res.status(500).json({
-          ok: false,
-          supported: false,
-          error: errorMessage,
-        });
+        const capabilities = await this.getRecorderCapabilities();
+        if (!capabilities.supported) {
+          this.resetRecorderState();
+          return res.json({
+            ok: false,
+            supported: false,
+            source: capabilities.source,
+            platformId: capabilities.platformId,
+            error: capabilities.error,
+          });
+        }
+
+        try {
+          this.resetRecorderState();
+          await this.startStudioPreviewRecorder(sessionId);
+          res.json({
+            ok: true,
+            supported: true,
+            source: 'studio-preview',
+            platformId: capabilities.platformId,
+          });
+        } catch (error: unknown) {
+          this.resetRecorderState();
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          res.status(500).json({
+            ok: false,
+            supported: false,
+            error: errorMessage,
+          });
+        }
+      } finally {
+        this.recorderStarting = false;
       }
     });
 
@@ -4080,6 +4223,13 @@ class PlaygroundServer {
     // device previews use the typed input surface; browser navigation falls
     // back to explicit actionSpace/browser-chrome actions.
     this._app.post('/interact', async (req: Request, res: Response) => {
+      if (
+        this.scenarioRunner &&
+        this.currentTaskId === this.scenarioRunner.state.id
+      )
+        return res.status(409).json({
+          error: 'Stop the scenario before interacting with the page.',
+        });
       let agent: PageAgent;
       try {
         agent = this.getActiveAgentOrThrow();
@@ -4203,6 +4353,10 @@ class PlaygroundServer {
     });
 
     this.app.post('/config', async (req: Request, res: Response) => {
+      if (this.currentTaskId)
+        return res.status(409).json({
+          error: 'Stop the current task before changing configuration.',
+        });
       const { aiConfig } = req.body;
 
       if (!aiConfig || typeof aiConfig !== 'object') {
@@ -4373,6 +4527,8 @@ class PlaygroundServer {
    * Close the server and clean up resources
    */
   async close(): Promise<void> {
+    this.scenarioRunner?.stop();
+    await this.scenarioCompletion;
     await this.destroyCurrentSession().catch((error) => {
       console.warn('Failed to destroy current session during shutdown:', error);
     });

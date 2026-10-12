@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { compileScenarioScript } from '../src/renderer/components/StudioScenarios/script-model';
 import {
   SCENARIO_SCRIPTS_DATABASE,
+  deleteScenarioScript,
   getScenarioScript,
   getScenarioScriptAsset,
   listScenarioScripts,
+  renameScenarioScript,
   saveScenarioScript,
 } from '../src/renderer/components/StudioScenarios/script-storage';
 import { scenarioEvent, scenarioSession } from './fixtures/scenario-script';
@@ -39,6 +41,32 @@ afterEach(() => {
 });
 
 describe('durable scenario script storage', () => {
+  it('renames without changing source, code or screenshots and deletes only the selected script', async () => {
+    const saved = await saveScenarioScript(
+      scriptWithScreenshot('selected'),
+      async () => screenshot,
+    );
+    const other = await saveScenarioScript(
+      scriptWithScreenshot('other'),
+      async () => screenshot,
+    );
+    const renamed = await renameScenarioScript(
+      saved.id,
+      '  Production assertion  ',
+    );
+    expect(renamed.name).toBe('Production assertion');
+    expect(renamed.steps).toEqual(saved.steps);
+    expect(renamed.sourceSession).toEqual(saved.sourceSession);
+    expect(renamed.assets).toEqual(saved.assets);
+    await expect(renameScenarioScript(saved.id, '   ')).rejects.toThrow();
+    await deleteScenarioScript(saved.id);
+    expect(await getScenarioScript(saved.id)).toBeNull();
+    for (const asset of saved.assets)
+      expect(await getScenarioScriptAsset(asset.id)).toBeNull();
+    expect(await getScenarioScript(other.id)).toEqual(other);
+    for (const asset of other.assets)
+      expect(await getScenarioScriptAsset(asset.id)).not.toBeNull();
+  });
   it('persists full source and Blob screenshots across module reload and recorder asset removal', async () => {
     const draft = scriptWithScreenshot();
     const loader = vi.fn(async () => screenshot);

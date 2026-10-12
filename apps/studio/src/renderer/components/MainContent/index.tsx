@@ -44,6 +44,7 @@ import type { ShellActiveView } from '../ShellLayout/types';
 import StudioModePanel from '../StudioModePanel';
 import type { StudioRightPanelView } from '../StudioRightPanel';
 import { canNavigateStudio } from '../StudioScenarios/navigation';
+import { useScenarioExecutionBusy } from '../StudioScenarios/useScenarioExecution';
 import { StudioWorkspace, StudioWorkspaceSwitch } from '../StudioWorkspace';
 import type {
   StudioWorkbenchMenu,
@@ -413,8 +414,11 @@ export default function MainContent({
     isConnected,
     previewStatus,
   );
+  const scenarioExecutionBusy = useScenarioExecutionBusy();
   const previewBoundaryActive =
-    Boolean(recorder?.state.isRecording) || timelineExecutionStatus.running;
+    Boolean(recorder?.state.isRecording) ||
+    timelineExecutionStatus.running ||
+    scenarioExecutionBusy;
   const shouldPadDesktopPreview = shouldUseDesktopPreviewPadding(
     runtimeInfo,
     previewFormValues,
@@ -991,7 +995,9 @@ export default function MainContent({
             >
               <WebNavigationButton
                 aria-label={t('Go back')}
-                disabled={webNavigationBusyAction !== null}
+                disabled={
+                  webNavigationBusyAction !== null || scenarioExecutionBusy
+                }
                 onClick={() => {
                   void runWebNavigationAction('GoBack');
                 }}
@@ -1000,7 +1006,9 @@ export default function MainContent({
               </WebNavigationButton>
               <WebNavigationButton
                 aria-label={t('Go forward')}
-                disabled={webNavigationBusyAction !== null}
+                disabled={
+                  webNavigationBusyAction !== null || scenarioExecutionBusy
+                }
                 onClick={() => {
                   void runWebNavigationAction('GoForward');
                 }}
@@ -1010,7 +1018,9 @@ export default function MainContent({
               {webIsLoading ? (
                 <WebNavigationButton
                   aria-label={t('Stop loading')}
-                  disabled={webNavigationBusyAction !== null}
+                  disabled={
+                    webNavigationBusyAction !== null || scenarioExecutionBusy
+                  }
                   onClick={() => {
                     void runWebNavigationAction('Stop');
                   }}
@@ -1020,7 +1030,9 @@ export default function MainContent({
               ) : (
                 <WebNavigationButton
                   aria-label={t('Reload page')}
-                  disabled={webNavigationBusyAction !== null}
+                  disabled={
+                    webNavigationBusyAction !== null || scenarioExecutionBusy
+                  }
                   onClick={() => {
                     void runWebNavigationAction('Reload');
                   }}
@@ -1112,7 +1124,11 @@ export default function MainContent({
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                style={webPreviewCanvasStyle}
+                style={{
+                  ...webPreviewCanvasStyle,
+                  pointerEvents: scenarioExecutionBusy ? 'none' : undefined,
+                }}
+                {...(scenarioExecutionBusy ? { inert: '' } : {})}
               >
                 <PlaygroundPreview
                   connectingOverlay={

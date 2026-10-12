@@ -272,6 +272,184 @@
 
 .studio-script-error {
   padding: 0 12px 8px;
+  overflow-wrap: anywhere;
+  max-height: 90px;
+  overflow-y: auto;
+}
+
+.studio-script-record-strip {
+  gap: 6px;
+  padding: 10px 12px;
+}
+.studio-script-record-strip .ant-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.studio-script-record-strip .ant-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.studio-script-record-strip .studio-script-checkpoint {
+  flex: 0 0 32px;
+  width: 32px;
+  padding: 0;
+}
+.studio-script-record-strip .studio-recorder-floating-stop-button-icon {
+  background: currentColor;
+}
+.studio-script-record-strip .studio-script-stop-recording {
+  background: var(--midscene-surface);
+  color: var(--midscene-text-primary);
+}
+.studio-script-sequence {
+  gap: 0;
+  padding-top: 4px;
+  margin: 0;
+  list-style: none;
+}
+.studio-sequence-row {
+  display: flex;
+  position: relative;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 0 10px 2px;
+}
+.studio-sequence-row:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 30px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--midscene-border-subtle);
+}
+.studio-sequence-node {
+  z-index: 1;
+  flex: 0 0 22px;
+  height: 22px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--midscene-border-subtle);
+  border-radius: 50%;
+  background: var(--midscene-surface);
+  color: var(--midscene-text-secondary);
+  font-size: 11px;
+  box-sizing: border-box;
+}
+.studio-sequence-content {
+  flex: 1;
+  min-width: 0;
+  border-radius: 10px;
+  padding: 4px;
+  border: 1px solid transparent;
+}
+.studio-sequence-content:hover,
+.studio-sequence-content:focus-within {
+  background: var(--midscene-surface-hover);
+}
+.studio-sequence-drop .studio-sequence-content {
+  border-color: var(--midscene-brand);
+}
+.studio-sequence-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.studio-sequence-main .ant-btn {
+  padding: 4px;
+  width: 24px;
+  height: 26px;
+  min-width: 24px;
+  color: var(--midscene-text-tertiary);
+}
+.studio-sequence-row[draggable="true"] {
+  cursor: grab;
+  user-select: none;
+}
+.studio-sequence-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+.studio-sequence-name {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  color: var(--midscene-text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.studio-sequence-name:focus-visible {
+  outline: 2px solid var(--midscene-brand);
+  border-radius: 4px;
+}
+.studio-sequence-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 0;
+}
+.studio-sequence-options .ant-btn {
+  height: 24px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--midscene-text-tertiary);
+  font-size: 12px;
+}
+.studio-sequence-status {
+  font-size: 11px;
+  color: var(--midscene-text-secondary);
+  white-space: nowrap;
+  padding-right: 4px;
+}
+.studio-sequence-row[data-status="running"] .studio-sequence-node,
+.studio-sequence-row[data-status="waiting"] .studio-sequence-node {
+  border-color: var(--midscene-brand);
+  color: var(--midscene-brand);
+}
+.studio-sequence-row[data-status="failed"] .studio-sequence-status {
+  color: var(--midscene-status-error);
+}
+.studio-sequence-row[data-status="passed"] .studio-sequence-status {
+  color: var(--midscene-status-success);
+}
+.studio-scenario-run-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 0 12px 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--midscene-surface-hover);
+  font-size: 12px;
+}
+.studio-scenario-run-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.studio-scenario-run-step {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--midscene-text-secondary);
+}
+.studio-scenario-run-bar .ant-btn {
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: none;
 }
 
 .studio-script-row {
@@ -306,4 +484,16 @@
 .studio-scenario-checkpoint-icon svg {
   width: 16px;
   height: 16px;
+}
+.studio-scenario-menu .ant-dropdown-menu-item {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.studio-scenario-menu .ant-dropdown-menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-block;
+  vertical-align: middle;
 }

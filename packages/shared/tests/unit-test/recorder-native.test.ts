@@ -19,6 +19,63 @@ const event = (
 });
 
 describe('native Playwright compiler', () => {
+  it('keeps scenario navigation snapshots separate from explicit checkpoints', () => {
+    const code = compileRecorderNativePlaywright({
+      events: [
+        event({
+          type: 'navigation',
+          actionType: 'InitialNavigation',
+          url: 'https://example.com/orders',
+        }),
+        event({
+          type: 'navigation',
+          actionType: 'NavigationChanged',
+          url: 'https://example.com/redirect',
+        }),
+        event({
+          type: 'navigation',
+          actionType: 'Navigate',
+          rawPayload: { implicitNavigationState: true },
+          url: 'https://example.com/orders?id=old',
+        }),
+        event({
+          type: 'navigation',
+          actionType: 'Navigate',
+          url: 'https://example.com/new',
+        }),
+      ],
+      format: 'operation',
+      navigationMode: 'scenario',
+    });
+    expect(code).toContain(
+      'if (page.url() !== new URL("https://example.com/orders").href)',
+    );
+    expect(code.match(/waitForLoadState/g)).toHaveLength(2);
+    expect(code).not.toContain('toHaveURL');
+    expect(code).not.toContain('goto("https://example.com/redirect")');
+    expect(code).toContain('goto("https://example.com/new")');
+  });
+  it('can explicitly embed recorded test passwords without changing the default export mode', () => {
+    const input = event({
+      type: 'input',
+      value: 'test"\\password',
+      nativeTarget: {
+        locator: { selector: 'input' },
+        editable: true,
+        sensitive: true,
+      },
+    });
+    const code = compileRecorderNativePlaywright({
+      events: [input],
+      format: 'operation',
+      sensitiveInputs: 'recorded',
+    });
+    expect(code).toContain(`fill(${JSON.stringify(input.value)})`);
+    expect(code).not.toContain('MIDSCENE_INPUT_');
+    expect(compileRecorderNativePlaywright({ events: [input] })).toContain(
+      'MIDSCENE_INPUT_001',
+    );
+  });
   it('compiles scoped operations on the existing page without a new test', () => {
     const code = compileRecorderNativePlaywright({
       events: [event()],

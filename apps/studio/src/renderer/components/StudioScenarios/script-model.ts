@@ -526,6 +526,8 @@ function compileSteps(session: ScenarioSourceSession): ScenarioScriptStep[] {
         events: [event],
         platformId: session.target.platformId,
         format: 'operation',
+        sensitiveInputs: 'recorded',
+        navigationMode: 'scenario',
         stepOffset: session.events.indexOf(event),
       });
       return { ...base, type: 'playwright-operation', code };

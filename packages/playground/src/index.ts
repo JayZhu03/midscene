@@ -88,3 +88,4 @@ export type {
   PrepareMultiPlatformPlaygroundOptions,
   RegisteredPlaygroundPlatform,
 } from './multi-platform';
+export * from './scenario-contract';

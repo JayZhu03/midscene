@@ -8,6 +8,52 @@ import {
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
+  Rename: '重命名',
+  'Script actions': '脚本操作',
+  'Click for actions; drag to reorder': '点击打开菜单，拖动调整顺序',
+  'Run this script': '单独运行',
+  'Rename script': '重命名脚本',
+  'Delete script': '删除脚本',
+  'Delete this script?': '确认删除此脚本？',
+  'Recorded input value is missing.': '脚本缺少录制输入值，请重新录制此步骤',
+  'Sensitive input failed. Check the field and retry.':
+    '密码输入失败，请检查输入框后重试',
+  'Unable to update script.': '脚本更新失败，请重试',
+  'Run scenario': '执行场景',
+  'Script sequence': '脚本顺序',
+  'Start with scenario': '随场景开始',
+  'Automatic continuation': '自动继续',
+  'Manual continuation': '手动继续',
+  'Reorder script': '调整脚本顺序',
+  'Drag to reorder; use arrow keys to move': '拖动排序，也可使用上下方向键移动',
+  'Move up': '上移',
+  'Move down': '下移',
+  'Next step': '下一步',
+  'Not started': '未执行',
+  'Waiting for next': '等待下一步',
+  Running: '执行中',
+  Passed: '通过',
+  Failed: '失败',
+  Stopped: '已停止',
+  Stopping: '正在停止',
+  Completed: '已完成',
+  'Stop the scenario before leaving.': '请先停止场景执行',
+  'Unable to save script order.': '顺序保存失败，请重试',
+  'Unable to load script order.': '脚本顺序读取失败',
+  'Connect a page before running a scenario.': '请先打开网页',
+  'Execution status unavailable. Reconnecting…':
+    '暂时无法获取执行状态，正在重连',
+  'Stop the current task before running a scenario.': '请先停止当前任务',
+  'The checkpoint did not pass.': '检查点未通过',
+  'Recorded operation no longer matches its saved script. Re-record this script.':
+    '录制操作与脚本不一致，请重新录制',
+  'The recorded target is missing or is not unique.':
+    '未找到唯一的录制目标，执行已停止',
+  'The recorded page structure has changed.': '页面结构已变化，执行已停止',
+  'The current page does not match this script’s starting page.':
+    '当前页面与脚本起始页面不一致',
+  'Scenario execution requires the Studio web browser.':
+    '请先打开 Studio 网页会话',
   'Workspace mode': '工作区模式',
   'API debugging': 'API 调试',
   'Original mode': '原版模式',
