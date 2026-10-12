@@ -79,7 +79,14 @@ import {
   buildRuntimeInfo,
 } from './runtime-metadata';
 import { connectScenarioPage, executeScenarioNative } from './scenario-native';
+import { SCENARIO_PAGE_NOT_READY } from './scenario-readiness';
 import {
+  assessScenarioContinuation,
+  recoverScenarioStep,
+} from './scenario-recovery';
+import {
+  ScenarioBlockedError,
+  ScenarioFatalError,
   ScenarioRunner,
   executeScenarioAgentStep,
   validateScenarioRun,
@@ -3587,63 +3594,118 @@ class PlaygroundServer {
           | Awaited<ReturnType<typeof connectScenarioPage>>
           | undefined;
         let prepared = false;
+        let sourcePage: unknown;
+        const currentAgent = () => {
+          const agent = this.getActiveAgentOrThrow();
+          if (!prepared || !connection)
+            throw new ScenarioBlockedError(
+              'The execution browser is unavailable.',
+            );
+          if (
+            (agent.interface as { underlyingPage?: unknown }).underlyingPage !==
+            sourcePage
+          )
+            throw new ScenarioBlockedError(
+              'The execution page changed. Execution stopped.',
+            );
+          return agent;
+        };
+        const waitReady = async (signal: AbortSignal) => {
+          currentAgent();
+          await connection!.waitForAssertionReady(signal);
+          currentAgent();
+        };
         try {
-          await runner.run(async (step, signal, scriptIndex) => {
-            if (!prepared) {
-              if (runner.plan.sessionMode === 'fresh') {
-                await this.switchScenarioSession('fresh');
-                signal.throwIfAborted();
-              }
-              if (this._configDirty && this._activeConnection.agentFactory) {
-                await this.destroyCurrentAgent();
-                this.setActiveAgent(
-                  await this._activeConnection.agentFactory(),
-                );
-                this._configDirty = false;
+          await runner.run(
+            async (step, signal, scriptIndex) => {
+              if (!prepared) {
+                try {
+                  if (runner.plan.sessionMode === 'fresh') {
+                    await this.switchScenarioSession('fresh');
+                    signal.throwIfAborted();
+                  }
+                  if (
+                    this._configDirty &&
+                    this._activeConnection.agentFactory
+                  ) {
+                    await this.destroyCurrentAgent();
+                    this.setActiveAgent(
+                      await this._activeConnection.agentFactory(),
+                    );
+                    this._configDirty = false;
+                  }
+                  signal.throwIfAborted();
+                  const agent = this.getActiveAgentOrThrow();
+                  // Attach once, including Agent-only runs, to validate the shared web target.
+                  connection = await connectScenarioPage(
+                    agent.interface,
+                    signal,
+                  );
+                  sourcePage = (agent.interface as { underlyingPage?: unknown })
+                    .underlyingPage;
+                  agent.resetDump?.();
+                  await this._activeConnection.executionHooks?.beforeExecute?.();
+                  prepared = true;
+                } catch (error) {
+                  throw new ScenarioFatalError(formatErrorMessage(error));
+                }
               }
               signal.throwIfAborted();
-              const agent = this.getActiveAgentOrThrow();
-              // Attach once, including Agent-only runs, to validate the shared web target.
-              connection = await connectScenarioPage(agent.interface, signal);
-              agent.resetDump?.();
-              await this._activeConnection.executionHooks?.beforeExecute?.();
-              prepared = true;
-            }
-            signal.throwIfAborted();
-            if (step.type === 'playwright-operation') {
-              try {
-                await executeScenarioNative(
-                  connection!.page,
-                  step,
-                  signal,
-                  scriptIndex,
-                );
-              } catch (error) {
-                if (step.event?.nativeTarget?.sensitive)
-                  throw new Error(
-                    'Sensitive input failed. Check the field and retry.',
+              currentAgent();
+              if (step.type === 'playwright-operation') {
+                try {
+                  await executeScenarioNative(
+                    connection!.page,
+                    step,
+                    signal,
+                    scriptIndex,
                   );
-                throw error;
+                } catch (error) {
+                  if (step.event?.nativeTarget?.sensitive)
+                    throw new Error(
+                      'Sensitive input failed. Check the field and retry.',
+                    );
+                  throw error;
+                }
+              } else {
+                const agent = this.getActiveAgentOrThrow();
+                if (step.type === 'agent-assertion') {
+                  try {
+                    await waitReady(signal);
+                  } catch (error) {
+                    signal.throwIfAborted();
+                    throw new ScenarioBlockedError(
+                      formatErrorMessage(error) || SCENARIO_PAGE_NOT_READY,
+                    );
+                  }
+                  signal.throwIfAborted();
+                }
+                return await executeScenarioAgentStep(
+                  step,
+                  async (type, instruction) =>
+                    executeAction(
+                      agent,
+                      type,
+                      agent.interface.actionSpace(),
+                      { type, prompt: instruction },
+                      { abortSignal: signal },
+                    ),
+                );
               }
-            } else {
-              const agent = this.getActiveAgentOrThrow();
-              if (step.type === 'agent-assertion') {
-                await connection!.waitForAssertionReady(signal);
-                signal.throwIfAborted();
-              }
-              return await executeScenarioAgentStep(
-                step,
-                async (type, instruction) =>
-                  executeAction(
-                    agent,
-                    type,
-                    agent.interface.actionSpace(),
-                    { type, prompt: instruction },
-                    { abortSignal: signal },
-                  ),
-              );
-            }
-          });
+            },
+            {
+              recover: (context, evidence, signal) =>
+                recoverScenarioStep(
+                  currentAgent(),
+                  context,
+                  evidence,
+                  waitReady,
+                  signal,
+                ),
+              canContinue: (context, signal) =>
+                assessScenarioContinuation(currentAgent(), context, signal),
+            },
+          );
         } finally {
           try {
             await connection?.close().catch(() => {});

@@ -87,7 +87,9 @@ describe('scenario execution', () => {
         await executeScenarioAgentStep(step, async () => result);
       });
       expect(calls).toEqual(['a']);
-      expect(runner.state.status).toBe('failed');
+      expect(runner.state.status).toBe(
+        result?.pass === false ? 'failed' : 'blocked',
+      );
       expect(runner.state.scripts[1].status).toBe('pending');
     }
   });

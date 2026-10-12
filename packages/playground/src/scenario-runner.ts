@@ -1,11 +1,34 @@
 import { randomUUID } from 'node:crypto';
 import { compileRecorderNativePlaywright } from '@midscene/shared/recorder-native';
 import {
+  type ScenarioRecovery,
   type ScenarioRunInput,
   type ScenarioRunState,
   type ScenarioRunStep,
   scenarioRunActive,
 } from './scenario-contract';
+
+export class ScenarioBlockedError extends Error {}
+export class ScenarioAssertionError extends Error {}
+export class ScenarioFatalError extends Error {}
+
+export interface ScenarioFailureContext {
+  plan: ScenarioRunInput;
+  state: ScenarioRunState;
+  scriptIndex: number;
+  stepIndex: number;
+}
+export interface ScenarioRecoveryHooks {
+  recover(
+    context: ScenarioFailureContext,
+    evidence: ScenarioRecovery,
+    signal: AbortSignal,
+  ): Promise<boolean>;
+  canContinue(
+    context: ScenarioFailureContext,
+    signal: AbortSignal,
+  ): Promise<{ allowed: boolean; reason: string }>;
+}
 
 export async function executeScenarioAgentStep(
   step: ScenarioRunStep,
@@ -20,10 +43,15 @@ export async function executeScenarioAgentStep(
     step.instruction!,
   );
   if (assertion && (result as { pass?: boolean })?.pass !== true) {
-    throw new Error(
-      (result as { thought?: string })?.thought ||
-        'The checkpoint did not pass.',
-    );
+    const thought = (result as { thought?: unknown })?.thought;
+    if (
+      (result as { pass?: unknown })?.pass !== false ||
+      typeof thought !== 'string' ||
+      !thought.trim()
+    ) {
+      throw new ScenarioBlockedError('The assertion could not be evaluated.');
+    }
+    throw new ScenarioAssertionError(thought || 'The checkpoint did not pass.');
   }
   return {
     detail:
@@ -185,6 +213,7 @@ export class ScenarioRunner {
       signal: AbortSignal,
       scriptIndex: number,
     ) => Promise<unknown>,
+    hooks?: ScenarioRecoveryHooks,
   ) {
     if (this.started) throw new Error('Scenario already started.');
     this.started = true;
@@ -196,6 +225,46 @@ export class ScenarioRunner {
         this.state.stepDescription = undefined;
         const script = this.plan.scripts[i];
         const result = this.state.scripts[i];
+        result.status = 'running';
+        if (
+          hooks &&
+          this.state.scripts
+            .slice(0, i)
+            .some((s) => s.status === 'failed' || s.status === 'blocked')
+        ) {
+          this.state.phase = 'checking';
+          result.continuation = { status: 'checking' };
+          try {
+            const decision = await hooks.canContinue(
+              {
+                plan: this.plan,
+                state: this.state,
+                scriptIndex: i,
+                stepIndex: 0,
+              },
+              this.abort.signal,
+            );
+            this.abort.signal.throwIfAborted();
+            result.continuation = {
+              status: decision.allowed === true ? 'allowed' : 'blocked',
+              reason: decision.reason,
+            };
+            if (decision.allowed !== true)
+              throw new ScenarioBlockedError(decision.reason);
+          } catch (error) {
+            if (this.abort.signal.aborted) {
+              result.continuation.status = 'stopped';
+              throw error;
+            }
+            const reason =
+              error instanceof Error
+                ? error.message
+                : 'Unable to verify prerequisites.';
+            result.continuation = { status: 'blocked', reason };
+            throw new ScenarioBlockedError(reason);
+          }
+        }
+        this.state.phase = 'executing';
         if (i > 0 && script.startMode === 'manual') {
           this.state.status = 'waiting';
           result.status = 'waiting';
@@ -203,8 +272,8 @@ export class ScenarioRunner {
             this.resume = resolve;
           });
           this.abort.signal.throwIfAborted();
+          result.status = 'running';
         }
-        result.status = 'running';
         for (let j = 0; j < script.steps.length; j++) {
           this.abort.signal.throwIfAborted();
           this.state.stepIndex = j;
@@ -212,7 +281,66 @@ export class ScenarioRunner {
           const stepResult = result.steps![j];
           stepResult.status = 'running';
           stepResult.startedAt = Date.now();
-          const evidence = await execute(script.steps[j], this.abort.signal, i);
+          let evidence: unknown;
+          try {
+            evidence = await execute(script.steps[j], this.abort.signal, i);
+          } catch (error) {
+            this.abort.signal.throwIfAborted();
+            if (!hooks || error instanceof ScenarioFatalError) throw error;
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'Scenario execution failed.';
+            let recovered = false;
+            if (
+              script.steps[j].type === 'playwright-operation' &&
+              !(error instanceof ScenarioBlockedError)
+            ) {
+              stepResult.recovery = {
+                status: 'running',
+                originalError: message,
+                startedAt: Date.now(),
+              };
+              this.state.phase = 'recovering';
+              try {
+                recovered =
+                  (await hooks.recover(
+                    {
+                      plan: this.plan,
+                      state: this.state,
+                      scriptIndex: i,
+                      stepIndex: j,
+                    },
+                    stepResult.recovery,
+                    this.abort.signal,
+                  )) === true;
+                this.abort.signal.throwIfAborted();
+                stepResult.recovery.status = recovered ? 'recovered' : 'failed';
+              } catch (recoveryError) {
+                stepResult.recovery.status = this.abort.signal.aborted
+                  ? 'stopped'
+                  : 'failed';
+                stepResult.recovery.reason =
+                  recoveryError instanceof Error
+                    ? recoveryError.message
+                    : 'Agent recovery failed.';
+                this.abort.signal.throwIfAborted();
+              } finally {
+                stepResult.recovery.finishedAt = Date.now();
+                this.state.phase = 'executing';
+              }
+            }
+            if (!recovered) {
+              stepResult.status =
+                error instanceof ScenarioBlockedError ? 'blocked' : 'failed';
+              stepResult.error = message;
+              stepResult.finishedAt = Date.now();
+              result.status = stepResult.status;
+              result.error = stepResult.recovery?.reason || message;
+              // No step skipping inside a broken script. The next script is gated above.
+              break;
+            }
+          }
           this.abort.signal.throwIfAborted();
           stepResult.status = 'passed';
           stepResult.finishedAt = Date.now();
@@ -225,31 +353,45 @@ export class ScenarioRunner {
             stepResult.detail = evidence.detail;
           result.completedSteps++;
         }
-        result.status = 'passed';
+        if (result.status === 'running') result.status = 'passed';
       }
-      this.state.status = 'completed';
+      const failures = this.state.scripts.filter(
+        (s) => s.status === 'failed' || s.status === 'blocked',
+      );
+      this.state.status = failures.some((s) => s.status === 'blocked')
+        ? 'blocked'
+        : failures.length
+          ? 'failed'
+          : 'completed';
+      this.state.error = failures[0]?.error;
       this.state.stepDescription = undefined;
     } catch (error) {
       const stopped = this.abort.signal.aborted;
-      this.state.status = stopped ? 'stopped' : 'failed';
+      this.state.status = stopped
+        ? 'stopped'
+        : error instanceof ScenarioBlockedError
+          ? 'blocked'
+          : 'failed';
       this.state.scripts[this.state.scriptIndex].status = stopped
         ? 'stopped'
-        : 'failed';
+        : this.state.status;
       this.state.error = stopped
         ? undefined
         : error instanceof Error
           ? error.message
           : 'Scenario execution failed.';
+      this.state.scripts[this.state.scriptIndex].error = this.state.error;
       const step =
         this.state.scripts[this.state.scriptIndex].steps?.[
           this.state.stepIndex
         ];
       if (step?.status === 'running') {
-        step.status = stopped ? 'stopped' : 'failed';
+        step.status = stopped ? 'stopped' : this.state.status;
         step.finishedAt = Date.now();
         step.error = this.state.error;
       }
     } finally {
+      this.state.phase = undefined;
       this.state.finishedAt = Date.now();
     }
   }

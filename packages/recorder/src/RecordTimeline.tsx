@@ -42,6 +42,10 @@ interface RecordTimelineProps {
   scrollContainerRef?: RefObject<HTMLElement>;
   onEventClick?: (event: RecordedEvent, index: number) => void;
   variant?: 'default' | 'chrome-extension';
+  autoScroll?: boolean;
+  renderGap?: (index: number) => ReactNode;
+  renderActions?: (index: number) => ReactNode;
+  renderEditor?: (index: number) => ReactNode;
 }
 
 export type RecordTimelineEntry =
@@ -100,14 +104,18 @@ export const RecordTimeline = ({
   scrollContainerRef,
   onEventClick,
   variant = 'default',
+  autoScroll = true,
+  renderGap,
+  renderActions,
+  renderEditor,
 }: RecordTimelineProps) => {
   const { message } = AntdApp.useApp();
-  const [expandedEvents, setExpandedEvents] = useState<Set<number>>(new Set());
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const timelineRootRef = useRef<HTMLDivElement>(null);
   const entryCount = entries?.length ?? events.length;
 
   useEffect(() => {
-    if (entryCount > 0) {
+    if (autoScroll && entryCount > 0) {
       const timeline =
         scrollContainerRef?.current ??
         timelineRootRef.current?.querySelector<HTMLElement>('.ant-timeline');
@@ -123,9 +131,9 @@ export const RecordTimeline = ({
         }
       }
     }
-  }, [entryCount, scrollContainerRef]);
+  }, [entryCount, scrollContainerRef, autoScroll]);
 
-  const toggleEventExpansion = (index: number) => {
+  const toggleEventExpansion = (index: string) => {
     const newExpanded = new Set(expandedEvents);
     if (newExpanded.has(index)) {
       newExpanded.delete(index);
@@ -412,7 +420,9 @@ export const RecordTimeline = ({
     const event = 'event' in entry ? entry.event : null;
     const boxedImage = event?.screenshotWithBox;
     const afterImage = event?.screenshotAfter;
-    const isExpanded = expandedEvents.has(index);
+    const entryId =
+      ('event' in entry ? entry.event.hashId : entry.id) || String(index);
+    const isExpanded = expandedEvents.has(entryId);
     const eventDescription =
       'event' in entry ? getEventDescription(entry.event) : entry.description;
     const eventDescriptionText =
@@ -432,14 +442,14 @@ export const RecordTimeline = ({
       dot: 'event' in entry ? getEventIcon(entry.event.type) : entry.icon,
       color: eventColor,
       children: (
-        <div>
+        <div data-entry-id={entryId}>
           <Card
             className="record-timeline-event-card"
             size="small"
             bordered={false}
             style={{ marginBottom: isExpanded ? 8 : 8, cursor: 'pointer' }}
             onClick={() => {
-              toggleEventExpansion(index);
+              toggleEventExpansion(entryId);
               if (event) onEventClick?.(event, index);
             }}
             styles={{
@@ -486,6 +496,7 @@ export const RecordTimeline = ({
                     : undefined
                 }
               >
+                {renderActions?.(index)}
                 {(boxedImage || afterImage) && (
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     {boxedImage && (
@@ -629,6 +640,8 @@ export const RecordTimeline = ({
               </div>
             )}
           </Card>
+          {renderEditor?.(index)}
+          {renderGap?.(index + 1)}
         </div>
       ),
     };
@@ -640,6 +653,7 @@ export const RecordTimeline = ({
       className={`record-timeline-${variant}${layout === 'parent-scroll' ? ' record-timeline-parent-scroll' : ''}`}
       style={{ minHeight: 0, padding: '3px' }}
     >
+      {renderGap?.(0)}
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <Timeline
           mode="left"

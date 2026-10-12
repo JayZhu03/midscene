@@ -15,7 +15,11 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
     const selected = [...(script.steps || [])]
       .sort((a, b) => {
         const priority = (s: typeof a) =>
-          s.status === 'failed' ? 0 : s.type === 'agent-assertion' ? 1 : 2;
+          s.status === 'failed' || s.status === 'blocked'
+            ? 0
+            : s.type === 'agent-assertion'
+              ? 1
+              : 2;
         return priority(a) - priority(b);
       })
       .flatMap((step) => {
@@ -25,6 +29,7 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
           status: step.status,
           detail: step.detail?.slice(0, 1000),
           error: step.error?.slice(0, 1000),
+          recovery: step.recovery,
         };
         const size = JSON.stringify(item).length;
         if (size > remaining) {
@@ -37,6 +42,8 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
     return {
       name: script.name.slice(0, 200),
       status: script.status,
+      error: script.error,
+      continuation: script.continuation,
       completedSteps: script.completedSteps,
       totalSteps: script.totalSteps,
       steps: selected,
@@ -50,10 +57,12 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
     totalSteps: steps.length,
     passedSteps: steps.filter((s) => s.status === 'passed').length,
     unexecutedSteps: steps.filter((s) => s.status === 'pending').length,
+    blockedSteps: steps.filter((s) => s.status === 'blocked').length,
     checkpoints: {
       total: checkpoints.length,
       passed: checkpoints.filter((s) => s.status === 'passed').length,
       failed: checkpoints.filter((s) => s.status === 'failed').length,
+      blocked: checkpoints.filter((s) => s.status === 'blocked').length,
       unexecuted: checkpoints.filter((s) => s.status === 'pending').length,
     },
     omittedSteps,

@@ -11,7 +11,6 @@ import {
 } from '../Recorder/assets/recorder-icons';
 import { StudioScenarioExecution } from './StudioScenarioExecution';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
-import { StudioScriptEditor } from './StudioScriptEditor';
 import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
 import {
   SCENARIO_NAVIGATION_EVENT,
@@ -93,10 +92,12 @@ export function StudioScenarioScripts({
   );
   const [editingSteps, setEditingSteps] = useState<ScenarioScript['steps']>([]);
   const [editBusy, setEditBusy] = useState(false);
-  const [editFocus, setEditFocus] = useState<string>();
-  const [editFromExecution, setEditFromExecution] = useState(false);
+  const editDirty = Boolean(
+    editingScript &&
+      JSON.stringify(editingSteps) !== JSON.stringify(editingScript.steps),
+  );
   const editingRef = useRef(false);
-  editingRef.current = Boolean(editingScript);
+  editingRef.current = editDirty;
 
   const [error, setError] = useState<string | null>(null);
   const [checkpointOpen, setCheckpointOpen] = useState(false);
@@ -154,7 +155,7 @@ export function StudioScenarioScripts({
     phase === 'recording' ||
     phase === 'stopping' ||
     phase === 'draft' ||
-    Boolean(editingScript);
+    editDirty;
   const busy = phase === 'starting' || phase === 'stopping';
 
   useEffect(() => {
@@ -235,34 +236,27 @@ export function StudioScenarioScripts({
   const closeEditor = () => {
     setEditingScript(null);
     setEditingSteps([]);
-    setEditFocus(undefined);
     setError(null);
-    if (editFromExecution) setExecutionPage(true);
-    setEditFromExecution(false);
   };
-  const cancelEditor = () => {
+  const cancelEditor = (afterDiscard?: () => void) => {
     if (mutationRef.current) return;
-    if (JSON.stringify(editingSteps) === JSON.stringify(editingScript?.steps)) {
+    if (!editDirty) {
       closeEditor();
+      afterDiscard?.();
       return;
     }
     discardRequestRef.current?.(false);
-    const resolve = (_allowed: boolean) => {};
+    const resolve = (allowed: boolean) => {
+      if (allowed) afterDiscard?.();
+    };
     discardRequestRef.current = resolve;
     setDiscardRequest(() => resolve);
   };
-  const beginEdit = (
-    script: ScenarioScript,
-    stepId?: string,
-    fromExecution = false,
-  ) => {
+  const openScript = (script: ScenarioScript) => {
     if (executionRef.current || mutationRef.current || protectedWork) return;
     setViewedScript(script);
     setPhase('saved');
-    setEditingScript(script);
-    setEditingSteps(script.steps.map((step) => ({ ...step })));
-    setEditFocus(stepId);
-    setEditFromExecution(fromExecution);
+    closeEditor();
     setExecutionPage(false);
     setError(null);
   };
@@ -485,6 +479,7 @@ export function StudioScenarioScripts({
       return;
     setError(null);
     setViewedScript(null);
+    closeEditor();
     setPhase('list');
     setStartingRun(true);
     setExecutionPage(true);
@@ -516,14 +511,6 @@ export function StudioScenarioScripts({
         onBack={() => setExecutionPage(false)}
         onNext={() => void execution.next()}
         onStop={() => void execution.stop()}
-        onEditStep={
-          !execution.locked && !execution.pending
-            ? (scriptId, stepId) => {
-                const script = scripts.find((item) => item.id === scriptId);
-                if (script) beginEdit(script, stepId, true);
-              }
-            : undefined
-        }
         canRestoreSession={execution.isolatedSession && !execution.locked}
         onRestoreSession={() => void execution.restoreSession()}
       />
@@ -548,13 +535,17 @@ export function StudioScenarioScripts({
           icon={<BackIcon />}
           type="text"
           onClick={() => {
-            if (editingScript) {
-              cancelEditor();
+            if (editDirty) {
+              cancelEditor(() => {
+                setViewedScript(null);
+                setPhase('list');
+              });
             } else if (phase === 'list') {
               if (executionRef.current)
                 setError(t('Stop the scenario before leaving.'));
               else onBack();
             } else if (phase === 'saved') {
+              closeEditor();
               setViewedScript(null);
               setPhase('list');
             } else if (phase === 'draft') {
@@ -572,22 +563,13 @@ export function StudioScenarioScripts({
           {viewedScript?.name ?? scenario.name}
         </h3>
         <Dropdown
-          disabled={Boolean(editingScript)}
+          disabled={editDirty || editBusy}
           overlayClassName="studio-scenario-menu"
           trigger={['click']}
           placement="bottomRight"
           menu={{
             selectedKeys: [`session-${sessionMode}`],
             items: [
-              ...(phase === 'saved' && viewedScript
-                ? [
-                    {
-                      key: 'edit',
-                      label: t('Edit script'),
-                      disabled: execution.locked || execution.pending,
-                    },
-                  ]
-                : []),
               {
                 key: 'execute',
                 label: t('Run scenario'),
@@ -611,10 +593,6 @@ export function StudioScenarioScripts({
               ),
             ],
             onClick: ({ key }) => {
-              if (key === 'edit' && viewedScript) {
-                beginEdit(viewedScript);
-                return;
-              }
               if (key === 'session-current' || key === 'session-fresh') {
                 changeSessionMode(
                   key === 'session-fresh' ? 'fresh' : 'current',
@@ -703,7 +681,7 @@ export function StudioScenarioScripts({
             </Button>
           ) : null}
         </div>
-        {!editingScript && (run || startingRun) ? (
+        {!editDirty && (run || startingRun) ? (
           <Button
             className="studio-execution-reopen"
             type="text"
@@ -735,7 +713,7 @@ export function StudioScenarioScripts({
               onAction={(action, script) => {
                 if (executionRef.current || mutationRef.current) return;
                 if (action === 'edit') {
-                  beginEdit(script);
+                  openScript(script);
                 } else if (action === 'run') {
                   startExecution(
                     [script],
@@ -749,11 +727,7 @@ export function StudioScenarioScripts({
                 }
               }}
               run={run}
-              onOpen={(script) => {
-                setViewedScript(script);
-                setPhase('saved');
-                setError(null);
-              }}
+              onOpen={openScript}
               onChange={(next) => {
                 if (executionRef.current) return;
                 try {
@@ -768,19 +742,23 @@ export function StudioScenarioScripts({
           ) : (
             <div className="studio-scenario-empty">{t('No scripts yet')}</div>
           )
-        ) : editingScript ? (
-          <StudioScriptEditor
-            steps={editingSteps}
-            focusStepId={editFocus}
-            onChange={setEditingSteps}
-            onCancel={cancelEditor}
-            onSave={() => void saveEditedScript()}
-            busy={editBusy || execution.locked || execution.pending}
-          />
         ) : (
           <StudioScenarioTimeline
-            steps={preview.steps}
+            steps={editingScript ? editingSteps : preview.steps}
             script={viewedScript}
+            onChange={
+              phase === 'saved' && viewedScript
+                ? (steps) => {
+                    if (executionRef.current || mutationRef.current) return;
+                    if (!editingScript) setEditingScript(viewedScript);
+                    setEditingSteps(steps);
+                  }
+                : undefined
+            }
+            onSave={() => void saveEditedScript()}
+            onCancel={() => cancelEditor()}
+            dirty={editDirty}
+            busy={editBusy || execution.locked || execution.pending}
             getScreenshotAssetUrl={recorder?.getRecorderScreenshotAssetUrl}
           />
         )}

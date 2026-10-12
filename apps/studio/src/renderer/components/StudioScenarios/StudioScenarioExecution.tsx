@@ -2,7 +2,7 @@ import { type ScenarioRunState, scenarioRunActive } from '@midscene/playground';
 import { Button, Progress } from 'antd';
 import { useEffect, useRef } from 'react';
 import { t } from '../../i18n';
-import { BackIcon, EditIcon } from '../Recorder/assets/recorder-icons';
+import { BackIcon } from '../Recorder/assets/recorder-icons';
 import { runStatusLabel } from './StudioScriptSequence';
 
 export function StudioScenarioExecution({
@@ -15,7 +15,6 @@ export function StudioScenarioExecution({
   onStop,
   canRestoreSession,
   onRestoreSession,
-  onEditStep,
 }: {
   run: ScenarioRunState | null;
   error: string | null;
@@ -26,16 +25,77 @@ export function StudioScenarioExecution({
   onStop: () => void;
   canRestoreSession?: boolean;
   onRestoreSession?: () => void;
-  onEditStep?: (scriptId: string, stepId: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const active = scenarioRunActive(run);
   const total = run?.scripts.reduce((n, s) => n + s.totalSteps, 0) || 0;
-  const completed = run?.scripts.reduce((n, s) => n + s.completedSteps, 0) || 0;
+  const completed =
+    run?.scripts.reduce(
+      (n, s) =>
+        n +
+        (s.steps
+          ? s.steps.filter((step) =>
+              ['passed', 'failed', 'blocked'].includes(step.status),
+            ).length
+          : s.completedSteps),
+      0,
+    ) || 0;
   const percent = total ? Math.floor((completed / total) * 100) : 0;
+  // A failed test can coexist with a finished execution. Reserve interruption
+  // for runs which did not reach the remaining scripts.
+  const hasFailures = run?.scripts.some(
+    (script) =>
+      script.status === 'failed' ||
+      script.steps?.some((step) => step.status === 'failed'),
+  );
+  const finished =
+    run?.status === 'completed' ||
+    (run?.status === 'failed' &&
+      hasFailures &&
+      run.scripts.length > 0 &&
+      run.scripts.every((script) =>
+        ['passed', 'failed'].includes(script.status),
+      ));
+  const outcome =
+    run?.status === 'blocked' || (run?.status === 'failed' && !finished)
+      ? 'error'
+      : finished
+        ? hasFailures
+          ? 'warning'
+          : 'success'
+        : 'normal';
+  const scriptCounts = run
+    ? ['passed', 'failed', 'blocked', ...(!active ? ['pending'] : [])]
+        .map((state) => ({
+          state,
+          count: run.scripts.filter((script) => script.status === state).length,
+        }))
+        .filter(({ count }) => count > 0)
+    : [];
   const title =
     run?.scope === 'script' ? run.scripts[0]?.name : run?.scenarioName;
-  const status = run ? runStatusLabel(run.status) : t('Starting execution');
+  const status =
+    run?.phase === 'recovering'
+      ? t('Agent taking over')
+      : run?.phase === 'checking'
+        ? t('Checking prerequisites')
+        : finished
+          ? t(
+              hasFailures
+                ? 'Completed · Some failures'
+                : 'Completed · All passed',
+            )
+          : run?.status === 'blocked'
+            ? t('Execution blocked')
+            : run?.status === 'failed'
+              ? t('Execution interrupted')
+              : run
+                ? runStatusLabel(run.status)
+                : t(error ? 'Unable to start execution' : 'Starting execution');
+  const resultLabel = (status: string) =>
+    status === 'pending' && !active
+      ? t('Not executed')
+      : runStatusLabel(status);
   useEffect(() => {
     const container = scrollRef.current;
     const target = container?.querySelector<HTMLElement>(
@@ -83,7 +143,10 @@ export function StudioScenarioExecution({
             <span className="studio-execution-pulse" aria-hidden="true" />
             {status}
           </span>
-          <span className="studio-execution-counter">
+          <span
+            className="studio-execution-counter"
+            title={t('Processed steps')}
+          >
             {completed} / {total}
           </span>
           {run?.status === 'waiting' ? (
@@ -109,7 +172,7 @@ export function StudioScenarioExecution({
         <div
           role="progressbar"
           tabIndex={0}
-          aria-label={t('Completed steps')}
+          aria-label={t('Processed steps')}
           aria-valuemin={0}
           aria-valuemax={total || 1}
           aria-valuenow={completed}
@@ -119,23 +182,36 @@ export function StudioScenarioExecution({
             showInfo={false}
             size="small"
             status={
-              run?.status === 'failed'
+              outcome === 'error'
                 ? 'exception'
                 : run?.status === 'running'
                   ? 'active'
-                  : run?.status === 'completed'
+                  : outcome === 'success'
                     ? 'success'
                     : 'normal'
             }
             strokeColor={
-              run?.status === 'failed'
+              outcome === 'error'
                 ? 'var(--midscene-status-error)'
-                : run?.status === 'completed'
-                  ? 'var(--midscene-status-success)'
-                  : 'var(--midscene-brand)'
+                : outcome === 'warning'
+                  ? 'var(--midscene-status-warning, #d89614)'
+                  : outcome === 'success'
+                    ? 'var(--midscene-status-success)'
+                    : 'var(--midscene-brand)'
             }
           />
         </div>
+        {scriptCounts.length ? (
+          <div
+            className="studio-execution-counts"
+            aria-label={t('Script results')}
+          >
+            {t('Scripts')}:{' '}
+            {scriptCounts
+              .map(({ state, count }) => `${resultLabel(state)} ${count}`)
+              .join(' · ')}
+          </div>
+        ) : null}
         {active && run ? (
           <div
             className="studio-execution-current"
@@ -183,7 +259,11 @@ export function StudioScenarioExecution({
               <span className="studio-sequence-node">{index + 1}</span>
               <details
                 className="studio-execution-script"
-                open={index === run.scriptIndex || script.status === 'failed'}
+                open={
+                  index === run.scriptIndex ||
+                  script.status === 'failed' ||
+                  script.status === 'blocked'
+                }
               >
                 <summary
                   data-current={
@@ -196,9 +276,18 @@ export function StudioScenarioExecution({
                     {script.name}
                   </span>
                   <span className="studio-sequence-status">
-                    {runStatusLabel(script.status)}
+                    {resultLabel(script.status)}
                   </span>
                 </summary>
+                {script.continuation?.reason ? (
+                  <details
+                    className="studio-execution-recovery"
+                    open={script.continuation.status === 'blocked'}
+                  >
+                    <summary>{t('Continuation check')}</summary>
+                    <p>{t(script.continuation.reason)}</p>
+                  </details>
+                ) : null}
                 <ol className="studio-execution-steps">
                   {script.steps?.map((step, stepIndex) => (
                     <li
@@ -221,20 +310,41 @@ export function StudioScenarioExecution({
                         {step.detail || step.error ? (
                           <p>{t(step.error || step.detail || '')}</p>
                         ) : null}
+                        {step.recovery ? (
+                          <details className="studio-execution-recovery">
+                            <summary>{t('Recovery record')}</summary>
+                            <p>
+                              {t('Original error')}:{' '}
+                              {t(step.recovery.originalError)}
+                            </p>
+                            {step.recovery.observation ? (
+                              <p>
+                                {t('Observation')}:{' '}
+                                {t(step.recovery.observation)}
+                              </p>
+                            ) : null}
+                            {step.recovery.instruction ? (
+                              <p>
+                                {t('Recovery action')}:{' '}
+                                {step.recovery.instruction}
+                              </p>
+                            ) : null}
+                            {step.recovery.reason ? (
+                              <p>
+                                {t('Recovery result')}:{' '}
+                                {t(step.recovery.reason)}
+                              </p>
+                            ) : null}
+                          </details>
+                        ) : null}
                       </div>
                       <span className="studio-execution-step-status">
-                        {runStatusLabel(step.status)}
+                        {step.recovery?.status === 'running'
+                          ? t('Agent taking over')
+                          : step.recovery?.status === 'recovered'
+                            ? t('Passed · Agent recovery')
+                            : resultLabel(step.status)}
                       </span>
-                      {!active && onEditStep ? (
-                        <Button
-                          type="text"
-                          size="small"
-                          title={t('Edit steps')}
-                          icon={<EditIcon />}
-                          aria-label={`${t('Edit step')} ${stepIndex + 1}`}
-                          onClick={() => onEditStep(script.id, step.id)}
-                        />
-                      ) : null}
                     </li>
                   ))}
                 </ol>

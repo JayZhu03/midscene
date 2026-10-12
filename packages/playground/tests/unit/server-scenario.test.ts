@@ -1,6 +1,10 @@
+import { compileRecorderNativePlaywright } from '@midscene/shared/recorder-native';
 import { describe, expect, rs, test } from '@rstest/core';
 import type { ScenarioRunInput } from '../../src/scenario-contract';
-import { connectScenarioPage } from '../../src/scenario-native';
+import {
+  connectScenarioPage,
+  executeScenarioNative,
+} from '../../src/scenario-native';
 import { SCENARIO_PAGE_NOT_READY } from '../../src/scenario-readiness';
 import { generateScenarioSummary } from '../../src/scenario-summary';
 import { PlaygroundServer } from '../../src/server';
@@ -61,6 +65,11 @@ async function setup() {
   const agent = {
     interface: { actionSpace: () => [], interfaceType: 'puppeteer' },
     aiAssert: rs.fn(async () => ({ pass: true, thought: '' })),
+    aiQuery: rs.fn(async () => ({
+      allowed: false,
+      reason: 'Required order is missing',
+    })),
+    aiAct: rs.fn(async () => {}),
     destroy: rs.fn(async () => {}),
     resetDump: rs.fn(),
   };
@@ -74,6 +83,84 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('hands a failed native operation to the same Agent and resumes after visual verification', async () => {
+    const { server, agent, status } = await setup();
+    const event = {
+      hashId: 'click',
+      type: 'click' as const,
+      actionType: 'Tap',
+      timestamp: 1,
+      pageInfo: { width: 1920, height: 1080 },
+      nativeTarget: { locator: { selector: '#save' } },
+    };
+    const input = plan();
+    input.scripts = [input.scripts[0]];
+    input.scripts[0].steps.unshift({
+      id: 'native',
+      type: 'playwright-operation',
+      description: 'Click Save',
+      event,
+      operationIndex: 0,
+      code: compileRecorderNativePlaywright({
+        events: [event],
+        platformId: 'web',
+        format: 'operation',
+        stepOffset: 0,
+        sensitiveInputs: 'recorded',
+        navigationMode: 'scenario',
+      }),
+    });
+    rs.mocked(executeScenarioNative).mockRejectedValueOnce(
+      new Error('Target moved'),
+    );
+    agent.aiQuery
+      .mockResolvedValueOnce({
+        decision: 'act',
+        reason: 'Save moved; form not submitted',
+        instruction: 'Click Save',
+      } as any)
+      .mockResolvedValueOnce({ completed: true, reason: 'Saved' } as any);
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(agent.aiAct).toHaveBeenCalledTimes(1);
+      expect(agent.aiQuery).toHaveBeenCalledTimes(2);
+      expect(agent.aiAssert).toHaveBeenCalledTimes(1);
+      expect(status().run.status).toBe('completed');
+      expect(status().run.scripts[0].steps[0].recovery).toMatchObject({
+        status: 'recovered',
+        originalError: 'Target moved',
+        reason: 'Saved',
+      });
+    } finally {
+      await server.close();
+    }
+  });
+  test('continues a later independent script after a failed count assertion', async () => {
+    const { server, agent, status } = await setup();
+    const input = plan();
+    input.scripts[1].startMode = 'automatic';
+    agent.aiAssert.mockResolvedValueOnce({
+      pass: false,
+      thought: 'Expected 2165; found 2164',
+    });
+    agent.aiQuery.mockResolvedValueOnce({
+      allowed: true,
+      reason: 'The next query is independent',
+    });
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(
+        status().run.scripts.map((s: { status: string }) => s.status),
+      ).toEqual(['failed', 'passed']);
+      expect(status().run.status).toBe('failed');
+      expect(agent.aiAct).not.toHaveBeenCalled();
+      expect(agent.aiAssert).toHaveBeenCalledTimes(2);
+    } finally {
+      await server.close();
+    }
+  });
   test('does not ask the model for a verdict until the page is ready', async () => {
     const { server, agent, status } = await setup();
     let ready!: () => void;
@@ -107,9 +194,11 @@ describe('scenario routes', () => {
       close: async () => {},
     });
     try {
-      handler(server, 'post', '/scenario-runs')({ body: plan() }, response());
+      const input = plan();
+      input.scripts = input.scripts.slice(0, 1);
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
       await until(() => !status().busy);
-      expect(status().run.status).toBe('failed');
+      expect(status().run.status).toBe('blocked');
       expect(status().run.error).toBe(SCENARIO_PAGE_NOT_READY);
       expect(agent.aiAssert).not.toHaveBeenCalled();
     } finally {
@@ -265,7 +354,7 @@ describe('scenario routes', () => {
       await server.close();
     }
   });
-  test('reports a failed Agent assertion and releases the lock without running the next script', async () => {
+  test('retains a failed assertion and blocks the next dependent script', async () => {
     const { server, agent, status } = await setup();
     agent.aiAssert.mockResolvedValue({
       pass: false,
@@ -274,10 +363,10 @@ describe('scenario routes', () => {
     try {
       handler(server, 'post', '/scenario-runs')({ body: plan() }, response());
       await until(() => !status().busy);
-      expect(status().run.status).toBe('failed');
-      expect(status().run.error).toBe('Wrong quantity');
+      expect(status().run.status).toBe('blocked');
+      expect(status().run.error).toBe('Required order is missing');
       expect(agent.aiAssert).toHaveBeenCalledTimes(1);
-      expect(status().run.scripts[1].status).toBe('pending');
+      expect(status().run.scripts[1].status).toBe('blocked');
       await until(() => status().run.summary?.status === 'completed');
       expect(status().run.scripts[0].steps[0].error).toBe('Wrong quantity');
       expect(status().run.scripts[1].steps[0].status).toBe('pending');

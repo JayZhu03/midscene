@@ -82,6 +82,26 @@ it('supports accessible reordering and prevents edits during execution', async (
     element.querySelector<HTMLButtonElement>('.studio-sequence-name')?.click(),
   );
   expect(open).toHaveBeenCalledWith(scripts[0]);
+  open.mockClear();
+  await act(async () => {
+    element.querySelector<HTMLElement>('.studio-sequence-row')!.click();
+    element.querySelector<HTMLElement>('.studio-sequence-node')!.click();
+    element.querySelector<HTMLElement>('.studio-script-count')!.click();
+  });
+  expect(open).toHaveBeenCalledTimes(3);
+  open.mockClear();
+  const actionButton = element.querySelector<HTMLButtonElement>(
+    '[aria-label="Script actions"]',
+  )!;
+  const controlDrag = new Event('dragstart', {
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => {
+    actionButton.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    actionButton.dispatchEvent(controlDrag);
+  });
+  expect(controlDrag.defaultPrevented).toBe(true);
   await act(async () =>
     element
       .querySelector<HTMLButtonElement>('[aria-label="Script actions"]')
@@ -93,15 +113,19 @@ it('supports accessible reordering and prevents edits during execution', async (
   expect(singleRun).toBeTruthy();
   await act(async () => singleRun!.click());
   expect(action).toHaveBeenCalledWith('run', scripts[0]);
+  expect(open).not.toHaveBeenCalled();
   const rows = element.querySelectorAll<HTMLElement>('.studio-sequence-row');
   expect(rows[0].draggable).toBe(true);
   const drag = new Event('dragstart', { bubbles: true, cancelable: true });
   Object.defineProperty(drag, 'dataTransfer', {
     value: { setData: vi.fn(), effectAllowed: '' },
   });
-  await act(async () =>
-    rows[0].querySelector('.studio-sequence-name')!.dispatchEvent(drag),
-  );
+  await act(async () => {
+    rows[0]
+      .querySelector('.studio-sequence-name')!
+      .dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    rows[0].querySelector('.studio-sequence-name')!.dispatchEvent(drag);
+  });
   const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
   Object.defineProperty(dragOver, 'dataTransfer', {
     value: { dropEffect: '' },

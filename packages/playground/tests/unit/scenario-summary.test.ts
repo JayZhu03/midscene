@@ -93,6 +93,7 @@ describe('execution evidence', () => {
       total: 3,
       passed: 1,
       failed: 1,
+      blocked: 0,
       unexecuted: 1,
     });
     expect(evidence.scripts[0].steps).toEqual(

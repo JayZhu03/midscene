@@ -20,6 +20,7 @@ export const runStatusLabel = (status: string) =>
         waiting: 'Waiting for next',
         passed: 'Passed',
         failed: 'Failed',
+        blocked: 'Blocked',
         stopped: 'Stopped',
         stopping: 'Stopping',
         completed: 'Completed',
@@ -54,6 +55,8 @@ export function StudioScriptSequence({
   onSessionModeChange?: (mode: SessionMode) => void;
 }) {
   const suppressDragClick = useRef(false);
+  const dragFromControl = useRef(false);
+  const dragClickTimer = useRef<ReturnType<typeof setTimeout>>();
   const [dragged, setDragged] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [landed, setLanded] = useState<string | null>(null);
@@ -112,6 +115,7 @@ export function StudioScriptSequence({
   useEffect(
     () => () => {
       clearTimeout(highlightTimer.current);
+      clearTimeout(dragClickTimer.current);
       animations.current.forEach((animation) => animation.cancel());
     },
     [],
@@ -151,8 +155,24 @@ export function StudioScriptSequence({
             }
             data-status={result?.status}
             draggable={!locked}
-            onPointerDownCapture={() => {
+            onPointerDownCapture={(event) => {
               suppressDragClick.current = false;
+              clearTimeout(dragClickTimer.current);
+              dragFromControl.current = Boolean(
+                (event.target as HTMLElement).closest(
+                  'button:not(.studio-sequence-name), a, input, textarea, [role="menuitem"]',
+                ),
+              );
+            }}
+            onClick={(event) => {
+              const target = event.target as HTMLElement;
+              // Dropdown menus render through a portal; their clicks must not open the row.
+              if (
+                !event.currentTarget.contains(target) ||
+                target.closest('button, a, input, textarea, [role="menuitem"]')
+              )
+                return;
+              onOpen(script);
             }}
             onClickCapture={(event) => {
               if (suppressDragClick.current && event.detail !== 0) {
@@ -162,7 +182,7 @@ export function StudioScriptSequence({
               }
             }}
             onDragStart={(event) => {
-              if (locked) {
+              if (locked || dragFromControl.current) {
                 event.preventDefault();
                 return;
               }
@@ -176,6 +196,9 @@ export function StudioScriptSequence({
             onDragEnd={() => {
               setDragged(null);
               setOver(null);
+              dragClickTimer.current = setTimeout(() => {
+                suppressDragClick.current = false;
+              }, 250);
             }}
             onDragOver={(event) => {
               if (!locked && dragged) {

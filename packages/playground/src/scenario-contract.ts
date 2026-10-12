@@ -28,11 +28,25 @@ export interface ScenarioStepResult {
   id: string;
   type: ScenarioRunStep['type'];
   description: string;
-  status: 'pending' | 'running' | 'passed' | 'failed' | 'stopped';
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'stopped';
   startedAt?: number;
   finishedAt?: number;
   detail?: string;
   error?: string;
+  recovery?: ScenarioRecovery;
+}
+export interface ScenarioRecovery {
+  status: 'running' | 'recovered' | 'failed' | 'stopped';
+  originalError: string;
+  startedAt: number;
+  finishedAt?: number;
+  observation?: string;
+  instruction?: string;
+  reason?: string;
+}
+export interface ScenarioContinuation {
+  status: 'checking' | 'allowed' | 'blocked' | 'stopped';
+  reason?: string;
 }
 export type ScenarioRunStatus =
   | 'running'
@@ -40,6 +54,7 @@ export type ScenarioRunStatus =
   | 'stopping'
   | 'stopped'
   | 'failed'
+  | 'blocked'
   | 'completed';
 export interface ScenarioRunState {
   id: string;
@@ -58,11 +73,21 @@ export interface ScenarioRunState {
   scriptIndex: number;
   stepIndex: number;
   stepDescription?: string;
+  phase?: 'executing' | 'recovering' | 'checking';
   error?: string;
   scripts: Array<{
     id: string;
     name: string;
-    status: 'pending' | 'running' | 'waiting' | 'passed' | 'failed' | 'stopped';
+    status:
+      | 'pending'
+      | 'running'
+      | 'waiting'
+      | 'passed'
+      | 'failed'
+      | 'blocked'
+      | 'stopped';
+    error?: string;
+    continuation?: ScenarioContinuation;
     completedSteps: number;
     totalSteps: number;
     steps?: ScenarioStepResult[];

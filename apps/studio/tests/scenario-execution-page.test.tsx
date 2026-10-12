@@ -10,7 +10,7 @@ import {
   editScenarioScript,
 } from '../src/renderer/components/StudioScenarios/script-model';
 import { setStudioLanguage } from '../src/renderer/i18n';
-import { scenarioSession } from './fixtures/scenario-script';
+import { scenarioEvent, scenarioSession } from './fixtures/scenario-script';
 
 const execution = vi.hoisted(() => ({
   run: null as ScenarioRunState | null,
@@ -141,17 +141,107 @@ async function typeInstruction(value: string) {
   });
 }
 
-it('edits a script flow, runs the saved Agent step and can edit from results without rewriting the result', async () => {
+it.each([
+  ['running', 'running', 'Running'],
+  ['failed', 'passed', 'Completed · Some failures'],
+  ['failed', 'pending', 'Execution interrupted'],
+  ['blocked', 'blocked', 'Execution blocked'],
+  ['stopped', 'pending', 'Stopped'],
+] as const)(
+  'separates test failure from execution lifecycle: %s / %s',
+  async (status, secondStatus, label) => {
+    await render();
+    await click('Scenario actions');
+    await click('Run scenario');
+    const run = execution.run!;
+    run.status = status;
+    run.scripts[0].status = 'failed';
+    run.scripts[0].steps![0].status = 'failed';
+    run.scripts[1].status = secondStatus;
+    execution.locked = status === 'running';
+    await render();
+    const header = container.querySelector('.studio-execution-progress')!;
+    expect(header.querySelector('.studio-execution-state')?.textContent).toBe(
+      label,
+    );
+    expect(
+      header.querySelector('.studio-execution-counts')?.textContent,
+    ).toContain('Failed 1');
+    if (secondStatus === 'passed') {
+      expect(header.textContent).toContain('Passed 1');
+      expect(header.querySelector('.ant-progress-status-exception')).toBeNull();
+      expect(
+        header.querySelector<HTMLElement>('.ant-progress-bg')?.style.background,
+      ).toContain('--midscene-status-warning');
+    }
+    if (status === 'blocked')
+      expect(
+        header.querySelector('.ant-progress-status-exception'),
+      ).toBeTruthy();
+    if (secondStatus === 'pending')
+      expect(header.textContent).toContain('Not executed 1');
+  },
+);
+
+it('shows recovery progress, preserves its evidence, and distinguishes blocked from unexecuted', async () => {
+  await render();
+  await click('Scenario actions');
+  await click('Run scenario');
+  const run = execution.run!;
+  const step = run.scripts[0].steps![0];
+  run.phase = 'recovering';
+  step.recovery = {
+    status: 'running',
+    originalError: 'Target moved',
+    startedAt: 1,
+  };
+  await render();
+  expect(container.textContent).toContain('Agent taking over');
+  step.status = 'passed';
+  step.recovery.status = 'recovered';
+  step.recovery.reason = 'Saved order is visible';
+  run.phase = undefined;
+  run.status = 'blocked';
+  run.scripts[0].status = 'failed';
+  run.scripts[1].status = 'blocked';
+  run.scripts[1].continuation = {
+    status: 'blocked',
+    reason: 'Required order was not created',
+  };
+  execution.locked = false;
+  await render();
+  expect(container.textContent).toContain('Passed · Agent recovery');
+  expect(container.textContent).toContain('Target moved');
+  expect(container.textContent).toContain('Saved order is visible');
+  expect(container.textContent).toContain('Required order was not created');
+  expect(container.textContent).toContain('Blocked');
+  expect(container.textContent).toContain('Not executed');
+  expect(
+    container.querySelector('.studio-execution-recovery')?.hasAttribute('open'),
+  ).toBe(false);
+  expect(
+    container
+      .querySelector('[role="progressbar"]')
+      ?.getAttribute('aria-valuenow'),
+  ).toBe('1');
+});
+
+it('edits the original step timeline and keeps execution results read-only', async () => {
   await render();
   await click('Script actions');
   await click('Edit script');
-  expect(container.querySelectorAll('.studio-script-editor-row')).toHaveLength(
-    1,
-  );
+  expect(
+    container.querySelectorAll('.record-timeline-event-card'),
+  ).toHaveLength(1);
   expect(container.querySelector('textarea')).toBeNull();
   expect(container.querySelector('[aria-label="Step actions 1"]')).toBeNull();
   await click('Insert step 2');
   await click('Add assertion');
+  expect(
+    container.querySelector<HTMLButtonElement>(
+      '.studio-script-editor-footer .ant-btn-primary',
+    )!.disabled,
+  ).toBe(true);
   await typeInstruction('Order quantity is 20');
   await click('Save changes');
   expect(persistence.update).toHaveBeenCalledTimes(1);
@@ -165,15 +255,93 @@ it('edits a script flow, runs the saved Agent step and can edit from results wit
   execution.run!.status = 'completed';
   execution.locked = false;
   await render();
-  await click('Edit step 2');
+  expect(container.querySelector('[aria-label^="Edit step"]')).toBeNull();
+  expect(container.querySelector('[aria-label^="Step actions"]')).toBeNull();
+  await click('Back to scenario');
+  await click('Script a');
+  await click('Step actions 2');
+  await click('Edit step');
   await typeInstruction('Order quantity is 30');
   await click('Save changes');
+  await click('View execution · Completed');
   expect(container.querySelector('.studio-execution-page')).toBeTruthy();
   expect(container.textContent).toContain('Order quantity is 20');
   expect(container.textContent).not.toContain('Order quantity is 30');
   expect(persistence.update.mock.calls[1][1][1].instruction).toBe(
     'Order quantity is 30',
   );
+});
+
+it('opens the same editable timeline from a row and leaves unchanged details without a discard prompt', async () => {
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLElement>('.studio-sequence-node')!.click(),
+  );
+  expect(container.querySelector('.record-timeline-event-card')).toBeTruthy();
+  expect(container.querySelector('[aria-label="Insert step 1"]')).toBeTruthy();
+  expect(container.querySelector('.studio-script-editor-footer')).toBeNull();
+  await click('Back to scenario');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await click('Script a');
+  await click('Insert step 1');
+  await click('Add assertion');
+  await typeInstruction('Ready');
+  await click('Back to scenario');
+  await click('Keep editing');
+  expect(container.querySelector('textarea')?.value).toBe('Ready');
+  await click('Back to scenario');
+  await click('Discard');
+  expect(container.querySelector('.studio-sequence-row')).toBeTruthy();
+  expect(persistence.update).not.toHaveBeenCalled();
+});
+
+it('inserts between recorded steps without moving expanded details or losing screenshots', async () => {
+  persistence.list.mockResolvedValueOnce([
+    compileScenarioScript({
+      id: 'a',
+      scenarioId: 'scene',
+      name: 'Script a',
+      session: scenarioSession({
+        events: [
+          scenarioEvent(),
+          scenarioEvent({
+            hashId: 'event-2',
+            screenshotAfter: 'https://example.com/after.png',
+          }),
+        ],
+      }),
+    }),
+  ]);
+  await render();
+  await click('Script a');
+  const second = container.querySelector<HTMLElement>(
+    '[data-entry-id="event-2"]',
+  )!;
+  await act(async () =>
+    second.querySelector<HTMLElement>('.record-timeline-event-card')!.click(),
+  );
+  expect(second.querySelector('pre')).toBeTruthy();
+  await click('Insert step 2');
+  await click('Add Agent operation');
+  await typeInstruction('Open order details');
+  expect(
+    container.querySelectorAll('.record-timeline-event-card'),
+  ).toHaveLength(3);
+  expect(container.querySelector('[data-entry-id="event-2"] pre')).toBeTruthy();
+  expect(container.querySelector('[data-entry-id="event-1"] pre')).toBeNull();
+  expect(container.querySelector('img')?.getAttribute('src')).toBe(
+    'https://example.com/after.png',
+  );
+  await click('Save changes');
+  expect(
+    persistence.update.mock.calls[0][1].map(
+      (step: { type: string }) => step.type,
+    ),
+  ).toEqual([
+    'playwright-operation',
+    'agent-operation',
+    'playwright-operation',
+  ]);
 });
 
 it('keeps unsaved edits on storage failure, allows deletion and confirms discarding changes', async () => {
@@ -191,9 +359,9 @@ it('keeps unsaved edits on storage failure, allows deletion and confirms discard
   expect(container.querySelector('textarea')?.value).toBe('Open orders');
   await click('Step actions 1');
   await click('Delete');
-  expect(container.querySelectorAll('.studio-script-editor-row')).toHaveLength(
-    1,
-  );
+  expect(
+    container.querySelectorAll('.record-timeline-event-card'),
+  ).toHaveLength(1);
   await click('Insert step 2');
   await click('Add assertion');
   await typeInstruction('Ready');
@@ -202,7 +370,8 @@ it('keeps unsaved edits on storage failure, allows deletion and confirms discard
   expect(container.querySelector('textarea')?.value).toBe('Ready');
   await click('Cancel');
   await click('Discard');
-  expect(container.querySelector('.studio-script-editor')).toBeNull();
+  expect(container.querySelector('.studio-script-editor-footer')).toBeNull();
+  expect(container.querySelector('.record-timeline-event-card')).toBeTruthy();
   expect(persistence.update).toHaveBeenCalledTimes(1);
 });
 afterEach(async () => {
