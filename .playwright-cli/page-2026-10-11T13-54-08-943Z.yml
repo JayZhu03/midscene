@@ -1,0 +1,36 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - strong [ref=e5]: MOM Studio · 界面验证
+    - button "脚 本" [ref=e6] [cursor=pointer]:
+      - generic [ref=e7]: 脚 本
+    - button "场 景" [ref=e8] [cursor=pointer]:
+      - generic [ref=e9]: 场 景
+    - button "保存模拟录制" [ref=e10] [cursor=pointer]:
+      - generic [ref=e11]: 保存模拟录制
+    - button "模拟断开" [ref=e12] [cursor=pointer]:
+      - generic [ref=e13]: 模拟断开
+    - button "切换主题" [ref=e14] [cursor=pointer]:
+      - generic [ref=e15]: 切换主题
+    - generic [ref=e16]: 就绪
+  - region "脚本工作区" [ref=e18]:
+    - complementary [ref=e19]:
+      - generic [ref=e20]:
+        - heading "脚本库" [level=2] [ref=e21]
+        - generic [ref=e22]: "0"
+        - button "脚本库更多操作" [disabled] [ref=e23]:
+          - generic:
+            - img "ellipsis":
+              - img
+      - button "video-camera 录制新脚本" [disabled] [ref=e24]:
+        - generic:
+          - img "video-camera":
+            - img
+        - generic: 录制新脚本
+      - generic [ref=e25]:
+        - img "search" [ref=e27]:
+          - img [ref=e28]
+        - textbox "搜索脚本" [ref=e30]
+      - navigation "脚本和场景列表" [ref=e32]
+      - generic [ref=e33]: 浏览器已连接
+    - main [ref=e35]:
+      - generic [ref=e36]: 正在加载脚本库…
