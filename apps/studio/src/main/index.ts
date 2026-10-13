@@ -40,7 +40,11 @@ import { registerFileExportHandlers } from './file-export';
 import { startStudioEventLoopWatchdog } from './performance-watchdog';
 import { requestPlaygroundBootstrap } from './playground/bootstrap-request';
 import { runConnectivityTest } from './playground/connectivity-test';
-import { createMultiPlatformRuntimeService } from './playground/multi-platform-runtime';
+import {
+  createMultiPlatformRuntimeService,
+  loadWebPlaygroundModule,
+} from './playground/multi-platform-runtime';
+import { NativeBrowserHost } from './playground/native-browser';
 import type { PlaygroundRuntimeService } from './playground/types';
 import {
   describeRecorderUIEventsInMain,
@@ -85,6 +89,7 @@ if (shouldBootstrapStudio) {
  */
 
 let mainWindow: BrowserWindow | null = null;
+let nativeBrowserHost: NativeBrowserHost | undefined;
 let mainWindowRevealController: WindowRevealController | null = null;
 let cachedAppIcon: NativeImage | null = null;
 let playgroundRuntimePromise: Promise<PlaygroundRuntimeService> | null = null;
@@ -97,13 +102,10 @@ const STUDIO_SMOKE_FAILED_MARKER = 'MIDSCENE_STUDIO_SMOKE_FAILED';
 const STUDIO_E2E_READY_MARKER = 'MIDSCENE_STUDIO_E2E_READY';
 const STUDIO_E2E_FAILED_MARKER = 'MIDSCENE_STUDIO_E2E_FAILED';
 
-// Expose the Chromium DevTools Protocol on a fixed port in dev so external
-// profilers (for example, a CDP client at http://localhost:9224) can attach to
-// the renderer without the user keeping DevTools open. Production builds never
-// set this — it would be a liability. The port can be overridden with the
-// MIDSCENE_STUDIO_CDP_PORT env var when multiple dev instances are running.
-if (shouldBootstrapStudio && !app.isPackaged) {
-  const cdpPort = process.env.MIDSCENE_STUDIO_CDP_PORT ?? '9224';
+// Native guests share Electron's Chromium. Automation attaches over loopback;
+// use an ephemeral port unless a profiler explicitly requests a fixed port.
+if (shouldBootstrapStudio) {
+  const cdpPort = process.env.MIDSCENE_STUDIO_CDP_PORT ?? '0';
   app.commandLine.appendSwitch('remote-debugging-port', cdpPort);
   // Bind to loopback so the debug endpoint isn't reachable from the network.
   app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
@@ -321,6 +323,25 @@ const getPlaygroundRuntime = async (): Promise<PlaygroundRuntimeService> => {
       .then(() =>
         createMultiPlatformRuntimeService({
           profileRoot: path.join(app.getPath('userData'), 'web-profiles'),
+          loadWebModule: async () => {
+            const legacy = await loadWebPlaygroundModule();
+            if (process.env.MIDSCENE_STUDIO_LEGACY_PREVIEW === '1')
+              return legacy;
+            nativeBrowserHost ??= new NativeBrowserHost(
+              () => mainWindow,
+              path.join(app.getPath('userData'), 'native-web-profiles'),
+            );
+            return {
+              ...legacy,
+              nativePreview: true,
+              launchPuppeteerPage: (target, preference) =>
+                preference?.headed
+                  ? legacy.launchPuppeteerPage(target, preference)
+                  : nativeBrowserHost!.launch(target, () =>
+                      legacy.launchPuppeteerPage(target, preference),
+                    ),
+            };
+          },
         }),
       )
       .catch((error) => {
@@ -527,6 +548,14 @@ const registerIpcHandlers = () => {
   });
   ipcMain.handle(IPC_CHANNELS.minimizeWindow, () => {
     mainWindow?.minimize();
+  });
+  ipcMain.handle(IPC_CHANNELS.nativeBrowserLayout, (event, layout) => {
+    if (
+      event.sender !== mainWindow?.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame
+    )
+      throw new Error('Invalid native browser caller');
+    return nativeBrowserHost?.updateLayout(layout) ?? { available: false };
   });
   ipcMain.handle(IPC_CHANNELS.openExternalUrl, async (_event, url: string) => {
     await shell.openExternal(resolveExternalUrl(url));

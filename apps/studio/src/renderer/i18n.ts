@@ -9,6 +9,8 @@ import { saveStudioPreference } from './studio-preferences-backup';
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
+  'Connection is taking longer than expected. Check your network or retry.':
+    '连接时间较长，请检查网络或重试',
   'Use current session': '沿用当前会话',
   'Fresh session': '全新会话',
   'Return to original session': '返回原会话',

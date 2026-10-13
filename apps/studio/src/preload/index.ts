@@ -44,6 +44,8 @@ const electronShellApi: ElectronShellApi = {
 };
 
 const studioRuntimeApi: StudioRuntimeApi = {
+  nativeBrowserLayout: (layout) =>
+    ipcRenderer.invoke(IPC_CHANNELS.nativeBrowserLayout, layout),
   getPlaygroundBootstrap: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getPlaygroundBootstrap),
   restartPlayground: () => ipcRenderer.invoke(IPC_CHANNELS.restartPlayground),

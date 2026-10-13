@@ -1,4 +1,9 @@
+import { useState } from 'react';
 import { t, useStudioLanguage } from '../../i18n';
+import {
+  CONNECTION_DELAY_MESSAGE,
+  useConnectionDelay,
+} from './use-connection-delay';
 export interface ConnectingPreviewProps {
   className?: string;
   iconSrc: string;
@@ -15,6 +20,8 @@ export default function ConnectingPreview({
   statusLabel = t('Opening Web page…'),
 }: ConnectingPreviewProps) {
   useStudioLanguage();
+  const [startedAt] = useState(Date.now);
+  const delayed = useConnectionDelay(startedAt);
 
   const rootClassName = [
     'flex h-full w-full items-center justify-center bg-surface',
@@ -44,6 +51,11 @@ export default function ConnectingPreview({
           <span className="mt-[16px] whitespace-nowrap text-center text-[13px] font-medium leading-[12px] text-text-primary">
             {statusLabel}
           </span>
+          {delayed ? (
+            <output className="mt-3 w-[260px] text-center text-[12px] leading-5 text-text-secondary">
+              {t(CONNECTION_DELAY_MESSAGE)}
+            </output>
+          ) : null}
         </div>
       </div>
     </div>

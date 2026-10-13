@@ -61,6 +61,23 @@ export function scenarioNavigationEffect(
       navigation.rawPayload?.triggerActionType !== 'SessionNavigation'
     )
       continue;
+    // Session notifications can be saved before their buffered click. In
+    // [open menu, observed route, click menu item], both clicks have the same
+    // before URL. The following click's before-page snapshot takes precedence:
+    // one observation must not require BOTH actions to cause that navigation.
+    if (
+      adjacent > index &&
+      navigation.rawPayload?.triggerActionType === 'SessionNavigation'
+    ) {
+      const following = steps[adjacent + 1];
+      if (
+        following?.type === 'playwright-operation' &&
+        following.event &&
+        ['click', 'keydown'].includes(following.event.type) &&
+        following.event.url === beforeUrl
+      )
+        continue;
+    }
     return { beforeUrl, afterUrl, observationStepId: observation.id };
   }
 }

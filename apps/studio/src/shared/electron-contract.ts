@@ -15,6 +15,7 @@ import type { StudioAgentOptions } from './agent-options';
  * contract without importing renderer- or main-only code.
  */
 export const IPC_CHANNELS = {
+  nativeBrowserLayout: 'studio:native-browser-layout',
   closeWindow: 'shell:close-window',
   minimizeWindow: 'shell:minimize-window',
   openExternalUrl: 'shell:open-external-url',
@@ -279,6 +280,9 @@ export interface ElectronShellApi {
 export type NativeThemeMode = 'light' | 'dark' | 'system';
 
 export interface StudioRuntimeApi {
+  nativeBrowserLayout?: (
+    layout: import('./native-browser').NativeBrowserLayout,
+  ) => Promise<import('./native-browser').NativeBrowserState>;
   getPlaygroundBootstrap: () => Promise<PlaygroundBootstrap>;
   restartPlayground: () => Promise<PlaygroundBootstrap>;
   /** Scan ALL platforms for connected devices (ADB, HDC, displays). */

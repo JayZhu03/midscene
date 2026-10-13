@@ -4,7 +4,15 @@ import type { PlaygroundExecutionStatus } from '@midscene/visualizer';
 import type { StudioPlaygroundContextValue } from '@renderer/playground/types';
 import { act, createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import MainContent from '../src/renderer/components/MainContent';
 import {
   SCENARIO_NAVIGATION_EVENT,
@@ -78,9 +86,16 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({ ok: true, json: async () => ({ reports: [] }) })),
+  );
   studioModePanelMockState.executionStatus = null;
   localStorage.clear();
   setStudioLanguage('en');
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 async function flushPromises() {
@@ -167,6 +182,7 @@ function createConnectedWebContextValue(): ReadyStudioPlaygroundContextValue {
         isUserOperating: false,
         sessionMutating: false,
         playgroundSDK: {
+          getRuntimeInfo: vi.fn(async () => null),
           getInterfaceInfo: vi.fn(async () => {
             throw new Error('server restarting');
           }),
@@ -197,6 +213,47 @@ function createConnectedWebContextValue(): ReadyStudioPlaygroundContextValue {
 }
 
 describe('MainContent web navigation', () => {
+  it.each([true, false])(
+    'only legacy preview needs a post-create refresh (native=%s)',
+    async (native) => {
+      vi.useFakeTimers();
+      const { root, container, context } = await renderWorkspace();
+      const sdk = context.controller.state.playgroundSDK!;
+      vi.mocked(context.controller.actions.createSession).mockResolvedValue(
+        true,
+      );
+      vi.mocked(sdk.getRuntimeInfo).mockResolvedValue({
+        metadata: { nativePreview: native },
+      } as any);
+      try {
+        await act(async () => {
+          window.dispatchEvent(
+            new CustomEvent('studio:open-saved-page', {
+              detail: {
+                url: 'https://example.com',
+                name: 'Example',
+                headed: false,
+                viewportWidth: 1920,
+                viewportHeight: 1080,
+              },
+            }),
+          );
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1600);
+        });
+        expect(context.controller.actions.createSession).toHaveBeenCalledOnce();
+        expect(sdk.getRuntimeInfo).toHaveBeenCalledOnce();
+        if (native) expect(sdk.interact).not.toHaveBeenCalled();
+        else
+          expect(sdk.interact).toHaveBeenCalledWith({ actionType: 'Reload' });
+      } finally {
+        await act(async () => root.unmount());
+        container.remove();
+        vi.useRealTimers();
+      }
+    },
+  );
   async function renderWorkspace({
     mode = 'original',
     recording = false,

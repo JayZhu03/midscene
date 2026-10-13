@@ -122,6 +122,18 @@ export async function connectScenarioPage(iface: unknown, signal: AbortSignal) {
           ) {
             page.setDefaultTimeout(10000);
             page.setDefaultNavigationTimeout(20000);
+            const native = (
+              iface as {
+                studioNative?: {
+                  setViewport(size: {
+                    width: number;
+                    height: number;
+                  }): Promise<void>;
+                };
+              }
+            ).studioNative;
+            if (native)
+              page.setViewportSize = (size) => native.setViewport(size);
             const readiness = observeScenarioReadiness(page);
             return {
               page,
@@ -189,6 +201,18 @@ export async function executeScenarioNative(
 ) {
   const event = step.event!;
   signal.throwIfAborted();
+  // Older native recordings included Windows IME composition notifications.
+  // They are not physical keys; the following Input carries committed text.
+  if (
+    event.source === 'studio-preview' &&
+    event.type === 'keydown' &&
+    event.value === 'Process'
+  ) {
+    return {
+      detail:
+        'Ignored an input-method composition notification; recorded Input steps supply the committed text.',
+    };
+  }
   if (event.type === 'navigation') {
     const action = event.actionType;
     if (action === 'GoBack') await page.goBack();

@@ -1691,6 +1691,12 @@ class PlaygroundServer {
   }
 
   private resetRecorderState(): void {
+    const stop = this._stopNativeRecording;
+    this._stopNativeRecording = undefined;
+    if (stop)
+      void stop().catch((error) =>
+        debugInteract('Native recorder cleanup failed', error),
+      );
     this.clearPendingTypeOnlyRecorderInputFlushTimer();
     this._recorderSessionId = null;
     this._recorderEvents = [];
@@ -1727,11 +1733,16 @@ class PlaygroundServer {
     // Reuse a recent preview capture instead of making Chromium encode a
     // second high-quality JPEG for every recorded action. Idle/stale streams
     // still fall back to a direct screenshot.
-    const previewFrame = this._mjpegHandler.getLastFrameBase64(500);
+    const agent = this._activeConnection.agent;
+    // Native guests have no preview stream. Never reuse a frame left by a
+    // previously connected legacy browser during a fast session switch.
+    const previewFrame =
+      agent && 'studioNative' in agent.interface
+        ? undefined
+        : this._mjpegHandler.getLastFrameBase64(500);
     if (previewFrame) {
       return previewFrame;
     }
-    const agent = this._activeConnection.agent;
     if (typeof agent?.interface?.screenshotBase64 !== 'function') {
       return undefined;
     }
@@ -1852,7 +1863,48 @@ class PlaygroundServer {
     if (initialNavigationEvent) {
       this._recorderEvents.push(initialNavigationEvent);
     }
+    const agent = this.getActiveAgentOrThrow();
+    const native = (
+      agent.interface as unknown as {
+        studioNative?: {
+          startRecording(
+            listener: (event: {
+              payload: Record<string, unknown>;
+              nativeTarget?: MidsceneRecorderNativeTarget;
+              url: string;
+              title: string;
+              width: number;
+              height: number;
+              screenshot?: string;
+            }) => void,
+          ): Promise<void>;
+          stopRecording(): Promise<void>;
+        };
+      }
+    ).studioNative;
+    if (native) {
+      this._stopNativeRecording = () => native.stopRecording();
+      await native.startRecording((event) => {
+        if (this._recorderSessionId !== sessionId) return;
+        this.queueStudioPreviewRecorderEvent(
+          event.payload,
+          {
+            screenshot:
+              event.screenshot || this._studioPreviewRecorderLastScreenshot,
+            pageState: {
+              url: event.url,
+              title: event.title,
+              pageInfo: { width: event.width, height: event.height },
+            },
+          },
+          agent,
+          event.nativeTarget,
+        );
+      });
+    }
   }
+
+  private _stopNativeRecording?: () => Promise<void>;
 
   private persistStudioPreviewRecorderScreenshot(
     screenshot?: string,
@@ -4160,6 +4212,8 @@ class PlaygroundServer {
     );
 
     this._app.post('/recorder/stop', async (_req: Request, res: Response) => {
+      await this._stopNativeRecording?.();
+      this._stopNativeRecording = undefined;
       // URL changes caused by a click are not separate replay actions. Stop
       // only waits for queued user-action capture, so a destroyed page context
       // cannot delay finishing the recording.

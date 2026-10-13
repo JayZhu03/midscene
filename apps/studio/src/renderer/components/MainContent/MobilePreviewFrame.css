@@ -74,6 +74,31 @@
   overflow: hidden;
 }
 
+.studio-native-preview-stage {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Fit the DOM frame to the native surface. Leave a gutter so Electron's
+ * sibling WebContentsView cannot cover the shell's animated outer border. */
+.studio-native-preview-frame {
+  position: relative;
+  flex: none;
+  width: max(0px, min(calc(100cqw - 8px), var(--native-preview-fit-width)));
+  height: max(0px, min(calc(100cqh - 8px), var(--native-preview-fit-height)));
+  aspect-ratio: var(--native-preview-ratio);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.11), 0 2px 8px 1px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .studio-native-preview-frame {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.11);
+}
+
 .mobile-preview-frame-viewport .scrcpy-panel-viewport-connected,
 .mobile-preview-frame-viewport
   .screenshot-viewer.screen-only
@@ -127,6 +152,7 @@
   overflow: hidden;
 }
 
+.mobile-preview-frame-viewport-active .studio-native-preview-frame::after,
 .mobile-preview-frame-viewport-active .scrcpy-panel-viewport-connected::after,
 .mobile-preview-frame-viewport-active
   .screenshot-viewer.screen-only
@@ -161,7 +187,14 @@
   }
 }
 
+.mobile-preview-frame-viewport-active .studio-native-preview-frame::after {
+  inset: -2px;
+  padding: 2px;
+  border-radius: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .mobile-preview-frame-viewport-active .studio-native-preview-frame::after,
   .mobile-preview-frame-viewport-active .scrcpy-panel-viewport-connected::after,
   .mobile-preview-frame-viewport-active
     .screenshot-viewer.screen-only

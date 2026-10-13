@@ -13,7 +13,7 @@ describe('ConnectingPreview', () => {
     );
 
     expect(html).toContain('phone.svg');
-    expect(html).toContain('Preparing device connection...');
+    expect(html).toContain('Opening Web page…');
   });
 
   it('renders a custom status label when one is provided', () => {

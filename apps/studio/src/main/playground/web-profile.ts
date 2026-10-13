@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { launchPuppeteerPage } from '@midscene/web/puppeteer-agent-launcher';
-import puppeteer from 'puppeteer';
+import puppeteer, { type Page } from 'puppeteer';
 import { DEFAULT_STUDIO_WEB_VIEWPORT } from '../../shared/web-viewport';
 
 /** Stable per-site browser storage, isolated from the user's normal Chrome. */
@@ -20,7 +20,10 @@ export async function launchPersistentWebPage(
   launchPage: typeof launchPuppeteerPage,
   target: Parameters<typeof launchPuppeteerPage>[0],
   preference?: Parameters<typeof launchPuppeteerPage>[1],
-) {
+): Promise<{
+  page: Page;
+  freeFn: Array<{ name: string; fn: () => void | Promise<void> }>;
+}> {
   if (!target.chromeArgs?.some((arg) => arg.startsWith('--user-data-dir='))) {
     return launchPage(target, preference);
   }

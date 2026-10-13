@@ -22,7 +22,7 @@ beforeAll(async () => {
     if (req.url?.startsWith('/spa')) {
       res.setHeader('Content-Type', 'text/html');
       res.end(
-        `<button id="delayed" onclick="setTimeout(() => { location.hash='/orders?run=current'; document.body.innerHTML='<main aria-busy=true>Loading</main>'; setTimeout(() => document.body.innerHTML='<main>Orders ready</main>', 300); }, 250)">Orders</button><button id="ineffective">No effect</button>`,
+        `<button id="expand" onclick="document.querySelector('#delayed').hidden=false">Plan menu</button><button id="delayed" onclick="setTimeout(() => { location.hash='/orders?run=current'; document.body.innerHTML='<main aria-busy=true>Loading</main>'; setTimeout(() => document.body.innerHTML='<main>Orders ready</main>', 300); }, 250)">Orders</button><button id="ineffective">No effect</button>`,
       );
       return;
     }
@@ -69,6 +69,125 @@ function step(type, extra = {}, index = 0) {
 }
 
 describe('shared Studio browser execution', () => {
+  it('replays menu expansion followed by an early route observation and menu-item click', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${url}spa#/workbench`);
+    await page.evaluate(() => {
+      document.querySelector('#delayed').hidden = true;
+    });
+    const signal = new AbortController().signal;
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      signal,
+    );
+    try {
+      const beforeUrl = page.url();
+      const afterUrl = `${url}spa#/orders?run=recorded`;
+      const steps = [
+        step(
+          'click',
+          {
+            actionType: 'Tap',
+            url: beforeUrl,
+            nativeTarget: { locator: { selector: '#expand' } },
+          },
+          0,
+        ),
+        step(
+          'navigation',
+          {
+            actionType: 'Navigate',
+            url: afterUrl,
+            rawPayload: {
+              implicitNavigationState: true,
+              triggerActionType: 'SessionNavigation',
+              beforeUrl,
+              afterUrl,
+            },
+          },
+          1,
+        ),
+        step(
+          'click',
+          {
+            actionType: 'Tap',
+            url: beforeUrl,
+            nativeTarget: { locator: { selector: '#delayed' } },
+          },
+          2,
+        ),
+      ];
+      for (let index = 0; index < steps.length; index++) {
+        await executeScenarioNative(connection.page, steps[index], signal, 0, {
+          navigationEffect: scenarioNavigationEffect(steps, index),
+          waitReady: connection.waitForAssertionReady,
+        });
+        if (index < 2) expect(page.url()).toBe(beforeUrl);
+      }
+      expect(await connection.page.locator('main').textContent()).toBe(
+        'Orders ready',
+      );
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  });
+
+  it('ignores old IME notifications while retaining committed input and real key failures', async () => {
+    const page = await browser.newPage();
+    await page.goto(url);
+    const signal = new AbortController().signal;
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      signal,
+    );
+    try {
+      const nativeTarget = { editable: true, locator: { selector: '#value' } };
+      const result = await executeScenarioNative(
+        connection.page,
+        step('keydown', {
+          source: 'studio-preview',
+          actionType: 'KeyboardPress',
+          value: 'Process',
+          nativeTarget,
+        }),
+        signal,
+        0,
+      );
+      expect(result.detail).toContain('input-method');
+      await executeScenarioNative(
+        connection.page,
+        step('input', {
+          source: 'studio-preview',
+          actionType: 'Input',
+          value: '生产订单',
+          nativeTarget,
+        }),
+        signal,
+        0,
+      );
+      expect(await connection.page.locator('#value').inputValue()).toBe(
+        '生产订单',
+      );
+      await expect(
+        executeScenarioNative(
+          connection.page,
+          step('keydown', {
+            source: 'studio-preview',
+            actionType: 'KeyboardPress',
+            value: 'InvalidRealKey',
+            nativeTarget,
+          }),
+          signal,
+          0,
+        ),
+      ).rejects.toThrow('Unknown key');
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  });
+
   it('checks an early recorded SPA navigation after its menu action and waits for rendered readiness', async () => {
     const page = await browser.newPage();
     await page.goto(`${url}spa#/workbench`);

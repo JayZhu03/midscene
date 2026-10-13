@@ -166,7 +166,10 @@ export async function loadIosPlaygroundModule(): Promise<
 }
 
 export async function loadWebPlaygroundModule(): Promise<
-  Pick<MultiPlatformRuntimeModules, 'PuppeteerAgent' | 'launchPuppeteerPage'>
+  Pick<
+    MultiPlatformRuntimeModules,
+    'PuppeteerAgent' | 'launchPuppeteerPage'
+  > & { nativePreview?: boolean }
 > {
   ensureStudioShellEnvHydrated();
   const webModule = require('@midscene/web/puppeteer') as {
@@ -499,6 +502,22 @@ export async function prepareStudioWebPlatform({
           ...getAgentOptions(),
           cacheId: 'studio-web',
         });
+        const nativePage = currentPage as {
+          studioNative?: import('./native-browser').NativePageHooks;
+        };
+        if (nativePage.studioNative) {
+          nativePage.studioNative.activate();
+          Object.assign(agent.interface, {
+            studioNative: nativePage.studioNative,
+          });
+          // Native zoom keeps CSS coordinates stable while the shell resizes.
+          // Bypass BasePage's cached size after a recorded viewport change.
+          agent.interface.size = () =>
+            (currentPage as import('puppeteer').Page).evaluate(() => ({
+              width: window.innerWidth,
+              height: window.innerHeight,
+            }));
+        }
         attachWebSiteIcon(agent.interface);
         agentCleanup = [
           {
@@ -532,6 +551,7 @@ export async function prepareStudioWebPlatform({
         },
         displayName: url,
         metadata: {
+          nativePreview: Boolean(webModule.nativePreview && !headed),
           interfaceType: 'web',
           sessionDisplayName: url,
           executionSession:

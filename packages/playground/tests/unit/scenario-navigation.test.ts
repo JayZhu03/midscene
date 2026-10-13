@@ -34,6 +34,30 @@ function observation(): ScenarioRunStep {
 }
 
 describe('recorded navigation effects', () => {
+  test('an early session route belongs only to the menu item, not the preceding menu expansion', () => {
+    const steps = [
+      operation('click', beforeUrl),
+      observation(),
+      operation('click', beforeUrl),
+    ];
+    expect(scenarioNavigationEffect(steps, 0)).toBeUndefined();
+    expect(scenarioNavigationEffect(steps, 2)).toEqual({
+      beforeUrl,
+      afterUrl,
+      observationStepId: 'navigation',
+    });
+  });
+
+  test('a click captured on the destination does not steal the preceding route change', () => {
+    const steps = [
+      operation('click', beforeUrl),
+      observation(),
+      operation('click', afterUrl),
+    ];
+    expect(scenarioNavigationEffect(steps, 0)?.afterUrl).toBe(afterUrl);
+    expect(scenarioNavigationEffect(steps, 2)).toBeUndefined();
+  });
+
   test('associates an early session observation with the action captured on its before URL', () => {
     expect(
       scenarioNavigationEffect(

@@ -53,6 +53,7 @@ import type {
 import { WebSiteIcon as WebsiteIcon } from '../WebSiteIcon';
 import { DeviceList } from './DeviceList';
 import { MobilePreviewFrame } from './MobilePreviewFrame';
+import { NativeWebPreview } from './NativeWebPreview';
 import {
   resolveStudioPreviewPlatform,
   resolveStudioWebPreviewAspectRatio,
@@ -786,6 +787,10 @@ export default function MainContent({
     });
     if (!created) return;
     saveWebPage(input);
+    // Native views paint directly and do not need the legacy screencast kick.
+    // Read the newly created runtime rather than the previous render's session.
+    const createdRuntime = await state.playgroundSDK.getRuntimeInfo();
+    if (createdRuntime?.metadata?.nativePreview === true) return;
     // The page is settled into waitForNetworkIdle by the time
     // createSession resolves, but the MJPEG <img> doesn't mount
     // until React commits the new "connected" state and the
@@ -1130,49 +1135,77 @@ export default function MainContent({
                 }}
                 {...(scenarioExecutionBusy ? { inert: '' } : {})}
               >
-                <PlaygroundPreview
-                  connectingOverlay={
-                    <ConnectingPreview
-                      iconSrc={resolvePlatformLogo(previewPlatform)}
-                      iconVariant={
-                        previewPlatform === 'ios' ||
-                        previewPlatform === 'android' ||
-                        previewPlatform === 'harmony'
-                          ? 'phone'
-                          : 'desktop'
-                      }
-                      statusLabel={previewStatusText || previewConnectingLabel}
-                    />
-                  }
-                  onDeviceSizeChange={setPreviewDeviceSize}
-                  onScrcpyStatusChange={(status, statusText) => {
-                    setPreviewStatus(status);
-                    setPreviewStatusText(statusText);
-                  }}
-                  renderErrorOverlay={({ retry }) => (
-                    <ConnectionFailedPreview
-                      pageUrl={webDisplay?.url}
-                      iconSrc={assetUrls.main.platformWeb}
-                      onReconnect={retry}
-                    />
-                  )}
-                  playgroundSDK={
-                    studioPlayground.controller.state.playgroundSDK
-                  }
-                  screenshotViewerMode="screen-only"
-                  scrcpyViewportStyle={{
-                    ...(shouldFrameMobilePreview
-                      ? { background: 'transparent' }
-                      : {}),
-                    borderRadius: 12,
-                  }}
-                  runtimeInfo={studioPlayground.controller.state.runtimeInfo}
-                  serverOnline={studioPlayground.controller.state.serverOnline}
-                  serverUrl={studioPlayground.serverUrl}
-                  isUserOperating={
-                    studioPlayground.controller.state.isUserOperating
-                  }
-                />
+                {runtimeInfo?.metadata?.nativePreview === true ? (
+                  <NativeWebPreview
+                    aspectRatio={webPreviewAspectRatio}
+                    renderError={() => (
+                      <ConnectionFailedPreview
+                        pageUrl={webDisplay?.url}
+                        iconSrc={assetUrls.main.platformWeb}
+                        onReconnect={() => {
+                          void runWebNavigationAction('Reload');
+                        }}
+                      />
+                    )}
+                    blocked={
+                      scenarioExecutionBusy ||
+                      studioPlayground.controller.state.isUserOperating
+                    }
+                    onSize={setPreviewDeviceSize}
+                    onStatus={(status, text) => {
+                      setPreviewStatus(status);
+                      setPreviewStatusText(text);
+                    }}
+                  />
+                ) : (
+                  <PlaygroundPreview
+                    connectingOverlay={
+                      <ConnectingPreview
+                        iconSrc={resolvePlatformLogo(previewPlatform)}
+                        iconVariant={
+                          previewPlatform === 'ios' ||
+                          previewPlatform === 'android' ||
+                          previewPlatform === 'harmony'
+                            ? 'phone'
+                            : 'desktop'
+                        }
+                        statusLabel={
+                          previewStatusText || previewConnectingLabel
+                        }
+                      />
+                    }
+                    onDeviceSizeChange={setPreviewDeviceSize}
+                    onScrcpyStatusChange={(status, statusText) => {
+                      setPreviewStatus(status);
+                      setPreviewStatusText(statusText);
+                    }}
+                    renderErrorOverlay={({ retry }) => (
+                      <ConnectionFailedPreview
+                        pageUrl={webDisplay?.url}
+                        iconSrc={assetUrls.main.platformWeb}
+                        onReconnect={retry}
+                      />
+                    )}
+                    playgroundSDK={
+                      studioPlayground.controller.state.playgroundSDK
+                    }
+                    screenshotViewerMode="screen-only"
+                    scrcpyViewportStyle={{
+                      ...(shouldFrameMobilePreview
+                        ? { background: 'transparent' }
+                        : {}),
+                      borderRadius: 12,
+                    }}
+                    runtimeInfo={studioPlayground.controller.state.runtimeInfo}
+                    serverOnline={
+                      studioPlayground.controller.state.serverOnline
+                    }
+                    serverUrl={studioPlayground.serverUrl}
+                    isUserOperating={
+                      studioPlayground.controller.state.isUserOperating
+                    }
+                  />
+                )}
               </div>
             ) : (
               <DisconnectedPreview

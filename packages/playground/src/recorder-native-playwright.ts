@@ -20,7 +20,9 @@ function selectorSource() {
 }
 
 /** Runs inside the page; contains no references to Node modules. */
-function generateFallback(element: Element): MidsceneRecorderNativeTarget {
+export function generateFallback(
+  element: Element,
+): MidsceneRecorderNativeTarget {
   type Engine = {
     generateSelectorSimple: (node: Element, options: object) => string;
     parseSelector: (selector: string) => unknown;
@@ -79,6 +81,18 @@ function generateFallback(element: Element): MidsceneRecorderNativeTarget {
   } catch {
     return { error: 'Playwright 定位采集失败。' };
   }
+}
+
+/** Install the same locator engine used by preview recording before native input. */
+export function nativeRecorderCaptureSource() {
+  return `const module = { exports: {} };
+    (function(module) { ${selectorSource()} })(module);
+    window.__midsceneSelectorEngine1581 = new (module.exports.InjectedScript())(window, {
+      isUnderTest: false, sdkLanguage: 'javascript', testIdAttributeName: 'data-testid',
+      stableRafCount: 1, browserName: 'chromium', customEngines: [],
+    });
+    const capture = ${captureRecorderNativeTarget.toString()};
+    const fallback = ${generateFallback.toString()};`;
 }
 
 export function buildPlaywrightRecorderCaptureScript(
