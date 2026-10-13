@@ -5,6 +5,7 @@ import {
   t as translate,
   useUiLanguage,
 } from '@midscene/visualizer/ui-language';
+import { saveStudioPreference } from './studio-preferences-backup';
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
@@ -34,6 +35,17 @@ const webMessages: Record<string, string> = {
   'AI summary': 'AI 总结',
   'Test report': '测试报告',
   'View report': '查看报告',
+  'Refresh records': '刷新记录',
+  'Search scenarios': '搜索场景',
+  'No matching scenarios': '没有匹配的场景',
+  'Only the latest 10 execution records are retained. Download reports you want to keep.':
+    '仅保留最近 10 次执行记录，请及时下载需要留存的报告。',
+  'Connect a webpage to view execution records': '连接网页后查看执行记录',
+  'Single script': '单条脚本',
+  'Scenario execution': '场景执行',
+  'Has failures': '存在失败项',
+  'Agent recovery': 'Agent 接管',
+  Duration: '耗时',
   'Report is being generated. Please wait.': '报告正在生成中，请稍候',
   'Report generation progress': '报告生成进度',
   'Preparing report': '正在整理执行记录…',
@@ -236,7 +248,7 @@ export function readStoredLanguage(): StudioLanguage {
 }
 
 export function setStudioLanguage(next: StudioLanguage) {
-  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+  saveStudioPreference(LANGUAGE_STORAGE_KEY, next);
   document.documentElement.lang = next === 'zh' ? 'zh-CN' : 'en';
   setUiLanguage(next);
 }

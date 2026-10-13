@@ -1,4 +1,5 @@
 import type { ScenarioRunInput, ScenarioStartMode } from '@midscene/playground';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 import type { ScenarioScript } from './script-model';
 
 export interface SequenceEntry {
@@ -41,7 +42,7 @@ export function loadSequence(
 }
 
 export function saveSequence(scenarioId: string, sequence: SequenceEntry[]) {
-  localStorage.setItem(key(scenarioId), JSON.stringify(sequence));
+  saveStudioPreference(key(scenarioId), JSON.stringify(sequence));
 }
 
 export function moveScript(

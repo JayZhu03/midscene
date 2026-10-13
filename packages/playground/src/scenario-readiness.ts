@@ -1,5 +1,9 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { getDebug } from '@midscene/shared/logger';
 import type { Page, Request } from 'playwright-core';
+import { scenarioRoute } from './scenario-navigation';
+
+const debugReadiness = getDebug('scenario:readiness', { console: true });
 
 export const SCENARIO_PAGE_NOT_READY =
   'The page is still loading or changing. The assertion was not evaluated.';
@@ -43,34 +47,58 @@ export function observeScenarioReadiness(page: Page) {
         let stableSince = Date.now();
         while (true) {
           controller.signal.throwIfAborted();
-          const state = await page.evaluate(() => {
-            const loading = Array.from(
-              document.querySelectorAll(
-                '[aria-busy="true"], [role="progressbar"], ' +
-                  '[class~="ant-spin-spinning"], [class*="-spin-spinning"], ' +
-                  '.ant-skeleton, .el-loading-mask',
-              ),
-            ).some((element) => {
-              const rect = element.getBoundingClientRect();
-              return (
-                rect.width > 0 &&
-                rect.height > 0 &&
-                rect.bottom > 0 &&
-                rect.right > 0 &&
-                rect.top < innerHeight &&
-                rect.left < innerWidth &&
-                element.checkVisibility({
-                  checkOpacity: true,
-                  checkVisibilityCSS: true,
-                })
-              );
+          const state = await page
+            .evaluate(() => {
+              const loading = Array.from(
+                document.querySelectorAll(
+                  '[aria-busy="true"], [role="progressbar"], ' +
+                    '[class~="ant-spin-spinning"], [class*="-spin-spinning"], ' +
+                    '.ant-skeleton, .el-loading-mask',
+                ),
+              ).some((element) => {
+                const rect = element.getBoundingClientRect();
+                return (
+                  rect.width > 0 &&
+                  rect.height > 0 &&
+                  rect.bottom > 0 &&
+                  rect.right > 0 &&
+                  rect.top < innerHeight &&
+                  rect.left < innerWidth &&
+                  element.checkVisibility({
+                    checkOpacity: true,
+                    checkVisibilityCSS: true,
+                  })
+                );
+              });
+              return {
+                readyState: document.readyState,
+                loading: loading || document.readyState === 'loading',
+                // Check readiness only; business expectations remain visual assertions.
+                content: `${location.href}\n${document.body?.innerText ?? ''}`,
+              };
+            })
+            .catch((error: unknown) => {
+              // A real navigation destroys the old document's execution context.
+              // Keep observing the replacement document within the same budget.
+              if (
+                error instanceof Error &&
+                /Execution context was destroyed|Cannot find context with specified id/i.test(
+                  error.message,
+                )
+              )
+                return undefined;
+              throw error;
             });
-            return {
-              loading: loading || document.readyState === 'loading',
-              // Check readiness only; business expectations remain visual assertions.
-              content: `${location.href}\n${document.body?.innerText ?? ''}`,
-            };
-          });
+          if (!state) {
+            stableSince = Date.now();
+            previous = '';
+            await delay(100, undefined, { signal: controller.signal });
+            continue;
+          }
+          diagnostics = {
+            readyState: state.readyState,
+            loading: state.loading,
+          };
           const now = Date.now();
           if (state.loading || pending.size || state.content !== previous) {
             stableSince = now;
@@ -80,8 +108,16 @@ export function observeScenarioReadiness(page: Page) {
           await delay(100, undefined, { signal: controller.signal });
         }
       };
+      let diagnostics: { readyState?: string; loading: boolean } | undefined;
       try {
         await Promise.race([inspect(), cancelled]);
+      } catch (error) {
+        debugReadiness('Page readiness failed: %o', {
+          actualRoute: scenarioRoute(page.url()),
+          pendingRequests: pending.size,
+          ...diagnostics,
+        });
+        throw error;
       } finally {
         clearTimeout(timeout);
         signal.removeEventListener('abort', abort);

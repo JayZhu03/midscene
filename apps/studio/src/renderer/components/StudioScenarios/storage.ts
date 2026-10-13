@@ -1,4 +1,5 @@
 import { getDebug } from '@midscene/shared/logger';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 
 export interface StudioScenario {
   id: string;
@@ -63,10 +64,7 @@ export function saveStudioScenarios(scenarios: StudioScenario[]): void {
   const validated = validateScenarios(scenarios);
   try {
     if (typeof window === 'undefined') throw new Error('Storage unavailable');
-    window.localStorage.setItem(
-      SCENARIOS_STORAGE_KEY,
-      JSON.stringify(validated),
-    );
+    saveStudioPreference(SCENARIOS_STORAGE_KEY, JSON.stringify(validated));
   } catch (error) {
     const errorName =
       error && typeof error === 'object' && 'name' in error ? error.name : '';

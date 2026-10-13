@@ -11,7 +11,7 @@ function fixture() {
   const page = new EventEmitter();
   const state = { loading: false, content: '总 1 条' };
   const evaluate = rs.fn(async () => ({ ...state }));
-  Object.assign(page, { evaluate });
+  Object.assign(page, { evaluate, url: () => 'https://example.test/orders' });
   const readiness = observeScenarioReadiness(page as unknown as Page);
   return { page, state, evaluate, readiness };
 }
@@ -79,6 +79,18 @@ describe('scenario assertion readiness', () => {
     page.emit('request', request);
     page.emit('requestfailed', request);
     await readiness.wait(new AbortController().signal, 1000, 30);
+    readiness.dispose();
+  });
+
+  test('rechecks the replacement document when navigation destroys its context', async () => {
+    const { evaluate, readiness } = fixture();
+    evaluate.mockRejectedValueOnce(
+      new Error(
+        'Execution context was destroyed, most likely because of a navigation',
+      ),
+    );
+    await readiness.wait(new AbortController().signal, 1000, 30);
+    expect(evaluate.mock.calls.length).toBeGreaterThan(1);
     readiness.dispose();
   });
 });

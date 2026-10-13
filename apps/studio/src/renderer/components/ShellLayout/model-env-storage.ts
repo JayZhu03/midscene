@@ -1,4 +1,5 @@
 import { useEnvConfig } from '@midscene/visualizer';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 
 const STORAGE_KEY = 'studio:model-env-text';
 
@@ -30,7 +31,7 @@ export function saveModelEnvText(text: string): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
-  localStorage.setItem(STORAGE_KEY, text);
+  saveStudioPreference(STORAGE_KEY, text);
   mirrorToVisualizerStore(text);
 }
 

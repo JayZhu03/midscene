@@ -1,3 +1,4 @@
+import { saveStudioPreference } from '../../studio-preferences-backup';
 export type StudioWorkspaceMode = 'original' | 'workbench';
 export type StudioWorkbenchMenu = 'scenarios' | 'execution-records';
 
@@ -35,7 +36,7 @@ export function saveStudioWorkspacePreferences(
 ): void {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem(
+    saveStudioPreference(
       STUDIO_WORKSPACE_STORAGE_KEY,
       JSON.stringify(preferences),
     );

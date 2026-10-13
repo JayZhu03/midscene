@@ -1,5 +1,6 @@
 import type { MenuProps } from 'antd';
 import { t } from '../../i18n';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 
 export type SessionMode = 'current' | 'fresh';
 const key = (scenarioId: string) => `studio.scenario-session.v1.${scenarioId}`;
@@ -9,7 +10,7 @@ export function loadSessionMode(scenarioId: string): SessionMode {
     : 'current';
 }
 export function saveSessionMode(scenarioId: string, mode: SessionMode) {
-  localStorage.setItem(key(scenarioId), mode);
+  saveStudioPreference(key(scenarioId), mode);
 }
 export function sessionModeMenu(
   mode: SessionMode,

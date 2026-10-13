@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { saveStudioPreference } from '../studio-preferences-backup';
 
 export type StudioThemeMode = 'light' | 'dark' | 'system';
 export type StudioResolvedTheme = 'light' | 'dark';
@@ -78,8 +79,8 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, mode);
-    window.localStorage.setItem(EXPLICIT_STORAGE_KEY, 'true');
+    saveStudioPreference(STORAGE_KEY, mode);
+    saveStudioPreference(EXPLICIT_STORAGE_KEY, 'true');
     const next = resolveMode(mode);
     setResolved(next);
     writeThemeAttribute(next);

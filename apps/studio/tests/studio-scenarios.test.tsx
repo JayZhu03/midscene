@@ -99,6 +99,92 @@ afterEach(async () => {
 });
 
 describe('local scenario management', () => {
+  it('filters scenarios by trimmed name or description without changing saved order and clears back to all rows', async () => {
+    const scenarios = [
+      {
+        id: 'z',
+        name: 'Orders Z',
+        description: 'Stock receiving',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'a',
+        name: 'Login',
+        description: 'Order permissions',
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        id: 'b',
+        name: 'Orders A',
+        description: 'Shipment',
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    localStorage.setItem(SCENARIOS_STORAGE_KEY, JSON.stringify(scenarios));
+    await render();
+    const names = () =>
+      Array.from(
+        container.querySelectorAll('.studio-scenario-name'),
+        (node) => node.textContent,
+      );
+    const before = localStorage.getItem(SCENARIOS_STORAGE_KEY);
+    expect(names()).toEqual(['Orders Z', 'Login', 'Orders A']);
+    await fill('Search scenarios', '  oRDerS  ');
+    expect(names()).toEqual(['Orders Z', 'Orders A']);
+    await fill('Search scenarios', 'receiving');
+    expect(names()).toEqual(['Orders Z']);
+    expect(button('Scenario actions', container)).toBeTruthy();
+    await click('Orders ZStock receiving', container);
+    expect(
+      container.querySelector('[aria-label="Search scenarios"]'),
+    ).toBeNull();
+    await click('Back to scenarios', container);
+    expect(
+      container.querySelector<HTMLInputElement>(
+        '[aria-label="Search scenarios"]',
+      )?.value,
+    ).toBe('receiving');
+    await fill('Search scenarios', 'missing');
+    expect(names()).toEqual([]);
+    expect(container.textContent).toContain('No matching scenarios');
+    await click('New scenario', container);
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    await click('Cancel');
+    const clear = container.querySelector<HTMLElement>('.ant-input-clear-icon');
+    expect(clear).toBeTruthy();
+    await act(async () => clear!.click());
+    expect(names()).toEqual(['Orders Z', 'Login', 'Orders A']);
+    expect(
+      container.querySelector<HTMLInputElement>(
+        '[aria-label="Search scenarios"]',
+      )?.value,
+    ).toBe('');
+    expect(localStorage.getItem(SCENARIOS_STORAGE_KEY)).toBe(before);
+  });
+
+  it('localizes scenario search and the no-match state in Chinese', async () => {
+    localStorage.setItem(
+      SCENARIOS_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: 'orders',
+          name: '订单',
+          description: '订单查询',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+    setStudioLanguage('zh');
+    await render();
+    await fill('搜索场景', '库存');
+    expect(container.textContent).toContain('没有匹配的场景');
+    expect(button('新建场景', container)).toBeTruthy();
+  });
+
   it('focuses the name field and saves once when Enter is pressed', async () => {
     await render();
     await click('New scenario');
@@ -339,7 +425,9 @@ describe('local scenario management', () => {
     await fill('Scenario name', 'Draft across tabs');
     await workspace('original');
     await workspace('workbench', 'execution-records');
-    expect(container.textContent).toContain('No execution records yet');
+    expect(container.textContent).toContain(
+      'Connect a webpage to view execution records',
+    );
     await workspace('workbench');
     expect(container.querySelector('.studio-scenario-detail')).toBeNull();
     expect(

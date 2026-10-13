@@ -42,6 +42,7 @@ function ScenarioPlusIcon() {
 export function StudioScenarios({ active }: { active: boolean }) {
   useStudioLanguage();
   const [scenarios, setScenarios] = useState(loadStudioScenarios);
+  const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
   const [name, setName] = useState('');
@@ -52,6 +53,12 @@ export function StudioScenarios({ active }: { active: boolean }) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const nameInputRef = useRef<InputRef>(null);
   const selected = scenarios.find((scenario) => scenario.id === selectedId);
+  const search = query.trim().toLocaleLowerCase();
+  const visibleScenarios = scenarios.filter((scenario) =>
+    `${scenario.name} ${scenario.description}`
+      .toLocaleLowerCase()
+      .includes(search),
+  );
 
   const openEditor = (scenario?: StudioScenario) => {
     setEditing({ id: scenario?.id ?? null });
@@ -174,10 +181,19 @@ export function StudioScenarios({ active }: { active: boolean }) {
               {t('New scenario')}
             </Button>
           </header>
+          <div className="studio-scenario-search">
+            <Input
+              allowClear
+              placeholder={t('Search scenarios')}
+              aria-label={t('Search scenarios')}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
           <div className="studio-scenario-panel-body">
-            {scenarios.length ? (
+            {visibleScenarios.length ? (
               <div className="studio-scenario-list">
-                {scenarios.map((scenario) => (
+                {visibleScenarios.map((scenario) => (
                   <div className="studio-scenario-row" key={scenario.id}>
                     <button
                       className="studio-scenario-select"
@@ -208,7 +224,11 @@ export function StudioScenarios({ active }: { active: boolean }) {
               </div>
             ) : (
               <div className="studio-scenario-empty">
-                {t('No scenarios yet')}
+                {t(
+                  scenarios.length
+                    ? 'No matching scenarios'
+                    : 'No scenarios yet',
+                )}
               </div>
             )}
           </div>

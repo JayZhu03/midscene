@@ -1,16 +1,11 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import App from './App';
-import { hydrateModelEnvStores } from './components/ShellLayout/model-env-storage';
-import { applyStoredLanguage } from './i18n';
-import { applyStoredThemeMode } from './theme/ThemeProvider';
+import { initializeStudioPreferences } from './studio-preferences-backup';
 
-applyStoredThemeMode();
-applyStoredLanguage();
-hydrateModelEnvStores();
-
-createRoot(document.getElementById('root') as HTMLElement).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+void initializeStudioPreferences()
+  .then(() => import('./bootstrap'))
+  .catch(() => {
+    const root = document.getElementById('root');
+    if (root) {
+      root.textContent =
+        '本地数据读取失败，请关闭并重启 Studio。为保护已有记录，暂未载入空白配置。';
+    }
+  });

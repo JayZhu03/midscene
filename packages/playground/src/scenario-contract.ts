@@ -59,6 +59,23 @@ export interface ScenarioContinuation {
   status: 'checking' | 'allowed' | 'blocked' | 'stopped';
   reason?: string;
 }
+export interface ScenarioReportEntry {
+  id: string;
+  name?: string;
+  scenarioName?: string;
+  scope?: 'scenario' | 'script';
+  startedAt?: number;
+  finishedAt?: number;
+  status: ScenarioRunStatus;
+  counts: {
+    passed: number;
+    failed: number;
+    blocked: number;
+    pending: number;
+    stopped: number;
+  };
+  recoveryCount: number;
+}
 export type ScenarioRunStatus =
   | 'running'
   | 'waiting'

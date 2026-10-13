@@ -78,7 +78,12 @@ import {
   type PlaygroundRuntimeInfo,
   buildRuntimeInfo,
 } from './runtime-metadata';
-import { connectScenarioPage, executeScenarioNative } from './scenario-native';
+import {
+  connectScenarioPage,
+  executeScenarioNative,
+  waitForScenarioNavigation,
+} from './scenario-native';
+import { scenarioNavigationEffect } from './scenario-navigation';
 import { SCENARIO_PAGE_NOT_READY } from './scenario-readiness';
 import {
   assessScenarioContinuation,
@@ -3688,11 +3693,18 @@ class PlaygroundServer {
               currentAgent();
               if (step.type === 'playwright-operation') {
                 try {
-                  await executeScenarioNative(
+                  return await executeScenarioNative(
                     connection!.page,
                     step,
                     signal,
                     scriptIndex,
+                    {
+                      navigationEffect: scenarioNavigationEffect(
+                        runner.plan.scripts[scriptIndex].steps,
+                        runner.state.stepIndex,
+                      ),
+                      waitReady,
+                    },
                   );
                 } catch (error) {
                   if (step.event?.nativeTarget?.sensitive)
@@ -3728,14 +3740,28 @@ class PlaygroundServer {
               }
             },
             {
-              recover: (context, evidence, signal) =>
-                recoverScenarioStep(
+              recover: async (context, evidence, signal) => {
+                const recovered = await recoverScenarioStep(
                   currentAgent(),
                   context,
                   evidence,
                   waitReady,
                   signal,
-                ),
+                );
+                if (!recovered) return false;
+                const effect = scenarioNavigationEffect(
+                  context.plan.scripts[context.scriptIndex].steps,
+                  context.stepIndex,
+                );
+                if (effect)
+                  await waitForScenarioNavigation(
+                    connection!.page,
+                    effect,
+                    signal,
+                    waitReady,
+                  );
+                return true;
+              },
               canContinue: (context, signal) =>
                 assessScenarioContinuation(currentAgent(), context, signal),
             },

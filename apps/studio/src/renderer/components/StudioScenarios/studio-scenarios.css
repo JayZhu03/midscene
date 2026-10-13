@@ -169,6 +169,67 @@
   flex: 1;
   min-height: 0;
 }
+.studio-scenario-search {
+  padding: 0 16px 12px;
+  flex: 0 0 auto;
+}
+.studio-scenario-search .ant-input-affix-wrapper {
+  border-radius: 10px;
+}
+
+.studio-record-retention {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 16px 12px;
+  color: var(--midscene-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.studio-record-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.studio-record-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.studio-record-heading svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--midscene-text-tertiary);
+}
+.studio-record-status {
+  font-size: 11px;
+  flex-shrink: 0;
+  color: var(--midscene-text-secondary);
+}
+.studio-record-status[data-status="completed"] {
+  color: var(--midscene-status-success);
+}
+.studio-record-status[data-status="failed"],
+.studio-record-status[data-status="blocked"] {
+  color: var(--midscene-status-error);
+}
+.studio-record-meta,
+.studio-record-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--midscene-text-secondary);
+}
+.studio-record-recovery {
+  color: var(--midscene-brand);
+}
 .studio-report-list {
   list-style: none;
   padding: 0;
@@ -191,6 +252,10 @@
 }
 .studio-report-list button:hover {
   border-color: var(--midscene-brand);
+}
+.studio-report-list button:focus-visible {
+  outline: 2px solid var(--midscene-brand);
+  outline-offset: 2px;
 }
 .studio-report-list time {
   font-size: 11px;

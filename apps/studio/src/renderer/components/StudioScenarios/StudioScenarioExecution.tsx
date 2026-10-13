@@ -16,6 +16,7 @@ export function StudioScenarioExecution({
   onStop,
   canRestoreSession,
   onRestoreSession,
+  backLabel = 'Back to scenario',
 }: {
   run: ScenarioRunState | null;
   error: string | null;
@@ -26,6 +27,7 @@ export function StudioScenarioExecution({
   onStop: () => void;
   canRestoreSession?: boolean;
   onRestoreSession?: () => void;
+  backLabel?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const active = scenarioRunActive(run);
@@ -124,8 +126,8 @@ export function StudioScenarioExecution({
           type="text"
           className="studio-scenario-back"
           icon={<BackIcon />}
-          aria-label={t('Back to scenario')}
-          title={t('Back to scenario')}
+          aria-label={t(backLabel)}
+          title={t(backLabel)}
           onClick={onBack}
         />
         <h3 className="studio-scenario-detail-title" title={title}>

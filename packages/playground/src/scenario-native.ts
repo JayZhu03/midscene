@@ -1,7 +1,84 @@
+import { setTimeout as delay } from 'node:timers/promises';
+import { getDebug } from '@midscene/shared/logger';
 import type { MidsceneRecorderNativeLocator } from '@midscene/shared/recorder';
 import { type Locator, type Page, chromium } from 'playwright-core';
 import type { ScenarioRunStep } from './scenario-contract';
+import {
+  type ScenarioNavigationEffect,
+  scenarioRoute,
+} from './scenario-navigation';
 import { observeScenarioReadiness } from './scenario-readiness';
+
+const debugScenario = getDebug('scenario:navigation', { console: true });
+
+async function pageDiagnostics(page: Page) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      page
+        .evaluate(() => ({
+          readyState: document.readyState,
+          loadingIndicatorCount: document.querySelectorAll(
+            '[aria-busy="true"], [role="progressbar"], .ant-spin-spinning, .el-loading-mask',
+          ).length,
+        }))
+        .catch(() => ({ rendererState: 'unavailable' })),
+      new Promise<{ rendererState: string }>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ rendererState: 'unresponsive' }),
+          500,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function waitForScenarioNavigation(
+  page: Page,
+  effect: ScenarioNavigationEffect,
+  signal: AbortSignal,
+  waitReady?: (signal: AbortSignal) => Promise<void>,
+  timeoutMs = 10000,
+) {
+  const expectedRoute = scenarioRoute(effect.afterUrl);
+  const deadline = Date.now() + timeoutMs;
+  while (scenarioRoute(page.url()) !== expectedRoute) {
+    signal.throwIfAborted();
+    if (Date.now() >= deadline) {
+      debugScenario('Recorded navigation did not take effect: %o', {
+        observationStepId: effect.observationStepId,
+        recordedBeforeRoute: scenarioRoute(effect.beforeUrl),
+        expectedRoute,
+        actualRoute: scenarioRoute(page.url()),
+        ...(await pageDiagnostics(page)),
+      });
+      throw new Error('菜单点击后未切换到录制页面。');
+    }
+    await delay(100, undefined, { signal });
+  }
+  signal.throwIfAborted();
+  await page.waitForLoadState('domcontentloaded');
+  await waitReady?.(signal);
+  signal.throwIfAborted();
+  // Readiness can outlive another redirect. It must not certify the old route.
+  if (scenarioRoute(page.url()) !== expectedRoute) {
+    debugScenario('Route changed while settling: %o', {
+      expectedRoute,
+      actualRoute: scenarioRoute(page.url()),
+    });
+    throw new Error('页面切换后又离开了录制页面。');
+  }
+  debugScenario('Recorded route transition verified: %o', {
+    observationStepId: effect.observationStepId,
+    expectedRoute,
+    actualRoute: scenarioRoute(page.url()),
+  });
+  return {
+    detail: `Route transition verified: ${expectedRoute}. Query values and business results require their recorded checkpoints.`,
+  };
+}
 
 type PuppeteerPage = {
   browser(): { wsEndpoint(): string };
@@ -94,7 +171,7 @@ async function waitFor(
   do {
     signal.throwIfAborted();
     if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await delay(100, undefined, { signal });
   } while (Date.now() < deadline);
   throw new Error(message);
 }
@@ -105,6 +182,10 @@ export async function executeScenarioNative(
   step: ScenarioRunStep,
   signal: AbortSignal,
   _scriptIndex: number,
+  options?: {
+    navigationEffect?: ScenarioNavigationEffect;
+    waitReady?: (signal: AbortSignal) => Promise<void>;
+  },
 ) {
   const event = step.event!;
   signal.throwIfAborted();
@@ -121,6 +202,10 @@ export async function executeScenarioNative(
       // Redirects can already have moved beyond it. Never navigate back to it;
       // subsequent targets auto-wait and explicit Agent checkpoints verify state.
       await page.waitForLoadState('domcontentloaded');
+      return {
+        detail:
+          'Observed URL is recording context; no navigation outcome was verified.',
+      };
     } else if (
       action !== 'InitialNavigation' ||
       page.url() !== new URL(event.url!).href
@@ -150,11 +235,24 @@ export async function executeScenarioNative(
   };
   await guard(native.guards);
   const target = locatorFor(page, native.locator!);
-  await waitFor(
-    async () => (await target.count()) === 1,
-    signal,
-    'The recorded target is missing or is not unique.',
-  );
+  try {
+    await waitFor(
+      async () => (await target.count()) === 1,
+      signal,
+      'The recorded target is missing or is not unique.',
+    );
+  } catch (error) {
+    signal.throwIfAborted();
+    debugScenario('Recorded target lookup failed: %o', {
+      stepId: step.id,
+      actionType: event.actionType,
+      recordedRoute: event.url ? scenarioRoute(event.url) : undefined,
+      actualRoute: scenarioRoute(page.url()),
+      targetCount: await target.count().catch(() => undefined),
+      ...(await pageDiagnostics(page)),
+    });
+    throw error;
+  }
   switch (event.type) {
     case 'click':
       if (event.actionType === 'DoubleClick') await target.dblclick();
@@ -282,4 +380,16 @@ export async function executeScenarioNative(
     default:
       throw new Error('Unsupported recorded operation.');
   }
+  if (options?.navigationEffect) {
+    return waitForScenarioNavigation(
+      page,
+      options.navigationEffect,
+      signal,
+      options.waitReady,
+    );
+  }
+  return {
+    detail:
+      'Native action dispatched; its business outcome was not independently verified.',
+  };
 }

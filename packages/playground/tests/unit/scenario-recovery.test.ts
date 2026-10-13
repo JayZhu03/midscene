@@ -163,6 +163,42 @@ describe('visual recovery protocol', () => {
     expect(f.context.stepIndex).toBe(1);
   });
 
+  test('does not replay a historical URL observation as a previous navigation action', async () => {
+    const f = withPreviousStep();
+    f.context.plan.scripts[0].steps[0].event = {
+      hashId: 'observed',
+      type: 'navigation',
+      actionType: 'Navigate',
+      url: 'https://example.test/orders',
+      timestamp: 1,
+      pageInfo: { width: 900, height: 600 },
+      rawPayload: { implicitNavigationState: true },
+    };
+    f.agent.aiQuery.mockResolvedValueOnce({
+      decision: 'backtrack',
+      reason: 'Wrong page',
+      instruction: 'Open the historical URL',
+      previousStepId: 'open-menu',
+      safeToReplayPrevious: true,
+      safetyEvidence: 'Navigation only',
+    });
+    expect(
+      await recoverScenarioStep(
+        f.agent,
+        f.context,
+        f.evidence,
+        f.waitReady,
+        f.signal,
+      ),
+    ).toBe(false);
+    expect(f.agent.aiAct).not.toHaveBeenCalled();
+    const facts = JSON.parse(
+      f.agent.aiQuery.mock.calls[0][0].split('Test context: ')[1],
+    );
+    expect(facts.backtrackAllowed).toBe(false);
+    expect(facts.previousOperation).toBeUndefined();
+  });
+
   test('restores the previous UI prerequisite after a transient failed attempt', async () => {
     const f = withPreviousStep();
     f.agent.aiQuery

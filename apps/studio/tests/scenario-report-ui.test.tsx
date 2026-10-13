@@ -130,7 +130,27 @@ it('loads a saved report from execution records without starting or regenerating
     ok: true,
     json: async () =>
       url.endsWith('/scenario-reports')
-        ? { reports: [{ id: run.id, name: 'Orders', finishedAt: 1000 }] }
+        ? {
+            reports: [
+              {
+                id: run.id,
+                name: 'Orders',
+                scope: 'script',
+                scenarioName: 'MOM main flow',
+                startedAt: 1000,
+                finishedAt: 4000,
+                status: 'completed',
+                counts: {
+                  passed: 1,
+                  failed: 0,
+                  blocked: 0,
+                  pending: 0,
+                  stopped: 0,
+                },
+                recoveryCount: 1,
+              },
+            ],
+          }
         : { run },
   }));
   vi.stubGlobal('fetch', fetchMock);
@@ -143,14 +163,50 @@ it('loads a saved report from execution records without starting or regenerating
       </StudioPlaygroundContext.Provider>,
     ),
   );
+  expect(container.querySelector('input')).toBeNull();
+  expect(container.textContent).toContain(
+    'Only the latest 10 execution records are retained. Download reports you want to keep.',
+  );
+  const refresh = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Refresh records"]',
+  );
+  expect(refresh?.disabled).toBe(false);
+  await act(async () => refresh!.click());
+  expect(fetchMock).toHaveBeenCalledTimes(2);
   await act(async () =>
     container
       .querySelector<HTMLButtonElement>('.studio-report-list button')!
       .click(),
   );
+  expect(container.querySelector('.studio-execution-page')).toBeTruthy();
+  expect(document.querySelector('table')).toBeNull();
+  await click('View report');
   expect(document.querySelector('table')).toBeTruthy();
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
     'http://localhost:1234/scenario-reports',
+    'http://localhost:1234/scenario-reports',
     `http://localhost:1234/scenario-reports/${run.id}`,
   ]);
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click(),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Back to execution records"]',
+      )!
+      .click(),
+  );
+  expect(container.textContent).toContain('MOM main flow');
+  expect(container.textContent).toContain('Agent recovery 1');
+  expect(container.textContent).toContain('3.0 s');
+});
+
+it('shows the Chinese retention note without an execution-record search box', async () => {
+  setStudioLanguage('zh');
+  await act(async () => root.render(<StudioExecutionRecords />));
+  expect(container.querySelector('input')).toBeNull();
+  expect(container.textContent).toContain(
+    '仅保留最近 10 次执行记录，请及时下载需要留存的报告。',
+  );
 });

@@ -2,6 +2,7 @@ import { getDebug } from '@midscene/shared/logger';
 import { type WebSiteIcon, normalizeSiteIconUrl } from '@shared/web-site-icon';
 import { DEFAULT_STUDIO_WEB_VIEWPORT } from '@shared/web-viewport';
 import { useEffect, useState } from 'react';
+import { saveStudioPreference } from '../studio-preferences-backup';
 
 export interface SavedWebPage {
   iconUrl?: string;
@@ -112,7 +113,7 @@ export function saveWebPage(input: SavedWebPage) {
     },
     ...previous.filter((item) => new URL(item.url).origin !== origin),
   ];
-  window.localStorage.setItem(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
+  saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }
 
@@ -125,7 +126,7 @@ export function renameWebPage(url: string, name: string) {
       ? { ...page, name: trimmed.slice(0, 80) }
       : page,
   );
-  window.localStorage.setItem(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
+  saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }
 
@@ -142,7 +143,7 @@ export function updateWebPageIcon(value: WebSiteIcon) {
   const page = pages.find((item) => new URL(item.url).origin === origin);
   if (!page || page.iconUrl === iconUrl) return;
   page.iconUrl = iconUrl;
-  window.localStorage.setItem(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
+  saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }
 
@@ -151,7 +152,7 @@ export function removeWebPage(url: string) {
   const pages = loadSavedWebPages().filter(
     (page) => new URL(page.url).origin !== origin,
   );
-  window.localStorage.setItem(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
+  saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }
 

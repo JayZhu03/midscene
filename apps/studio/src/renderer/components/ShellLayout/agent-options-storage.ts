@@ -2,6 +2,7 @@ import {
   type StudioAgentOptions,
   normalizeStudioAgentOptions,
 } from '../../../shared/agent-options';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 
 const STORAGE_KEY = 'studio:agent-options';
 
@@ -26,7 +27,7 @@ export function saveAgentOptions(options: StudioAgentOptions): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
-  localStorage.setItem(
+  saveStudioPreference(
     STORAGE_KEY,
     JSON.stringify(normalizeStudioAgentOptions(options)),
   );

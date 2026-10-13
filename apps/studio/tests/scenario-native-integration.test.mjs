@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   connectScenarioPage,
   executeScenarioNative,
+  waitForScenarioNavigation,
 } from '../../../packages/playground/src/scenario-native';
+import { scenarioNavigationEffect } from '../../../packages/playground/src/scenario-navigation';
 import {
   ScenarioRunner,
   executeScenarioAgentStep,
@@ -17,6 +19,13 @@ let server;
 let url;
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url?.startsWith('/spa')) {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(
+        `<button id="delayed" onclick="setTimeout(() => { location.hash='/orders?run=current'; document.body.innerHTML='<main aria-busy=true>Loading</main>'; setTimeout(() => document.body.innerHTML='<main>Orders ready</main>', 300); }, 250)">Orders</button><button id="ineffective">No effect</button>`,
+      );
+      return;
+    }
     if (req.url === '/redirect') {
       res.writeHead(302, { Location: '/orders?run=current' });
       res.end();
@@ -60,6 +69,151 @@ function step(type, extra = {}, index = 0) {
 }
 
 describe('shared Studio browser execution', () => {
+  it('checks an early recorded SPA navigation after its menu action and waits for rendered readiness', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${url}spa#/workbench`);
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      new AbortController().signal,
+    );
+    try {
+      const beforeUrl = `${url}spa#/workbench`;
+      const afterUrl = `${url}spa#/orders?run=recorded`;
+      const steps = [
+        step('navigation', {
+          actionType: 'Navigate',
+          url: afterUrl,
+          rawPayload: {
+            implicitNavigationState: true,
+            triggerActionType: 'SessionNavigation',
+            beforeUrl,
+            afterUrl,
+          },
+        }),
+        step(
+          'click',
+          {
+            actionType: 'Tap',
+            url: beforeUrl,
+            nativeTarget: { locator: { selector: '#delayed' } },
+          },
+          1,
+        ),
+      ];
+      const runner = new ScenarioRunner(
+        validateScenarioRun({
+          scenarioId: 'scene',
+          scripts: [{ id: 'a', name: 'A', startMode: 'automatic', steps }],
+        }),
+      );
+      const done = runner.run((s, signal, index) =>
+        executeScenarioNative(connection.page, s, signal, index, {
+          navigationEffect: scenarioNavigationEffect(
+            steps,
+            runner.state.stepIndex,
+          ),
+          waitReady: connection.waitForAssertionReady,
+        }),
+      );
+      await expect.poll(() => runner.state.stepIndex).toBe(1);
+      expect(runner.state.scripts[0].steps[1].status).toBe('running');
+      await done;
+      expect(runner.state.status).toBe('completed');
+      expect(await connection.page.locator('main').textContent()).toBe(
+        'Orders ready',
+      );
+      expect(page.url()).toBe(`${url}spa#/orders?run=current`);
+      expect(runner.state.scripts[0].steps[0].detail).toContain(
+        'recording context',
+      );
+      expect(runner.state.scripts[0].steps[1].detail).toContain(
+        'Route transition verified',
+      );
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  });
+
+  it('fails an ineffective menu click on the action itself without replaying it or navigating to the historical URL', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${url}spa#/workbench`);
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      new AbortController().signal,
+    );
+    try {
+      const beforeUrl = `${url}spa#/workbench`;
+      const effect = {
+        beforeUrl,
+        afterUrl: `${url}spa#/orders`,
+        observationStepId: 'observed',
+      };
+      const click = step('click', {
+        actionType: 'Tap',
+        url: beforeUrl,
+        nativeTarget: { locator: { selector: '#ineffective' } },
+      });
+      await page.evaluate(() => {
+        window.clicks = 0;
+        document.querySelector('#ineffective').onclick = () => window.clicks++;
+      });
+      await expect(
+        executeScenarioNative(
+          connection.page,
+          click,
+          new AbortController().signal,
+          0,
+          { navigationEffect: effect },
+        ),
+      ).rejects.toThrow('未切换');
+      expect(page.url()).toBe(beforeUrl);
+      expect(await page.evaluate(() => window.clicks)).toBe(1);
+      // A recovery Agent's positive claim cannot bypass the same route check.
+      await expect(
+        waitForScenarioNavigation(
+          connection.page,
+          effect,
+          new AbortController().signal,
+          undefined,
+          150,
+        ),
+      ).rejects.toThrow('未切换');
+      expect(await page.evaluate(() => window.clicks)).toBe(1);
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  }, 20000);
+
+  it('cancels a pending route check and preserves the current document', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${url}spa#/workbench`);
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      new AbortController().signal,
+    );
+    try {
+      const stop = new AbortController();
+      const pending = waitForScenarioNavigation(
+        connection.page,
+        {
+          beforeUrl: page.url(),
+          afterUrl: `${url}spa#/orders`,
+          observationStepId: 'observed',
+        },
+        stop.signal,
+      );
+      stop.abort(new Error('Stopped by test'));
+      await expect(pending).rejects.toThrow();
+      expect(page.url()).toBe(`${url}spa#/workbench`);
+      expect(page.isClosed()).toBe(false);
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  });
+
   it.each([0, 1])(
     'opens a different starting page for script index %i, retaining browser session',
     async (scriptIndex) => {

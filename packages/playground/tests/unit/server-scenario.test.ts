@@ -4,6 +4,7 @@ import type { ScenarioRunInput } from '../../src/scenario-contract';
 import {
   connectScenarioPage,
   executeScenarioNative,
+  waitForScenarioNavigation,
 } from '../../src/scenario-native';
 import { SCENARIO_PAGE_NOT_READY } from '../../src/scenario-readiness';
 import { saveScenarioReport } from '../../src/scenario-report-storage';
@@ -17,6 +18,7 @@ rs.mock('../../src/scenario-native', () => ({
     close: async () => {},
   })),
   executeScenarioNative: rs.fn(async () => {}),
+  waitForScenarioNavigation: rs.fn(async () => {}),
 }));
 rs.mock('../../src/scenario-summary', () => ({
   generateScenarioSummary: rs.fn(async () => ({
@@ -98,6 +100,85 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('rechecks an associated route after an Agent claims the failed menu operation completed', async () => {
+    const { server, agent, status } = await setup();
+    const beforeUrl = 'https://example.test/app/#/workbench';
+    const afterUrl = 'https://example.test/app/#/orders';
+    const events = [
+      {
+        hashId: 'observed',
+        type: 'navigation' as const,
+        actionType: 'Navigate',
+        url: afterUrl,
+        timestamp: 1,
+        pageInfo: { width: 900, height: 600 },
+        rawPayload: {
+          implicitNavigationState: true,
+          triggerActionType: 'SessionNavigation',
+          beforeUrl,
+          afterUrl,
+        },
+      },
+      {
+        hashId: 'menu',
+        type: 'click' as const,
+        actionType: 'Tap',
+        url: beforeUrl,
+        timestamp: 2,
+        pageInfo: { width: 900, height: 600 },
+        nativeTarget: { locator: { selector: '#orders' } },
+      },
+    ];
+    const input = plan();
+    input.scripts = [input.scripts[0]];
+    input.scripts[0].steps.unshift(
+      ...events.map((event, operationIndex) => ({
+        id: event.hashId,
+        type: 'playwright-operation' as const,
+        description: event.hashId,
+        event,
+        operationIndex,
+        code: compileRecorderNativePlaywright({
+          events: [event],
+          platformId: 'web',
+          format: 'operation',
+          stepOffset: operationIndex,
+          sensitiveInputs: 'recorded',
+          navigationMode: 'scenario',
+        }),
+      })),
+    );
+    rs.mocked(executeScenarioNative)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('菜单点击后未切换到录制页面。'));
+    agent.aiQuery.mockResolvedValueOnce({
+      decision: 'completed',
+      reason: 'Menu appears selected',
+    } as any);
+    rs.mocked(waitForScenarioNavigation).mockRejectedValueOnce(
+      new Error('菜单点击后未切换到录制页面。'),
+    );
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(rs.mocked(executeScenarioNative).mock.calls[1][4]).toMatchObject({
+        navigationEffect: {
+          beforeUrl,
+          afterUrl,
+          observationStepId: 'observed',
+        },
+      });
+      expect(waitForScenarioNavigation).toHaveBeenCalledTimes(1);
+      expect(agent.aiAct).not.toHaveBeenCalled();
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+      expect(status().run.status).toBe('failed');
+      expect(status().run.scripts[0].steps[1].recovery.status).toBe('failed');
+      expect(status().run.scripts[0].steps[2].status).toBe('pending');
+    } finally {
+      await server.close();
+    }
+  });
+
   test('hands a failed native operation to the same Agent and resumes after visual verification', async () => {
     const { server, agent, status } = await setup();
     const event = {

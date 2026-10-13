@@ -1,27 +1,33 @@
-import type { ScenarioRunState } from '@midscene/playground';
+import type {
+  ScenarioReportEntry,
+  ScenarioRunState,
+} from '@midscene/playground';
 import { Button } from 'antd';
 import { useContext, useEffect, useState } from 'react';
 import { t } from '../../i18n';
 import { StudioPlaygroundContext } from '../../playground/useStudioPlayground';
-import { BackIcon } from '../Recorder/assets/recorder-icons';
-import { StudioScenarioReport } from './StudioScenarioReport';
-
-interface ReportEntry {
-  id: string;
-  name?: string;
-  finishedAt?: number;
-}
+import {
+  ArrowIcon,
+  BackIcon,
+  ReloadIcon,
+} from '../Recorder/assets/recorder-icons';
+import { StudioScenarioExecution } from './StudioScenarioExecution';
+import { runStatusLabel } from './StudioScriptSequence';
 
 export function StudioExecutionRecords() {
   const playground = useContext(StudioPlaygroundContext);
   const serverUrl = playground?.phase === 'ready' ? playground.serverUrl : null;
-  const [records, setRecords] = useState<ReportEntry[]>([]);
+  const [records, setRecords] = useState<ScenarioReportEntry[]>([]);
+  const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [run, setRun] = useState<ScenarioRunState | null>(null);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!serverUrl) {
+      setRun(null);
+      setRecords([]);
+      setError(undefined);
       setLoading(false);
       return;
     }
@@ -50,7 +56,21 @@ export function StudioExecutionRecords() {
     };
     void load();
     return () => controller.abort();
-  }, [serverUrl, selected]);
+  }, [serverUrl, selected, revision]);
+  if (selected && run && !loading && serverUrl) {
+    return (
+      <StudioScenarioExecution
+        run={run}
+        error={null}
+        pending={false}
+        ready={false}
+        backLabel="Back to execution records"
+        onBack={() => setSelected(null)}
+        onNext={() => {}}
+        onStop={() => {}}
+      />
+    );
+  }
   return (
     <div className="studio-scenario-panel studio-scenario-detail studio-report-records">
       <header className="studio-scenario-toolbar studio-scenario-toolbar-detail">
@@ -66,21 +86,37 @@ export function StudioExecutionRecords() {
           <span />
         )}
         <h3 className="studio-scenario-detail-title">
-          {selected ? t('Test report') : t('Execution records')}
+          {t('Execution records')}
         </h3>
-        <span />
+        <Button
+          type="text"
+          icon={<ReloadIcon />}
+          aria-label={t('Refresh records')}
+          title={t('Refresh records')}
+          disabled={!serverUrl || loading}
+          onClick={() => setRevision((n) => n + 1)}
+        />
       </header>
+      {!selected ? (
+        <p className="studio-record-retention">
+          {t(
+            'Only the latest 10 execution records are retained. Download reports you want to keep.',
+          )}
+        </p>
+      ) : null}
       <div className="studio-execution-body">
         {error ? (
           <p className="studio-scenario-error" role="alert">
             {error}
           </p>
         ) : null}
-        {loading ? (
+        {!serverUrl ? (
+          <div className="studio-scenario-empty">
+            {t('Connect a webpage to view execution records')}
+          </div>
+        ) : loading ? (
           <div className="studio-scenario-empty">{t('Loading reports')}</div>
-        ) : run ? (
-          <StudioScenarioReport key={run.id} run={run} autoOpen />
-        ) : !records.length ? (
+        ) : error ? null : !records.length ? (
           <div className="studio-scenario-empty">
             {t('No execution records yet')}
           </div>
@@ -89,12 +125,79 @@ export function StudioExecutionRecords() {
             {records.map((record) => (
               <li key={record.id}>
                 <button type="button" onClick={() => setSelected(record.id)}>
-                  <span>{record.name || t('Test report')}</span>
-                  <time>
-                    {record.finishedAt
-                      ? new Date(record.finishedAt).toLocaleString()
-                      : ''}
-                  </time>
+                  <span className="studio-record-heading">
+                    <span className="studio-record-name" title={record.name}>
+                      {record.name || t('Test report')}
+                    </span>
+                    <span
+                      className="studio-record-status"
+                      data-status={record.status}
+                    >
+                      {record.status === 'completed'
+                        ? t('Completed')
+                        : record.status === 'failed'
+                          ? t('Has failures')
+                          : runStatusLabel(record.status)}
+                    </span>
+                    <ArrowIcon />
+                  </span>
+                  <span className="studio-record-meta">
+                    <span>
+                      {t(
+                        record.scope === 'script'
+                          ? 'Single script'
+                          : 'Scenario execution',
+                      )}
+                      {record.scope === 'script' && record.scenarioName
+                        ? ` · ${record.scenarioName}`
+                        : ''}
+                    </span>
+                    <time
+                      dateTime={
+                        record.startedAt || record.finishedAt
+                          ? new Date(
+                              record.startedAt || record.finishedAt!,
+                            ).toISOString()
+                          : undefined
+                      }
+                    >
+                      {record.startedAt || record.finishedAt
+                        ? new Date(
+                            record.startedAt || record.finishedAt!,
+                          ).toLocaleString()
+                        : '—'}
+                    </time>
+                    {record.startedAt !== undefined &&
+                    record.finishedAt !== undefined ? (
+                      <span>
+                        {t('Duration')}{' '}
+                        {Math.max(
+                          0,
+                          (record.finishedAt - record.startedAt) / 1000,
+                        ).toFixed(1)}{' '}
+                        s
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="studio-record-counts">
+                    {record.counts ? (
+                      <span>
+                        {t('Scripts')}:{' '}
+                        {Object.entries(record.counts)
+                          .filter(([, count]) => count > 0)
+                          .map(
+                            ([status, count]) =>
+                              `${status === 'pending' ? t('Not executed') : runStatusLabel(status)} ${count}`,
+                          )
+                          .join(' · ')}
+                      </span>
+                    ) : null}
+                    {record.recoveryCount > 0 ? (
+                      <span className="studio-record-recovery">
+                        {t('Agent recovery')} {record.recoveryCount}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
               </li>
             ))}
