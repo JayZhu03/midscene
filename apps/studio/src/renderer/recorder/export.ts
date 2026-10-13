@@ -529,16 +529,25 @@ export async function createStudioRecorderMarkdownZipBase64(
 
 export async function saveStudioRecorderFile(options: {
   defaultFileName: string;
-  content: string;
+  content: string | (() => Promise<string>);
   filters: SaveFileFilter[];
   title: string;
   encoding?: 'utf-8' | 'base64';
 }) {
+  // Ask for the destination before generating large archives; cancelling does no work.
+  let contentPromise: Promise<string> | undefined;
+  const content = () => {
+    contentPromise ??=
+      typeof options.content === 'function'
+        ? options.content()
+        : Promise.resolve(options.content);
+    return contentPromise;
+  };
   let shell: Pick<ElectronShellApi, 'chooseFileSavePath' | 'writeFile'>;
   try {
     shell = getElectronShell();
   } catch {
-    triggerBrowserDownload(options);
+    triggerBrowserDownload({ ...options, content: await content() });
     return;
   }
 
@@ -553,12 +562,12 @@ export async function saveStudioRecorderFile(options: {
     }
     await shell.writeFile({
       path,
-      content: options.content,
+      content: await content(),
       encoding: options.encoding || 'utf-8',
     });
   } catch (error) {
     if (isMissingGenericFileBridgeError(error)) {
-      triggerBrowserDownload(options);
+      triggerBrowserDownload({ ...options, content: await content() });
       return;
     }
     throw error;

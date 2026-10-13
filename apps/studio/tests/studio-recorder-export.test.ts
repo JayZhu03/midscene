@@ -12,6 +12,40 @@ import type { StudioRecordingSession } from '../src/renderer/recorder/types';
 import type { ElectronShellApi } from '../src/shared/electron-contract';
 
 describe('studio recorder export', () => {
+  it.each([null, 'C:/exports/scenario.zip'])(
+    'asks for a destination before generating an archive (%s)',
+    async (path) => {
+      const content = vi.fn(async () => 'AQID');
+      const writeFile = vi.fn();
+      const chooseFileSavePath = vi.fn(async () => {
+        expect(content).not.toHaveBeenCalled();
+        return path;
+      });
+      window.electronShell = {
+        chooseFileSavePath,
+        writeFile,
+      } as unknown as ElectronShellApi;
+      await saveStudioRecorderFile({
+        title: 'Export scenario',
+        defaultFileName: 'scenario.zip',
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+        content,
+        encoding: 'base64',
+      });
+      expect(chooseFileSavePath).toHaveBeenCalledTimes(1);
+      if (path) {
+        expect(content).toHaveBeenCalledTimes(1);
+        expect(writeFile).toHaveBeenCalledWith({
+          path,
+          content: 'AQID',
+          encoding: 'base64',
+        });
+      } else {
+        expect(content).not.toHaveBeenCalled();
+        expect(writeFile).not.toHaveBeenCalled();
+      }
+    },
+  );
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';

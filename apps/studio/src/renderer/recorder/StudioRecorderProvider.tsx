@@ -2272,7 +2272,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         throw new Error('Recorder session not found.');
       }
       const cachedCode = session.generatedCode?.[type];
-      if (cachedCode && !options.force) {
+      if (cachedCode && !options.force && type !== 'playwright-native') {
         options.onChunk?.(cachedCode);
         return cachedCode;
       }
@@ -2297,6 +2297,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
             events: normalizeSessionEventOrder(session).events,
             testName: session.name,
             platformId: session.target.platformId,
+            sensitiveInputs: 'recorded',
           });
           const updatedSession: StudioRecordingSession = {
             ...session,
@@ -2836,11 +2837,11 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
       const playwright =
         type === 'playwright-native'
-          ? session.generatedCode?.[type] ||
-            compileRecorderNativePlaywright({
-              events: session.events,
+          ? compileRecorderNativePlaywright({
+              events: normalizeSessionEventOrder(session).events,
               testName: session.name,
               platformId: session.target.platformId,
+              sensitiveInputs: 'recorded',
             })
           : session.generatedCode?.playwright ||
             generateStudioRecorderPlaywright(session);

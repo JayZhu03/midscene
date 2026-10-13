@@ -21,6 +21,10 @@ import {
   validNativeBrowserLayout,
 } from '../../shared/native-browser';
 import { nativeRecorderScript } from './native-recorder';
+import {
+  createRecorderDelivery,
+  stopRecorderDelivery,
+} from './native-recorder-delivery';
 
 const debug = getDebug('studio:native-browser', { console: true });
 const nativeRequire = createRequire(__filename);
@@ -33,6 +37,8 @@ type Packet = {
   height: number;
   subframe?: boolean;
   screenshot?: string;
+  clickTarget?: string;
+  clickCount?: number;
 };
 type RecordListener = (packet: Packet) => void;
 export interface NativePageHooks {
@@ -374,69 +380,54 @@ export class NativeBrowserHost {
           };
           await capture();
           let captureTimer: ReturnType<typeof setInterval> | undefined;
-          let pendingClick: Packet | undefined;
-          let clickTimer: ReturnType<typeof setTimeout> | undefined;
-          const flushClick = () => {
-            clearTimeout(clickTimer);
-            if (pendingClick) {
-              listener(pendingClick);
-              pendingClick = undefined;
-            }
-          };
-          await page.exposeFunction(binding, async (packet: Packet) => {
+          const delivery = createRecorderDelivery<Packet>(
+            async (packet) => {
+              if (packet.subframe) {
+                // Preserve the action even if its iframe disappears during navigation.
+                const frameUrl = packet.url;
+                const x = packet.payload.x;
+                const y = packet.payload.y;
+                packet.url = page.url();
+                packet.width = current.width;
+                packet.height = current.height;
+                packet.nativeTarget = {
+                  error: '嵌入页面中的操作需要 Agent 执行。',
+                };
+                packet.payload.x = undefined;
+                packet.payload.y = undefined;
+                const frames = page
+                  .frames()
+                  .filter(
+                    (frame) =>
+                      frame !== page.mainFrame() && frame.url() === frameUrl,
+                  );
+                const element =
+                  frames.length === 1 ? await frames[0].frameElement() : null;
+                const bounds = await element?.boundingBox();
+                await element?.dispose();
+                if (bounds) {
+                  if (typeof x === 'number') packet.payload.x = x + bounds.x;
+                  if (typeof y === 'number') packet.payload.y = y + bounds.y;
+                }
+              }
+            },
+            listener,
+            (error) =>
+              debug(
+                'Native recorder target unavailable; action retained',
+                error,
+              ),
+          );
+          await page.exposeFunction(binding, (packet: Packet) => {
             if (
               !enabled ||
               this.active !== current ||
-              !packet ||
-              !packet.payload ||
+              !packet?.payload ||
               typeof packet.url !== 'string'
             )
               return;
             packet.screenshot = screenshot;
-            if (packet.subframe) {
-              const frames = page
-                .frames()
-                .filter(
-                  (frame) =>
-                    frame !== page.mainFrame() && frame.url() === packet.url,
-                );
-              const element =
-                frames.length === 1 ? await frames[0].frameElement() : null;
-              const bounds = await element?.boundingBox();
-              await element?.dispose();
-              packet.url = page.url();
-              packet.width = current.width;
-              packet.height = current.height;
-              packet.nativeTarget = {
-                error: '嵌入页面中的操作需要 Agent 执行。',
-              };
-              if (bounds) {
-                if (typeof packet.payload.x === 'number')
-                  packet.payload.x += bounds.x;
-                if (typeof packet.payload.y === 'number')
-                  packet.payload.y += bounds.y;
-              } else {
-                packet.payload.x = undefined;
-                packet.payload.y = undefined;
-              }
-            }
-            if (!enabled) return;
-            // Buffer in Node, not in the document: navigation can destroy the
-            // document before a double-click disambiguation timer fires.
-            if (packet.payload.actionType === 'Tap') {
-              flushClick();
-              pendingClick = packet;
-              clickTimer = setTimeout(flushClick, 500);
-              return;
-            }
-            if (
-              packet.payload.actionType === 'DoubleClick' &&
-              pendingClick?.url === packet.url
-            ) {
-              clearTimeout(clickTimer);
-              pendingClick = undefined;
-            } else flushClick();
-            listener(packet);
+            return delivery.receive(packet);
           });
           const modulePath = path.join(
             path.dirname(nativeRequire.resolve('@midscene/playground')),
@@ -451,29 +442,38 @@ export class NativeBrowserHost {
             control,
           );
           const preload = await page.evaluateOnNewDocument(source);
-          current.stopRecording = async () => {
-            if (!enabled) return;
-            // Release local ownership before awaiting an unresponsive page.
-            enabled = false;
+          let stopping: Promise<void> | undefined;
+          current.stopRecording = () => {
+            if (stopping) return stopping;
+            if (!enabled) return Promise.resolve();
             clearInterval(captureTimer);
-            flushClick();
-            if (!page.isClosed()) {
-              await Promise.all(
-                page
-                  .frames()
-                  .map((frame) =>
-                    frame
-                      .evaluate(`window[${JSON.stringify(control)}]?.()`)
-                      .catch((error) =>
-                        debug('Recorder document closed', error),
-                      ),
-                  ),
-              );
-              await page.removeScriptToEvaluateOnNewDocument(
-                preload.identifier,
-              );
-              await page.removeExposedFunction(binding);
-            }
+            stopping = stopRecorderDelivery(
+              async () => {
+                if (page.isClosed()) return;
+                // Remove the preload first so navigation cannot install another recorder.
+                await page.removeScriptToEvaluateOnNewDocument(
+                  preload.identifier,
+                );
+                await Promise.all(
+                  page
+                    .frames()
+                    .map((frame) =>
+                      frame
+                        .evaluate(`window[${JSON.stringify(control)}]?.()`)
+                        .catch((error) =>
+                          debug('Recorder document closed', error),
+                        ),
+                    ),
+                );
+              },
+              () => delivery.drain(),
+              () => {
+                enabled = false;
+              },
+            ).finally(async () => {
+              if (!page.isClosed()) await page.removeExposedFunction(binding);
+            });
+            return stopping;
           };
           try {
             await Promise.all(

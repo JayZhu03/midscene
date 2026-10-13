@@ -9,6 +9,32 @@ import { saveStudioPreference } from './studio-preferences-backup';
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
+  'Replay needs @playwright/test. Recorded input values, including test passwords, are preserved.':
+    '运行需要 @playwright/test，录制输入值（包括测试密码）会原样保留。',
+  New: '新建',
+  'Import script': '导入脚本',
+  'Export script': '导出脚本',
+  'Import scenario': '导入场景',
+  'Export scenario': '导出场景',
+  Import: '导入',
+  Export: '导出',
+  Steps: '步骤',
+  'Choose ZIP file': '选择 ZIP 文件',
+  'Choose another file': '重新选择文件',
+  'Import another copy': '再次导入副本',
+  'This package was imported before. Import another copy?':
+    '此文件已导入过，是否再导入一份副本？',
+  'A copy will be created.': '将创建副本',
+  'Invalid or incomplete Studio package.': '文件损坏或内容不完整，请重新导出。',
+  'Unsupported Studio package version.': '不支持此文件格式或版本。',
+  'Choose a package of the correct type.':
+    '文件类型不符，请选择对应的脚本包或场景包。',
+  'Studio package is too large.':
+    '文件过大，请拆分场景后导出（总计最多 100 MB）。',
+  'Unable to export. Check saved scripts and screenshots.':
+    '导出失败，请检查已保存脚本、截图或保存位置。',
+  'Unable to import. Check local storage and retry.':
+    '导入失败，请检查本地存储空间后重试。',
   'Connection is taking longer than expected. Check your network or retry.':
     '连接时间较长，请检查网络或重试',
   'Use current session': '沿用当前会话',

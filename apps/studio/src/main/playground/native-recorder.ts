@@ -10,30 +10,48 @@ export function nativeRecorderScript(
     ${captureSource}
     const send = window[${JSON.stringify(binding)}];
     const listeners = [], deliveries = new Set();
+    const documentId = Math.random().toString(36).slice(2), targetIds = new WeakMap();
+    let nextTargetId=0, pendingElement, recordedOnMouseDown=false;
+    const targetId = el => {if(!el || typeof el!=='object')return undefined;if(!targetIds.has(el))targetIds.set(el,++nextTargetId);return documentId+':'+targetIds.get(el);};
     let pendingInput, inputTimer, pendingScroll, scrollTimer, start, releasedTarget, downTime, dragged = false;
     const on = (type, fn) => { window.addEventListener(type, fn, true); listeners.push([type, fn]); };
     const point = e => ({ x:e.clientX, y:e.clientY });
     const targetPoint = element => { const r = element.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; };
-    const packet = (payload, nativeTarget) => ({payload, nativeTarget:nativeTarget || capture(payload, fallback), url:location.href, title:document.title, width:innerWidth,height:innerHeight,subframe:window!==window.top});
+    const safeCapture = payload => {try{return capture(payload,fallback);}catch{return {error:'录制定位采集失败，需要 Agent 执行。'};}};
+    const packet = (payload, nativeTarget) => ({payload, nativeTarget:nativeTarget || safeCapture(payload), url:location.href, title:document.title, width:innerWidth,height:innerHeight,subframe:window!==window.top});
     const emit = item => { const delivery=send(item);deliveries.add(delivery);void delivery.finally(()=>deliveries.delete(delivery)).catch(() => {}); };
-    const flushInput = () => { clearTimeout(inputTimer); if(pendingInput) {emit(pendingInput);pendingInput=undefined;} };
+    const flushInput = () => { clearTimeout(inputTimer); if(pendingInput) {emit(pendingInput);pendingInput=undefined;} pendingElement=undefined; };
     const flushScroll = () => {clearTimeout(scrollTimer);if(pendingScroll){emit(pendingScroll);pendingScroll=undefined;}};
     const flush = () => {flushInput();flushScroll();};
-    on('pointerdown', e => {if(!e.isTrusted) return; flushInput();flushScroll(); start={...point(e), target:capture({actionType:'Tap',...point(e)},fallback)};releasedTarget=undefined;downTime=Date.now();dragged=false;});
+    on('pointerdown', e => {if(!e.isTrusted) return; recordedOnMouseDown=false;flushInput();flushScroll(); start={...point(e), target:safeCapture({actionType:'Tap',...point(e)})};releasedTarget=undefined;downTime=Date.now();dragged=false;});
+    // rc-select clears on mousedown and can unmount this icon before click exists.
+    // Only this known press-activated control is captured early; ordinary controls
+    // still require click, so cancelled presses and drags aren't recorded as taps.
+    on('mousedown', e => {
+      if(!e.isTrusted || e.button!==0)return;
+      const el=e.composedPath?.()[0] || e.target;
+      const clear=el?.closest?.('.ant-select-clear');
+      if(!clear || clear.closest('.ant-select-disabled,[aria-disabled="true"]'))return;
+      flush();recordedOnMouseDown=true;
+      const item=packet({actionType:'Tap',...point(e)},start?.target);
+      item.clickTarget=targetId(clear);item.clickCount=1;
+      emit(item);
+    });
     on('pointerup', e => {
       if(!e.isTrusted || !start || e.button!==0) return;
+      if(recordedOnMouseDown){start=undefined;releasedTarget=undefined;return;}
       if(Math.hypot(e.clientX-start.x,e.clientY-start.y)>8) {
         dragged=true; const p={actionType:'DragAndDrop',x:start.x,y:start.y,endX:e.clientX,endY:e.clientY};
-        emit(packet(p,{...start.target,dropTarget:capture({actionType:'Tap',...point(e)},fallback)}));
+        emit(packet(p,{...start.target,dropTarget:safeCapture({actionType:'Tap',...point(e)})}));
       }
       releasedTarget=start.target;start=undefined;
     });
-    on('click', e => {if(!e.isTrusted || dragged) return; flushInput();
-      if(e.detail>1) return;
+    on('click', e => {if(!e.isTrusted) return;if(recordedOnMouseDown && e.detail>0){recordedOnMouseDown=false;releasedTarget=undefined;downTime=undefined;return;}if(dragged){dragged=false;return;} flush();
       const duration=Date.now()-downTime;
-      emit(packet({actionType:duration>600?'LongPress':'Tap',...point(e),...(duration>600?{duration}: {})},releasedTarget));releasedTarget=undefined;
+      const item=packet({actionType:e.detail>0&&duration>600?'LongPress':'Tap',...point(e),...(e.detail>0&&duration>600?{duration}: {})},releasedTarget);
+      item.clickTarget=targetId(e.composedPath?.()[0] || e.target);item.clickCount=e.detail;
+      emit(item);releasedTarget=undefined;downTime=undefined;
     });
-    on('dblclick', e => {if(!e.isTrusted) return;emit(packet({actionType:'DoubleClick',...point(e)}));});
     on('contextmenu', e => {if(e.isTrusted){flush();emit(packet({actionType:'RightClick',...point(e)}));}});
     on('input', e => {
       if(!e.isTrusted || e.isComposing) return;
@@ -41,13 +59,16 @@ export function nativeRecorderScript(
       if(!(el instanceof Element)) return;
       if(el.matches('input[type=checkbox],input[type=radio],input[type=range],input[type=file]')) return;
       if(!('value' in el) && !el.isContentEditable) return;
+      flushScroll();if(pendingElement && pendingElement!==el)flushInput();pendingElement=el;
       pendingInput=packet({actionType:'Input',mode:'replace',value:String(el.value ?? el.textContent ?? ''),...targetPoint(el)});
       if(el.matches('select'))pendingInput.nativeTarget={error:'原生选项选择需要 Agent 执行。'};
       clearTimeout(inputTimer);inputTimer=setTimeout(flushInput,250);
     });
     on('compositionend', e => {if(!e.isTrusted)return;const el=e.target;if(!el)return;
+      flushScroll();if(pendingElement && pendingElement!==el)flushInput();pendingElement=el;
       pendingInput=packet({actionType:'Input',mode:'replace',value:String(el.value ?? el.textContent ?? ''),...targetPoint(el)});clearTimeout(inputTimer);inputTimer=setTimeout(flushInput,250);});
     on('change', e => {if(!e.isTrusted)return;flushInput();});
+    on('focusout', e => {if(e.isTrusted)flushInput();});
     on('keydown', e => {
       if(!e.isTrusted || e.isComposing || e.keyCode===229 || ['Process','Unidentified','Dead','Shift','Control','Alt','Meta','Backspace','Delete'].includes(e.key)) return;
       if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;

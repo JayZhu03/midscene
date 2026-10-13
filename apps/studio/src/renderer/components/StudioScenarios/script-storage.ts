@@ -236,6 +236,48 @@ export async function getScenarioScriptAsset(id: string): Promise<Blob | null> {
   return record.blob;
 }
 
+/** Imported copies and all their screenshots commit together; never overwrite. */
+export async function insertScenarioScriptCopies(
+  inputs: ScenarioScript[],
+  blobs: Map<string, Blob>,
+): Promise<void> {
+  const scripts = inputs.map(validateScenarioScript);
+  const ids = new Set<string>();
+  const assetIds = new Set<string>();
+  for (const script of scripts) {
+    if (ids.has(script.id)) throw new Error('Invalid scenario script data.');
+    ids.add(script.id);
+    for (const ref of script.assets) {
+      const blob = blobs.get(ref.id);
+      if (
+        !blob ||
+        blob.size !== ref.bytes ||
+        blob.type !== ref.mimeType ||
+        assetIds.has(ref.id)
+      )
+        throw new Error('Invalid scenario screenshot data.');
+      assetIds.add(ref.id);
+    }
+  }
+  await transaction<void>([SCRIPT_STORE, ASSET_STORE], 'readwrite', (tx) => {
+    for (const script of scripts) tx.objectStore(SCRIPT_STORE).add(script);
+    for (const id of assetIds)
+      tx.objectStore(ASSET_STORE).add({ id, blob: blobs.get(id) });
+  });
+}
+
+export async function removeScenarioScriptCopies(
+  scripts: ScenarioScript[],
+): Promise<void> {
+  await transaction<void>([SCRIPT_STORE, ASSET_STORE], 'readwrite', (tx) => {
+    for (const script of scripts) {
+      tx.objectStore(SCRIPT_STORE).delete(script.id);
+      for (const ref of script.assets)
+        tx.objectStore(ASSET_STORE).delete(ref.id);
+    }
+  });
+}
+
 function screenshotBlob(value: string | Blob): Blob {
   if (value instanceof Blob) {
     if (!value.type.startsWith('image/') || !value.size)

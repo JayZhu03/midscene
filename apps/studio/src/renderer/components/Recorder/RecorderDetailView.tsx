@@ -283,7 +283,7 @@ export function RecorderDetailView({
           {activeCodeType === 'playwright-native' ? (
             <div className="studio-recorder-notice">
               {t(
-                'Use a new manual Web recording to capture DOM locators. Replay needs only @playwright/test. Password values use environment variables; add business assertions to the exported test.',
+                'Replay needs @playwright/test. Recorded input values, including test passwords, are preserved.',
               )}
             </div>
           ) : null}

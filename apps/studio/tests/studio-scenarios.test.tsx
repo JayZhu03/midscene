@@ -67,7 +67,7 @@ async function fill(label: string, value: string) {
   });
 }
 async function create(name = 'Login', description = 'User login') {
-  await click('New scenario', container);
+  await click('New', container);
   await fill('Scenario name', name);
   await fill('Scenario description (optional)', description);
   await click('Save');
@@ -150,7 +150,7 @@ describe('local scenario management', () => {
     await fill('Search scenarios', 'missing');
     expect(names()).toEqual([]);
     expect(container.textContent).toContain('No matching scenarios');
-    await click('New scenario', container);
+    await click('New', container);
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
     await click('Cancel');
     const clear = container.querySelector<HTMLElement>('.ant-input-clear-icon');
@@ -182,12 +182,12 @@ describe('local scenario management', () => {
     await render();
     await fill('搜索场景', '库存');
     expect(container.textContent).toContain('没有匹配的场景');
-    expect(button('新建场景', container)).toBeTruthy();
+    expect(button('新建', container)).toBeTruthy();
   });
 
   it('focuses the name field and saves once when Enter is pressed', async () => {
     await render();
-    await click('New scenario');
+    await click('New');
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 400));
     });
@@ -213,7 +213,7 @@ describe('local scenario management', () => {
 
   it('keeps the editor open when Enter confirms an IME composition', async () => {
     await render();
-    await click('New scenario');
+    await click('New');
     await fill('Scenario name', '登录场景');
     const input = document.querySelector<HTMLInputElement>(
       '[aria-label="Scenario name"]',
@@ -295,7 +295,7 @@ describe('local scenario management', () => {
 
   it('rejects whitespace names, supports optional description and cancels creation', async () => {
     await render();
-    await click('New scenario');
+    await click('New');
     await fill('Scenario name', '   ');
     await click('Save');
     expect(document.body.textContent).toContain(
@@ -470,7 +470,7 @@ describe('local scenario management', () => {
   it('shows the Chinese form and field length limits', async () => {
     setStudioLanguage('zh');
     await render();
-    await click('新建场景');
+    await click('新建');
     expect(
       document.querySelector<HTMLInputElement>('[aria-label="场景名称"]')
         ?.maxLength,

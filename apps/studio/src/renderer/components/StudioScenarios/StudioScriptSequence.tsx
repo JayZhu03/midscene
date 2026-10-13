@@ -10,6 +10,7 @@ import {
 import type { ScenarioScript } from './script-model';
 import { type SequenceEntry, moveScript } from './sequence';
 import { type SessionMode, sessionModeMenu } from './session-mode';
+import { TransferIcon } from './useStudioTransfer';
 
 export const runStatusLabel = (status: string) =>
   t(
@@ -47,7 +48,7 @@ export function StudioScriptSequence({
   onChange: (value: SequenceEntry[]) => void;
   onOpen: (script: ScenarioScript) => void;
   onAction: (
-    action: 'rename' | 'delete' | 'run' | 'edit',
+    action: 'rename' | 'delete' | 'run' | 'edit' | 'export',
     script: ScenarioScript,
   ) => void;
   canRun: boolean;
@@ -252,6 +253,11 @@ export function StudioScriptSequence({
                     selectedKeys: [`session-${sessionMode}`],
                     items: [
                       {
+                        key: 'export',
+                        label: t('Export script'),
+                        icon: <TransferIcon />,
+                      },
+                      {
                         key: 'edit',
                         label: t('Edit script'),
                         icon: <EditIcon />,
@@ -287,6 +293,7 @@ export function StudioScriptSequence({
                       if (
                         !locked &&
                         (key === 'rename' ||
+                          key === 'export' ||
                           key === 'delete' ||
                           key === 'run' ||
                           key === 'edit')

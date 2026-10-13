@@ -10,6 +10,7 @@ import {
   generateStudioRecorderCodeWithAI,
   generateStudioRecorderMetadataWithAI,
 } from '../src/renderer/recorder/codegen';
+import { saveStudioRecorderFile } from '../src/renderer/recorder/export';
 import {
   getCurrentStudioRecorderSessionId,
   getStudioRecorderSessions,
@@ -24,6 +25,11 @@ type ReadyStudioPlaygroundContext = Extract<
   StudioPlaygroundContextValue,
   { phase: 'ready' }
 >;
+
+vi.mock('../src/renderer/recorder/export', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/renderer/recorder/export')>()),
+  saveStudioRecorderFile: vi.fn(async () => {}),
+}));
 
 vi.mock('../src/renderer/recorder/codegen', () => ({
   describeStudioRecorderEventsWithAI: vi.fn(
@@ -2143,53 +2149,89 @@ describe('StudioRecorderProvider preview recording', () => {
     await mounted.cleanup();
   });
 
-  it('compiles native Playwright without AI metadata or code generation', async () => {
-    const event = {
-      type: 'click',
-      source: 'studio-preview',
-      actionType: 'Tap',
-      nativeTarget: { locator: { selector: 'button[data-testid="query"]' } },
-      semantic: {
-        source: 'heuristic',
-        status: 'ready',
-        elementDescription: 'Query',
-      },
-      pageInfo: { width: 1200, height: 800 },
-      timestamp: 123,
-      hashId: 'native-1',
-    };
-    const { context } = createConnectedStudioContext({ events: [event] });
-    context.controller.state.formValues = {
-      platformId: 'web',
-      'web.url': 'https://example.com',
-    };
-    context.controller.state.runtimeInfo!.platformId = 'web';
-    const mounted = await mountRecorder(context);
-    try {
-      await act(async () => {
-        await mounted.recorder?.startRecording();
-      });
-      await flushPromises();
-      vi.clearAllMocks();
-      let code = '';
-      await act(async () => {
-        code = await mounted.recorder!.generateSessionCode(
-          mounted.recorder!.currentSession!.id,
-          { type: 'playwright-native' },
+  it.each([false, true])(
+    'compiles native Playwright without AI and preserves recorded password values (password=%s)',
+    async (password) => {
+      const event = {
+        type: password ? 'input' : 'click',
+        source: 'studio-preview',
+        actionType: password ? 'Input' : 'Tap',
+        ...(password ? { value: 'test-password' } : {}),
+        nativeTarget: {
+          locator: {
+            selector: password
+              ? 'input[type="password"]'
+              : 'button[data-testid="query"]',
+          },
+          ...(password ? { sensitive: true, editable: true } : {}),
+        },
+        semantic: {
+          source: 'heuristic',
+          status: 'ready',
+          elementDescription: 'Query',
+        },
+        pageInfo: { width: 1200, height: 800 },
+        timestamp: 123,
+        hashId: 'native-1',
+      };
+      const { context } = createConnectedStudioContext({ events: [event] });
+      context.controller.state.formValues = {
+        platformId: 'web',
+        'web.url': 'https://example.com',
+      };
+      context.controller.state.runtimeInfo!.platformId = 'web';
+      const mounted = await mountRecorder(context);
+      try {
+        await act(async () => {
+          await mounted.recorder?.startRecording();
+        });
+        await flushPromises();
+        vi.clearAllMocks();
+        if (password)
+          mounted.recorder!.currentSession!.generatedCode = {
+            'playwright-native': 'old MIDSCENE_INPUT_001',
+            updatedAt: Date.now(),
+          };
+        let code = '';
+        await act(async () => {
+          code = await mounted.recorder!.generateSessionCode(
+            mounted.recorder!.currentSession!.id,
+            { type: 'playwright-native' },
+          );
+        });
+        expect(code).toContain(
+          password ? 'target1.fill("test-password")' : 'target1.click()',
         );
-      });
-      expect(code).toContain('target1.click()');
-      expect(code).not.toContain('@midscene');
-      expect(generateStudioRecorderCodeWithAI).not.toHaveBeenCalled();
-      expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
-      expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
-      expect(
-        mounted.recorder?.currentSession?.generatedCode?.['playwright-native'],
-      ).toBe(code);
-    } finally {
-      await mounted.cleanup();
-    }
-  });
+        expect(code).not.toContain('MIDSCENE_INPUT_');
+        expect(code).not.toContain('@midscene');
+        expect(generateStudioRecorderCodeWithAI).not.toHaveBeenCalled();
+        expect(generateStudioRecorderMetadataWithAI).not.toHaveBeenCalled();
+        expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
+        expect(
+          mounted.recorder?.currentSession?.generatedCode?.[
+            'playwright-native'
+          ],
+        ).toBe(code);
+        if (password) {
+          mounted.recorder!.currentSession!.generatedCode = {
+            'playwright-native': 'old MIDSCENE_INPUT_001',
+            updatedAt: Date.now(),
+          };
+          await act(async () => {
+            await mounted.recorder!.exportSessionCode(
+              mounted.recorder!.currentSession!.id,
+              'playwright-native',
+            );
+          });
+          expect(saveStudioRecorderFile).toHaveBeenCalledWith(
+            expect.objectContaining({ content: code }),
+          );
+        }
+      } finally {
+        await mounted.cleanup();
+      }
+    },
+  );
 
   it('generates Markdown by default for the current session', async () => {
     const event = {

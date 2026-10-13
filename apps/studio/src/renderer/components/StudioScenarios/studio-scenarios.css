@@ -1,3 +1,23 @@
+.studio-scenario-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.studio-transfer-name {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.studio-transfer-note {
+  color: var(--midscene-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.studio-transfer-preview {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+}
 .studio-scenarios {
   display: flex;
   flex: 1 1 0;

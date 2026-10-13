@@ -44,6 +44,7 @@ import {
 } from './session-mode';
 import type { StudioScenario } from './storage';
 import { useScenarioExecution } from './useScenarioExecution';
+import { TransferIcon, useStudioTransfer } from './useStudioTransfer';
 
 type Phase = 'list' | 'starting' | 'recording' | 'stopping' | 'draft' | 'saved';
 
@@ -97,6 +98,11 @@ export function StudioScenarioScripts({
   const replayBusy = startingReplay || execution.locked || execution.pending;
   const [phase, setPhase] = useState<Phase>('list');
   const [scripts, setScripts] = useState<ScenarioScript[]>([]);
+  const transfer = useStudioTransfer(async () => {
+    const result = await listScenarioScripts(scenario.id);
+    setScripts(result);
+    setSequence(loadSequence(scenario.id, result));
+  });
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [stoppedSession, setStoppedSession] =
@@ -702,6 +708,18 @@ export function StudioScenarioScripts({
             selectedKeys: [`session-${sessionMode}`],
             items: [
               {
+                key: 'import-script',
+                label: t('Import script'),
+                icon: <TransferIcon upload />,
+                disabled:
+                  phase !== 'list' ||
+                  protectedWork ||
+                  execution.locked ||
+                  execution.pending ||
+                  loading ||
+                  actionBusy,
+              },
+              {
                 key: 'execute',
                 label: t('Run scenario'),
                 icon: <ReplayIcon />,
@@ -724,6 +742,16 @@ export function StudioScenarioScripts({
               ),
             ],
             onClick: ({ key }) => {
+              if (key === 'import-script') {
+                if (
+                  !executionRef.current &&
+                  !mutationRef.current &&
+                  !protectedWork &&
+                  phase === 'list'
+                )
+                  transfer.openImport('script', scenario);
+                return;
+              }
               if (key === 'session-current' || key === 'session-fresh') {
                 changeSessionMode(
                   key === 'session-fresh' ? 'fresh' : 'current',
@@ -865,7 +893,9 @@ export function StudioScenarioScripts({
               canRun={execution.canStart && !actionBusy}
               onAction={(action, script) => {
                 if (executionRef.current || mutationRef.current) return;
-                if (action === 'edit') {
+                if (action === 'export') {
+                  transfer.openExport(scenario, script);
+                } else if (action === 'edit') {
                   openScript(script);
                 } else if (action === 'run') {
                   startExecution(
@@ -924,6 +954,7 @@ export function StudioScenarioScripts({
           />
         )}
       </div>
+      {transfer.dialog}
       <Modal
         open={forceRequest}
         title={t('Exit recording?')}

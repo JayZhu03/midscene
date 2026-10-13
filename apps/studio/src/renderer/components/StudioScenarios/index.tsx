@@ -11,6 +11,7 @@ import {
   loadStudioScenarios,
   saveStudioScenarios,
 } from './storage';
+import { TransferIcon, useStudioTransfer } from './useStudioTransfer';
 import './studio-scenarios.css';
 
 function ScenarioFolderIcon() {
@@ -42,6 +43,10 @@ function ScenarioPlusIcon() {
 export function StudioScenarios({ active }: { active: boolean }) {
   useStudioLanguage();
   const [scenarios, setScenarios] = useState(loadStudioScenarios);
+  const transfer = useStudioTransfer(() => {
+    setScenarios(loadStudioScenarios());
+    setQuery('');
+  });
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
@@ -135,6 +140,11 @@ export function StudioScenarios({ active }: { active: boolean }) {
         ariaLabel={t('Scenario actions')}
         items={[
           {
+            icon: <TransferIcon />,
+            label: t('Export scenario'),
+            onClick: () => transfer.openExport(scenario),
+          },
+          {
             icon: <EditIcon />,
             label: t('Edit scenario'),
             onClick: () => openEditor(scenario),
@@ -172,14 +182,24 @@ export function StudioScenarios({ active }: { active: boolean }) {
             <h2 className="studio-scenario-panel-title">
               {t('Scenario list')}
             </h2>
-            <Button
-              className="studio-scenario-create"
-              icon={<ScenarioPlusIcon />}
-              onClick={() => openEditor()}
-              type="text"
-            >
-              {t('New scenario')}
-            </Button>
+            <div className="studio-scenario-toolbar-actions">
+              <Button
+                className="studio-scenario-create"
+                icon={<TransferIcon upload />}
+                type="text"
+                onClick={() => transfer.openImport('scenario')}
+              >
+                {t('Import')}
+              </Button>
+              <Button
+                className="studio-scenario-create"
+                icon={<ScenarioPlusIcon />}
+                onClick={() => openEditor()}
+                type="text"
+              >
+                {t('New')}
+              </Button>
+            </div>
           </header>
           <div className="studio-scenario-search">
             <Input
@@ -234,6 +254,7 @@ export function StudioScenarios({ active }: { active: boolean }) {
           </div>
         </div>
       )}
+      {transfer.dialog}
       <Modal
         afterOpenChange={(open) => {
           if (open) nameInputRef.current?.focus();
