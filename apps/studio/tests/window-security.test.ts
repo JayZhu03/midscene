@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   isStudioRendererUrl,
@@ -7,30 +9,27 @@ import {
 
 describe('Studio navigation restrictions', () => {
   it('only trusts the exact renderer document, allowing hash routing', () => {
-    expect(
-      isStudioRendererUrl(
-        'file:///studio/index.html#settings',
-        '/studio/index.html',
-      ),
-    ).toBe(true);
+    const entry = resolve('studio/index.html');
+    const entryUrl = pathToFileURL(entry).href;
+    expect(isStudioRendererUrl(`${entryUrl}#settings`, entry)).toBe(true);
     for (const url of [
       'https://evil.test',
-      'file:///studio/other.html',
-      'file:///studio/index.html?other',
+      pathToFileURL(resolve('studio/other.html')).href,
+      `${entryUrl}?other`,
     ]) {
-      expect(isStudioRendererUrl(url, '/studio/index.html')).toBe(false);
+      expect(isStudioRendererUrl(url, entry)).toBe(false);
     }
     expect(
       isStudioRendererUrl(
         'http://127.0.0.1:5173/#settings',
-        '/studio/index.html',
+        entry,
         'http://127.0.0.1:5173',
       ),
     ).toBe(true);
     expect(
       isStudioRendererUrl(
         'http://127.0.0.1:5173/other',
-        '/studio/index.html',
+        entry,
         'http://127.0.0.1:5173',
       ),
     ).toBe(false);

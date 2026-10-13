@@ -59,6 +59,7 @@ import {
 import { StudioArtifactCleanup } from './studio-artifact-cleanup';
 import { studioUpdater } from './updater';
 import { registerUpdaterHandlers } from './updater-handlers';
+import { registerWindowCloseConfirmation } from './window-close';
 import {
   type WindowRevealController,
   registerWindowRevealHandlers,
@@ -398,6 +399,9 @@ const createMainWindow = () => {
     isStudioRendererUrl(url, rendererEntryPath, rendererDevUrl),
   );
   mainWindow = window;
+  registerWindowCloseConfirmation(window, dialog, () => {
+    isQuitting = false;
+  });
 
   const revealController = registerWindowRevealHandlers({
     isDestroyed: () => window.isDestroyed(),
@@ -778,7 +782,7 @@ if (shouldBootstrapStudio) {
 
     ensureStudioRunDir();
     const stopEventLoopWatchdog = startStudioEventLoopWatchdog();
-    app.once('before-quit', stopEventLoopWatchdog);
+    app.once('will-quit', stopEventLoopWatchdog);
 
     if (process.platform === 'darwin' && app.dock) {
       app.dock.setIcon(getAppIcon());
@@ -823,10 +827,11 @@ if (shouldBootstrapStudio) {
     }
   });
 
-  // Finish browser shutdown before Electron exits so Chromium can flush the
+  // Wait until window close guards have accepted quitting; cancelling must
+  // leave the browser and active tasks alive. Finish shutdown so Chromium can flush the
   // profile and release its lock. A second quit is allowed once cleanup ends.
   let profilesClosed = false;
-  app.on('before-quit', (event) => {
+  app.on('will-quit', (event) => {
     if (profilesClosed) return;
     event.preventDefault();
     void closePlaygroundRuntime()

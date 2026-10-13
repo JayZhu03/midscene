@@ -649,8 +649,9 @@ describe('forced recording exit', () => {
   it('cancels stalled recognition without waiting and ignores its late completion', async () => {
     await render();
     await click('Record new script');
+    expect(container.textContent).not.toContain('Force exit');
     await click('Stop recording');
-    await click('Force exit');
+    await click('Back to scenario');
     await click('Exit and discard');
     expect(recorder.cancelScenarioRecording).toHaveBeenCalledWith(session.id);
     expect(recorder.releaseScenarioSession).not.toHaveBeenCalled();

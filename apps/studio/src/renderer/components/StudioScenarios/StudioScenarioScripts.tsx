@@ -6,7 +6,6 @@ import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
 import {
   BackIcon,
   CheckIcon,
-  ExitRecordingIcon,
   RecorderButtonIcon,
   ReplayIcon,
 } from '../Recorder/assets/recorder-icons';
@@ -798,18 +797,6 @@ export function StudioScenarioScripts({
                   ? 'Starting recording'
                   : 'Finishing recognition',
               )}
-            </Button>
-          ) : null}
-          {phase === 'recording' || phase === 'stopping' ? (
-            <Button
-              danger
-              icon={<ExitRecordingIcon />}
-              onClick={() => {
-                setForceError(null);
-                setForceRequest(true);
-              }}
-            >
-              {t('Force exit')}
             </Button>
           ) : null}
         </div>
