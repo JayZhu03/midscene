@@ -131,6 +131,7 @@ export async function describeStudioRecorderEventsWithAI(
   options: {
     target?: StudioRecorderTarget;
     modelConfig?: IModelConfig;
+    signal?: AbortSignal;
   } = {},
 ) {
   if (events.length === 0) {
@@ -143,12 +144,24 @@ export async function describeStudioRecorderEventsWithAI(
   }
 
   const modelConfig = resolveStudioRecorderModelConfig(options.modelConfig);
-  const result = await runtime.describeRecorderUIEvents({
-    input: {
-      target: options.target,
-      events: toStudioRecorderCodegenEvents(events),
-    },
-    modelConfig: toSerializableModelConfig(modelConfig),
-  });
-  return result.events;
+  options.signal?.throwIfAborted();
+  const requestId = crypto.randomUUID();
+  const cancel = () => {
+    void runtime.cancelRecorderUIDescription?.(requestId).catch(() => {});
+  };
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    const result = await runtime.describeRecorderUIEvents({
+      requestId,
+      input: {
+        target: options.target,
+        events: toStudioRecorderCodegenEvents(events),
+      },
+      modelConfig: toSerializableModelConfig(modelConfig),
+    });
+    options.signal?.throwIfAborted();
+    return result.events;
+  } finally {
+    options.signal?.removeEventListener('abort', cancel);
+  }
 }

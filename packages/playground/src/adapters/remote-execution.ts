@@ -696,6 +696,7 @@ export class RemoteExecutionAdapter extends BasePlaygroundAdapter {
 
   async describeRecorderEventAtPoint(
     event: PlaygroundRecorderEvent,
+    signal?: AbortSignal,
   ): Promise<PlaygroundRecorderDescribeResult> {
     if (!this.serverUrl) {
       return { ok: false, error: 'No server URL configured' };
@@ -708,6 +709,7 @@ export class RemoteExecutionAdapter extends BasePlaygroundAdapter {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ event }),
+          signal,
         },
       );
       const data = (await response

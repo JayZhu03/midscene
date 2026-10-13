@@ -12,6 +12,14 @@ const webMessages: Record<string, string> = {
   'Connection is taking longer than expected. Check your network or retry.':
     '连接时间较长，请检查网络或重试',
   'Use current session': '沿用当前会话',
+  'Replay script': '回放脚本',
+  'Recorded script': '录制脚本',
+  'Starting replay': '正在开始回放',
+  'Stop replay': '停止回放',
+  'Replay progress': '回放进度',
+  'Discard recording': '放弃录制',
+  'This script has not been saved. Discard it?':
+    '脚本尚未保存，确认放弃此次录制？',
   'Fresh session': '全新会话',
   'Return to original session': '返回原会话',
   'Unable to save session preference.': '运行方式保存失败，请重试',
@@ -182,6 +190,12 @@ const webMessages: Record<string, string> = {
   'Please enter an expectation.': '请输入预期结果',
   'Stop recording': '停止录制',
   'Starting recording': '正在开始录制',
+  'Force exit': '强制退出',
+  'Exit recording?': '退出录制？',
+  'Exit and discard': '退出并放弃',
+  'Unsaved recording will be discarded. Completed webpage actions will not be undone.':
+    '将放弃本次未保存的录制，已完成的网页操作不会撤销。',
+  'Unable to exit recording. Please retry.': '退出失败，请重试。',
   'Finishing recognition': '正在完成识别',
   'Save script': '保存脚本',
   'Script name': '脚本名称',

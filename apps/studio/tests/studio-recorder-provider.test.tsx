@@ -1478,6 +1478,7 @@ describe('StudioRecorderProvider preview recording', () => {
           'studio-preview-Input-1781087662206-phone-rest',
         ],
       }),
+      expect.any(AbortSignal),
     );
     expect(describeStudioRecorderEventsWithAI).toHaveBeenCalledWith(
       [
@@ -1801,6 +1802,7 @@ describe('StudioRecorderProvider preview recording', () => {
 
     expect(describeRecorderEventAtPoint).toHaveBeenCalledWith(
       expect.objectContaining({ hashId: 'click-final-ai-describe' }),
+      expect.any(AbortSignal),
     );
     expect(stopSettled).toBe(false);
     expect(mounted.recorder?.currentSession?.status).toBe('recording');
@@ -1972,6 +1974,7 @@ describe('StudioRecorderProvider preview recording', () => {
     expect(describeRecorderEventAtPoint).toHaveBeenCalledTimes(3);
     expect(describeRecorderEventAtPoint).toHaveBeenLastCalledWith(
       expect.objectContaining({ hashId: 'queued-click-3' }),
+      expect.any(AbortSignal),
     );
     expect(mounted.recorder?.currentSession?.events[2]).toMatchObject({
       hashId: 'queued-click-3',
@@ -2725,6 +2728,72 @@ describe('StudioRecorderProvider scenario recording', () => {
       expect(stopRecorderSession).toHaveBeenCalledTimes(1);
     } finally {
       await mounted.cleanup();
+    }
+  });
+
+  it('force exits stalled recognition, drops queued work, and allows a fresh recording', async () => {
+    const events = [1, 2, 3].map((index) => ({
+      type: 'click',
+      source: 'studio-preview',
+      timestamp: index,
+      hashId: `cancel-${index}`,
+      elementRect: { x: 10, y: 20 },
+      pageInfo: { width: 1200, height: 800 },
+      screenshotAfter: 'data:image/png;base64,shot',
+    }));
+    const deferred = createDeferred<any>();
+    const describe = vi.fn((_event, _signal) => deferred.promise);
+    const { context, getRecorderEvents } = createConnectedStudioContext({
+      events,
+      describeRecorderEventAtPoint: describe,
+    });
+    const mounted = await mountRecorder(context);
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await act(async () => {
+        await mounted.recorder!.startRecording({ scenarioId: 'cancel' });
+      });
+      const id = mounted.recorder!.currentSession!.id;
+      expect(describe).toHaveBeenCalledTimes(2);
+      let stopped!: Promise<unknown>;
+      await act(async () => {
+        stopped = mounted
+          .recorder!.stopScenarioRecording(id)
+          .catch((error) => error);
+      });
+      await act(async () => {
+        await mounted.recorder!.cancelScenarioRecording(id);
+      });
+      expect((await stopped) instanceof Error).toBe(true);
+      expect(describe.mock.calls.every((call) => call[1].aborted)).toBe(true);
+      expect(describe).toHaveBeenCalledTimes(2);
+      expect(describeStudioRecorderEventsWithAI).not.toHaveBeenCalled();
+      expect(mounted.recorder!.state.isRecording).toBe(false);
+      expect(mounted.recorder!.state.scenarioSession).toBeNull();
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+        force: true,
+        sessionId: id,
+      });
+      getRecorderEvents.mockResolvedValue({ events: [], nextIndex: 0 });
+      await act(async () => {
+        await mounted.recorder!.startRecording({ scenarioId: 'next' });
+      });
+      const nextId = mounted.recorder!.currentSession!.id;
+      expect(nextId).not.toBe(id);
+      await act(async () => {
+        deferred.resolve({ ok: true, event: events[0] });
+      });
+      expect(mounted.recorder!.currentSession!.id).toBe(nextId);
+      expect(mounted.recorder!.currentSession!.events).toEqual([]);
+      await act(async () => {
+        await mounted.recorder!.cancelScenarioRecording(nextId);
+      });
+    } finally {
+      await mounted.cleanup();
+      vi.unstubAllGlobals();
     }
   });
 

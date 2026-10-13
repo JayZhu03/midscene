@@ -2219,6 +2219,7 @@ class PlaygroundServer {
   private async enrichStudioPreviewRecorderEventWithAiDescribe(
     event: PlaygroundRecorderEvent,
     agent?: PageAgent,
+    abortSignal?: AbortSignal,
   ): Promise<{
     event: PlaygroundRecorderEvent;
     trace: PlaygroundRecorderDescribeTrace;
@@ -2245,6 +2246,7 @@ class PlaygroundServer {
 
       if (status === 'failed' || extra.verifyResult?.pass === false) {
         try {
+          abortSignal?.throwIfAborted();
           const screenshotDump = await persistRecorderAiDescribeScreenshot(
             event,
             eventScreenshot,
@@ -2256,6 +2258,7 @@ class PlaygroundServer {
           annotatedScreenshotPersistError =
             screenshotDump?.annotatedScreenshotPersistError;
         } catch (error) {
+          abortSignal?.throwIfAborted();
           screenshotPersistError =
             error instanceof Error ? error.message : String(error);
         }
@@ -2334,6 +2337,7 @@ class PlaygroundServer {
        */
       const describeResult = await withTimeout(
         describeElementAtPoint(elementDescriber, [x, y], {
+          abortSignal,
           verifyPrompt,
           screenshotBase64: eventScreenshot,
           coordinateSpace: 'logical',
@@ -2347,6 +2351,7 @@ class PlaygroundServer {
         RECORDER_AI_DESCRIBE_AFTER_INTERACT_TIMEOUT_MS,
         'Timed out while analyzing recorder event with aiDescribe.',
       );
+      abortSignal?.throwIfAborted();
       modelCallDurationMs = Date.now() - modelCallStartedAt;
       elementDescription = describeResult.prompt?.trim();
       deepLocate = describeResult.deepLocate;
@@ -4211,13 +4216,27 @@ class PlaygroundServer {
       },
     );
 
-    this._app.post('/recorder/stop', async (_req: Request, res: Response) => {
-      await this._stopNativeRecording?.();
+    this._app.post('/recorder/stop', async (req: Request, res: Response) => {
+      if (req.body?.force === true) {
+        // Never let a late cancellation tear down a newer recording.
+        if (typeof req.body.sessionId !== 'string')
+          return res
+            .status(400)
+            .json({ ok: false, error: 'sessionId is required' });
+        if (this._recorderSessionId === req.body.sessionId)
+          this.resetRecorderState();
+        return res.json({ ok: true });
+      }
+      const sessionId = this._recorderSessionId;
+      const stopNative = this._stopNativeRecording;
       this._stopNativeRecording = undefined;
+      await stopNative?.();
+      if (this._recorderSessionId !== sessionId) return res.json({ ok: true });
       // URL changes caused by a click are not separate replay actions. Stop
       // only waits for queued user-action capture, so a destroyed page context
       // cannot delay finishing the recording.
       await this.waitForQueuedRecorderEvents();
+      if (this._recorderSessionId !== sessionId) return res.json({ ok: true });
       this.flushPendingTypeOnlyRecorderInput();
       this._recorderSessionId = null;
       this._studioPreviewRecorderLastScreenshot = undefined;
@@ -4314,6 +4333,10 @@ class PlaygroundServer {
     this._app.post(
       '/recorder/describe-event',
       async (req: Request, res: Response) => {
+        const abort = new AbortController();
+        const cancel = () => {
+          if (!res.writableEnded) abort.abort();
+        };
         const event = req.body?.event as PlaygroundRecorderEvent | undefined;
         if (!event || typeof event !== 'object') {
           return res.status(400).json({
@@ -4322,12 +4345,14 @@ class PlaygroundServer {
           });
         }
 
+        res.on('close', cancel);
         try {
           const agent = this.getActiveAgentOrThrow();
           const { event: describedEvent, trace } =
             await this.enrichStudioPreviewRecorderEventWithAiDescribe(
               event,
               agent,
+              abort.signal,
             );
           res.json({ ok: true, event: describedEvent, trace });
         } catch (error) {
@@ -4346,6 +4371,8 @@ class PlaygroundServer {
             error: error instanceof Error ? error.message : String(error),
             trace,
           });
+        } finally {
+          res.off('close', cancel);
         }
       },
     );

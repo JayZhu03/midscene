@@ -624,14 +624,22 @@ function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   message: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   let timeout: number | null = null;
+  let cancel: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    cancel = () => reject(signal?.reason ?? new Error('Recording cancelled.'));
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener('abort', cancel, { once: true });
+  });
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeout = window.setTimeout(() => {
       reject(new Error(message));
     }, timeoutMs);
   });
-  return Promise.race([promise, timeoutPromise]).finally(() => {
+  return Promise.race([promise, timeoutPromise, aborted]).finally(() => {
+    if (cancel) signal?.removeEventListener('abort', cancel);
     if (timeout) {
       window.clearTimeout(timeout);
     }
@@ -664,6 +672,7 @@ type StudioRecorderRuntime = {
   }>;
   describeRecorderEventAtPoint?: (
     event: StudioRecordedEvent,
+    signal?: AbortSignal,
   ) => Promise<PlaygroundRecorderDescribeResult>;
   stopRecorderSession?: () => Promise<unknown>;
 };
@@ -1000,6 +1009,25 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
   const descriptionIdleResolversRef = useRef<Set<() => void>>(new Set());
   const pendingDescriptionRetryKeysRef = useRef<Set<string>>(new Set());
   const scenarioStartPendingRef = useRef(false);
+  const recordingAborts = useRef(new Map<string, AbortController>());
+  const recordingSignal = useCallback((sessionId: string) => {
+    let controller = recordingAborts.current.get(sessionId);
+    if (!controller) {
+      controller = new AbortController();
+      recordingAborts.current.set(sessionId, controller);
+    }
+    return controller.signal;
+  }, []);
+  useEffect(
+    () => () => {
+      for (const controller of recordingAborts.current.values())
+        controller.abort();
+      for (const resolve of descriptionIdleResolversRef.current) resolve();
+      descriptionIdleResolversRef.current.clear();
+      descriptionQueueRef.current = [];
+    },
+    [],
+  );
   const scenarioStopsRef = useRef(
     new Map<string, Promise<StudioRecordingSession>>(),
   );
@@ -1089,6 +1117,8 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       sessionId: string,
       event: StudioRecordedEvent,
     ): Promise<StudioRecordedEvent | null> => {
+      const signal = recordingSignal(sessionId);
+      signal.throwIfAborted();
       if (event.type === 'scroll') {
         return null;
       }
@@ -1103,11 +1133,13 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       let result: PlaygroundRecorderDescribeResult;
       try {
         result = await withTimeout(
-          runtime.describeRecorderEventAtPoint(event),
+          runtime.describeRecorderEventAtPoint(event, signal),
           RECORDER_AI_DESCRIBE_TASK_TIMEOUT_MS,
           'Timed out while analyzing recorder event with aiDescribe.',
+          signal,
         );
       } catch (error) {
+        signal.throwIfAborted();
         return {
           ...event,
           semantic: {
@@ -1167,7 +1199,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       }
       return result.event ? (result.event as StudioRecordedEvent) : null;
     },
-    [],
+    [recordingSignal],
   );
 
   const mergeDescribedRecorderEvent = useCallback(
@@ -1207,6 +1239,8 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       session: StudioRecordingSession,
       events: StudioRecordedEvent[],
     ): Promise<StudioRecordedEvent[]> => {
+      const signal = recordingSignal(session.id);
+      signal.throwIfAborted();
       if (events.length === 0) {
         return [];
       }
@@ -1215,6 +1249,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           describeRecorderEventWithAiDescribe(session.id, event),
         ),
       );
+      signal.throwIfAborted();
       const results: Array<StudioRecordedEvent | undefined> = [];
       const fallbackEvents: StudioRecordedEvent[] = [];
       const fallbackAiDescribeSemantics: Array<
@@ -1247,11 +1282,14 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           describedEvents = (await withTimeout(
             describeStudioRecorderEventsWithAI(fallbackEvents, {
               target: session.target,
+              signal,
             }),
             RECORDER_AI_FALLBACK_TASK_TIMEOUT_MS,
             'Timed out while analyzing recorder event with recorderAI.',
+            signal,
           )) as StudioRecordedEvent[];
         } catch (error) {
+          signal.throwIfAborted();
           fallbackEvents.forEach((event, fallbackIndex) => {
             const resultIndex = fallbackResultIndexes[fallbackIndex];
             const fallbackEvent = createFallbackRecorderEvent(event, error);
@@ -1281,7 +1319,11 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
 
       return results.map((event, index) => event || events[index]);
     },
-    [describeRecorderEventWithAiDescribe, mergeDescribedRecorderEvent],
+    [
+      describeRecorderEventWithAiDescribe,
+      mergeDescribedRecorderEvent,
+      recordingSignal,
+    ],
   );
 
   const processDescriptionQueue = useCallback(() => {
@@ -1303,10 +1345,11 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           const [describedEvent] = await describeRecorderEventsNow(session, [
             task.event,
           ]);
-          if (describedEvent) {
+          if (describedEvent && !recordingSignal(task.sessionId).aborted) {
             await updateRecordedEvent(task.sessionId, describedEvent);
           }
         } catch (error) {
+          if (recordingSignal(task.sessionId).aborted) return;
           debugRecorder('failed to describe recorder event:', error);
           await updateRecordedEvent(
             task.sessionId,
@@ -1320,17 +1363,25 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       })();
     }
     notifyDescriptionIdle();
-  }, [describeRecorderEventsNow, notifyDescriptionIdle, updateRecordedEvent]);
+  }, [
+    describeRecorderEventsNow,
+    notifyDescriptionIdle,
+    updateRecordedEvent,
+    recordingSignal,
+  ]);
 
   const enqueueRecorderEventDescription = useCallback(
     (sessionId: string, event: StudioRecordedEvent) => {
-      if (!shouldDescribeRecorderEvent(event)) {
+      if (
+        recordingSignal(sessionId).aborted ||
+        !shouldDescribeRecorderEvent(event)
+      ) {
         return;
       }
       descriptionQueueRef.current.push({ sessionId, event });
       processDescriptionQueue();
     },
-    [processDescriptionQueue],
+    [processDescriptionQueue, recordingSignal],
   );
 
   const persistRecordedEvent = useCallback(
@@ -1473,8 +1524,10 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
           }
 
           const result = await runtime.getRecorderEvents(runtime.cursor);
+          if (recorderRuntimeRef.current !== runtime) return;
           runtime.cursor = result.nextIndex;
           for (const event of result.events) {
+            if (recorderRuntimeRef.current !== runtime) return;
             await recordPageEventRef.current(event);
           }
         } while (runtime.drainAgain);
@@ -1718,11 +1771,14 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       ) {
         return Promise.reject(new Error('Scenario recording is not active.'));
       }
+      const signal = recordingSignal(sessionId);
       const previousBoundary = runtime.boundaryPromise;
       const boundary = (async () => {
         await previousBoundary;
+        signal.throwIfAborted();
         await drainRecorderRuntime(sessionId, true);
         await flushPendingRecorderInput(sessionId);
+        signal.throwIfAborted();
         const latest = findRecorderSession(stateRef.current, sessionId);
         if (!latest || latest.status !== 'recording') {
           throw new Error('Scenario recording is not active.');
@@ -1758,7 +1814,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
         .catch(() => undefined);
       return boundary;
     },
-    [drainRecorderRuntime, flushPendingRecorderInput],
+    [drainRecorderRuntime, flushPendingRecorderInput, recordingSignal],
   );
 
   const stopScenarioRecording = useCallback(
@@ -1774,10 +1830,23 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       if (existingStop) {
         return existingStop;
       }
+      const signal = recordingSignal(sessionId);
       const stopped = (async () => {
         try {
-          await recorderRuntimeRef.current?.boundaryPromise;
-          await stopRecorderRuntime(sessionId, { preserveRuntime: true });
+          await withTimeout(
+            Promise.resolve(recorderRuntimeRef.current?.boundaryPromise),
+            60000,
+            'Recorder stop timed out.',
+            signal,
+          );
+          signal.throwIfAborted();
+          await withTimeout(
+            stopRecorderRuntime(sessionId, { preserveRuntime: true }),
+            60000,
+            'Recorder stop timed out.',
+            signal,
+          );
+          signal.throwIfAborted();
           await flushPendingRecorderInput(sessionId);
           // Each normal description task has its own timeout. Wait for actual
           // queue completion so finalized scenario data cannot change afterwards.
@@ -1785,14 +1854,17 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
             descriptionQueueRef.current.length ||
             descriptionInFlightRef.current
           ) {
+            signal.throwIfAborted();
             await new Promise<void>((resolve) =>
               descriptionIdleResolversRef.current.add(resolve),
             );
           }
+          signal.throwIfAborted();
           await markPendingDescriptionsAsFallback(
             sessionId,
             'Recorder description is unavailable.',
           );
+          signal.throwIfAborted();
           const latest = findRecorderSession(stateRef.current, sessionId);
           if (!latest) {
             throw new Error('Scenario recording is unavailable.');
@@ -1828,6 +1900,53 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       flushPendingRecorderInput,
       markPendingDescriptionsAsFallback,
       stopRecorderRuntime,
+      recordingSignal,
+    ],
+  );
+
+  const cancelScenarioRecording = useCallback(
+    async (sessionId: string) => {
+      const session = findRecorderSession(stateRef.current, sessionId);
+      if (!session?.scenarioId) return;
+      recordingSignal(sessionId);
+      recordingAborts.current
+        .get(sessionId)!
+        .abort(new Error('Recording cancelled.'));
+      descriptionQueueRef.current = descriptionQueueRef.current.filter(
+        (task) => task.sessionId !== sessionId,
+      );
+      if (pendingRecorderInputRef.current?.sessionId === sessionId)
+        pendingRecorderInputRef.current = null;
+      clearRecorderRuntime(sessionId);
+      // Wake finalization waiters immediately. They check their own cancellation
+      // before processing more results, even if another session has queued work.
+      for (const resolve of descriptionIdleResolversRef.current) resolve();
+      descriptionIdleResolversRef.current.clear();
+      if (studioPlayground.phase === 'ready') {
+        const response = await fetch(
+          `${studioPlayground.serverUrl.replace(/\/$/, '')}/recorder/stop`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: true, sessionId }),
+            signal: AbortSignal.timeout(5000),
+          },
+        );
+        if (!response.ok)
+          throw new Error('Unable to exit recording. Please retry.');
+      }
+      stateRef.current = reducer(stateRef.current, {
+        type: 'release-scenario-session',
+        sessionId,
+      });
+      dispatch({ type: 'release-scenario-session', sessionId });
+      void clearRecorderScreenshotAssets(sessionId);
+    },
+    [
+      recordingSignal,
+      clearRecorderRuntime,
+      clearRecorderScreenshotAssets,
+      studioPlayground,
     ],
   );
 
@@ -2816,6 +2935,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       startRecording,
       stopRecording,
       stopScenarioRecording,
+      cancelScenarioRecording,
       addCheckpoint,
       getSessionSnapshot,
       releaseScenarioSession,
@@ -2852,6 +2972,7 @@ export function StudioRecorderProvider({ children }: PropsWithChildren) {
       state,
       stopRecording,
       stopScenarioRecording,
+      cancelScenarioRecording,
       addCheckpoint,
       getSessionSnapshot,
       releaseScenarioSession,

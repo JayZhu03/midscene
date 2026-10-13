@@ -73,6 +73,22 @@ describe('service.describe', () => {
     );
   });
 
+  it('passes recording cancellation through to the model request', async () => {
+    const abort = new AbortController();
+    mockCallAIWithObjectResponse.mockImplementation(
+      async (_messages, _runtime, options) => {
+        expect(options.abortSignal).toBe(abort.signal);
+        abort.abort(new Error('Recording cancelled'));
+        throw new Error('Aborted');
+      },
+    );
+    const service = new Service(createFakeContext());
+    await expect(
+      service.describe([100, 100], modelRuntime, { abortSignal: abort.signal }),
+    ).rejects.toThrow('Recording cancelled');
+    expect(mockCallAIWithObjectResponse).toHaveBeenCalledTimes(1);
+  });
+
   it('instructs icon-only controls to include owning stable context', () => {
     const prompt = elementDescriberInstruction();
 

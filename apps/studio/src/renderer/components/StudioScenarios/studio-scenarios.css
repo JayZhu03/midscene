@@ -672,22 +672,23 @@
   padding: 10px 12px;
 }
 .studio-script-record-strip .ant-btn {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
+  gap: 6px;
+  padding-inline: 8px;
 }
 .studio-script-record-strip .ant-btn svg {
   width: 16px;
   height: 16px;
 }
 .studio-script-record-strip .studio-script-checkpoint {
-  flex: 0 0 32px;
-  width: 32px;
-  padding: 0;
+  flex: 1 1 0;
 }
 .studio-script-record-strip .studio-recorder-floating-stop-button-icon {
   background: currentColor;
 }
 .studio-script-record-strip .studio-script-stop-recording {
+  flex: 1 1 0;
   background: var(--midscene-surface);
   color: var(--midscene-text-primary);
 }
@@ -954,6 +955,105 @@
 .studio-scenario-timeline .ant-input {
   font-size: 13px;
   border-radius: 8px;
+}
+
+.studio-draft-toolbar {
+  flex: 0 0 auto;
+  padding: 10px 12px 6px;
+  background: var(--midscene-surface);
+}
+.studio-draft-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 8px;
+}
+.studio-draft-actions .ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 6px;
+  height: 32px;
+  min-width: 0;
+  border-radius: 12px;
+  font-size: 13px;
+  box-shadow: none;
+}
+.studio-draft-actions svg {
+  width: 16px;
+  height: 16px;
+}
+.studio-draft-actions .studio-draft-chevron {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.studio-draft-actions .studio-draft-chevron svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  transform: rotate(180deg);
+}
+.studio-draft-actions .studio-recorder-floating-stop-button-icon {
+  background: currentColor;
+}
+.studio-draft-actions .studio-draft-discard {
+  grid-column: 1 / -1;
+  justify-self: center;
+  height: 28px;
+}
+.studio-draft-progress {
+  margin-top: 6px;
+  padding-bottom: 6px;
+}
+.studio-draft-progress-track {
+  height: 3px;
+  margin-top: 8px;
+  background: var(--midscene-border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.studio-draft-progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--midscene-brand);
+  transition: width 240ms ease;
+}
+.studio-draft-step-status {
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--midscene-text-tertiary);
+}
+.studio-draft-step-status[data-replay-status="passed"] {
+  color: var(--midscene-status-success);
+}
+.studio-draft-step-status[data-replay-status="failed"],
+.studio-draft-step-status[data-replay-status="blocked"],
+.studio-draft-step-error {
+  color: var(--midscene-status-error);
+}
+.studio-draft-step-error {
+  font-size: 12px;
+  padding: 0 12px 8px;
+  overflow-wrap: anywhere;
+}
+.studio-scenario-timeline
+  .ant-timeline-item:has([data-replay-status="running"])
+  .record-timeline-event-card {
+  outline: 1px solid var(--midscene-brand);
+  border-radius: 8px;
+}
+.studio-draft-step-status[data-replay-status="running"] {
+  color: var(--midscene-brand);
+  animation: studio-execution-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-draft-step-status[data-replay-status="running"] {
+    animation: none;
+  }
+  .studio-draft-progress-track > span {
+    transition: none;
+  }
 }
 .studio-scenario-menu .ant-dropdown-menu-item {
   display: flex;

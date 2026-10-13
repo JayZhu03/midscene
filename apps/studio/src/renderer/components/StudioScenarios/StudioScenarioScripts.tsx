@@ -6,9 +6,11 @@ import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
 import {
   BackIcon,
   CheckIcon,
+  ExitRecordingIcon,
   RecorderButtonIcon,
   ReplayIcon,
 } from '../Recorder/assets/recorder-icons';
+import { StudioRecordingDraftActions } from './StudioRecordingDraftActions';
 import { StudioScenarioExecution } from './StudioScenarioExecution';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
 import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
@@ -62,15 +64,23 @@ export function StudioScenarioScripts({
   );
   const [executionPage, setExecutionPage] = useState(false);
   const [startingRun, setStartingRun] = useState(false);
+  const [replayScript, setReplayScript] = useState<ScenarioScript | null>(null);
+  const [startingReplay, setStartingReplay] = useState(false);
+  const draftReplayIds = useRef(new Set<string>());
+  const isDraftRun = Boolean(
+    execution.run?.scripts.some((script) =>
+      draftReplayIds.current.has(script.id),
+    ),
+  );
   const observedRunId = useRef<string | null>(null);
   useEffect(() => {
     if (execution.run && execution.run.id !== observedRunId.current) {
       observedRunId.current = execution.run.id;
-      if (scenarioRunActive(execution.run) || startingRun)
+      if (!isDraftRun && (scenarioRunActive(execution.run) || startingRun))
         setExecutionPage(true);
       setStartingRun(false);
     }
-  }, [execution.run?.id, startingRun]);
+  }, [execution.run?.id, startingRun, isDraftRun]);
   const [sequence, setSequence] = useState<SequenceEntry[]>([]);
   const [sequenceReady, setSequenceReady] = useState(false);
   const run =
@@ -79,7 +89,13 @@ export function StudioScenarioScripts({
       ? execution.run
       : null;
   const executionRef = useRef(false);
-  executionRef.current = execution.locked || execution.pending;
+  executionRef.current =
+    execution.locked || execution.pending || startingReplay;
+  const replayRun =
+    replayScript && execution.run?.scripts[0]?.id === replayScript.id
+      ? execution.run
+      : null;
+  const replayBusy = startingReplay || execution.locked || execution.pending;
   const [phase, setPhase] = useState<Phase>('list');
   const [scripts, setScripts] = useState<ScenarioScript[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +124,7 @@ export function StudioScenarioScripts({
   const [scriptName, setScriptName] = useState('');
   const [nameInvalid, setNameInvalid] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [scriptAction, setScriptAction] = useState<{
     type: 'rename' | 'delete';
     script: ScenarioScript;
@@ -118,6 +135,12 @@ export function StudioScenarioScripts({
   const [discardRequest, setDiscardRequest] = useState<
     ((allowed: boolean) => void) | null
   >(null);
+  const [forceRequest, setForceRequest] = useState(false);
+  const [forcing, setForcing] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
+  const forceBusyRef = useRef(false);
+  const forceNavigationRef = useRef<((allowed: boolean) => void) | null>(null);
+  const recordingGeneration = useRef(0);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const mutationRef = useRef(false);
@@ -194,10 +217,18 @@ export function StudioScenarioScripts({
         request.respond(false);
         return;
       }
-      if (
-        ['starting', 'recording', 'stopping'].includes(phaseRef.current) ||
-        mutationRef.current
-      ) {
+      if (['recording', 'stopping'].includes(phaseRef.current)) {
+        request.respond(
+          new Promise<boolean>((resolve) => {
+            forceNavigationRef.current?.(false);
+            forceNavigationRef.current = resolve;
+            setForceError(null);
+            setForceRequest(true);
+          }),
+        );
+        return;
+      }
+      if (phaseRef.current === 'starting' || mutationRef.current) {
         setError(t('Stop recording before leaving.'));
         request.respond(false);
       } else if (phaseRef.current === 'draft' || editingRef.current) {
@@ -230,6 +261,8 @@ export function StudioScenarioScripts({
       window.removeEventListener(SCENARIO_NAVIGATION_EVENT, beforeNavigation);
       window.removeEventListener('beforeunload', beforeUnload);
       discardRequestRef.current?.(false);
+      forceNavigationRef.current?.(false);
+      recordingGeneration.current++;
     };
   }, []);
 
@@ -261,18 +294,57 @@ export function StudioScenarioScripts({
     setError(null);
   };
   const clearDraft = async () => {
+    if (executionRef.current || mutationRef.current) return;
     if (editingRef.current) {
       closeEditor();
       return;
     }
-    if (sessionId) await recorder?.releaseScenarioSession(sessionId);
-    setSessionId(null);
-    setStoppedSession(null);
-    setViewedScript(null);
-    setSaveOpen(false);
-    setCheckpointOpen(false);
-    phaseRef.current = 'list';
-    setPhase('list');
+    mutationRef.current = true;
+    try {
+      if (sessionId) await recorder?.releaseScenarioSession(sessionId);
+      setSessionId(null);
+      setStoppedSession(null);
+      setViewedScript(null);
+      setSaveOpen(false);
+      setCheckpointOpen(false);
+      setReplayScript(null);
+      setError(null);
+      phaseRef.current = 'list';
+      setPhase('list');
+    } finally {
+      mutationRef.current = false;
+    }
+  };
+  const forceExit = async () => {
+    if (!recorder || !sessionId || forceBusyRef.current) return;
+    forceBusyRef.current = true;
+    recordingGeneration.current++;
+    setForcing(true);
+    setForceError(null);
+    try {
+      await recorder.cancelScenarioRecording(sessionId);
+      mutationRef.current = false;
+      setSessionId(null);
+      setStoppedSession(null);
+      setViewedScript(null);
+      setCheckpointOpen(false);
+      setCheckpointBusy(false);
+      setCheckpointError(null);
+      setExpectation('');
+      setSaveOpen(false);
+      setReplayScript(null);
+      setError(null);
+      phaseRef.current = 'list';
+      setPhase('list');
+      setForceRequest(false);
+      forceNavigationRef.current?.(true);
+      forceNavigationRef.current = null;
+    } catch {
+      setForceError(t('Unable to exit recording. Please retry.'));
+    } finally {
+      forceBusyRef.current = false;
+      setForcing(false);
+    }
   };
   const start = async () => {
     if (!recorder || mutationRef.current || executionRef.current) return;
@@ -288,6 +360,7 @@ export function StudioScenarioScripts({
       setSessionId(started.id);
       setViewedScript(null);
       setStoppedSession(null);
+      setReplayScript(null);
       setPhase('recording');
     } catch (cause) {
       setError(
@@ -303,22 +376,26 @@ export function StudioScenarioScripts({
   const stop = async () => {
     if (!recorder || !sessionId || mutationRef.current || checkpointBusy)
       return;
+    const generation = recordingGeneration.current;
     mutationRef.current = true;
     setPhase('stopping');
     phaseRef.current = 'stopping';
     setError(null);
     try {
       const completed = await recorder.stopScenarioRecording(sessionId);
+      if (generation !== recordingGeneration.current) return;
       setStoppedSession(completed);
       setPhase('draft');
     } catch (cause) {
+      if (generation !== recordingGeneration.current) return;
       // Keep a stopped draft retryable if compilation/persistence fails later.
       setError(
         cause instanceof Error ? cause.message : t('Unable to stop recording.'),
       );
       setPhase('recording');
     } finally {
-      mutationRef.current = false;
+      if (generation === recordingGeneration.current)
+        mutationRef.current = false;
     }
   };
   const addCheckpoint = async () => {
@@ -327,20 +404,23 @@ export function StudioScenarioScripts({
       return;
     }
     if (!recorder || !sessionId || checkpointBusy) return;
+    const generation = recordingGeneration.current;
     setCheckpointBusy(true);
     setCheckpointError(null);
     try {
       await recorder.addCheckpoint(sessionId, expectation);
+      if (generation !== recordingGeneration.current) return;
       setCheckpointOpen(false);
       setExpectation('');
     } catch (cause) {
+      if (generation !== recordingGeneration.current) return;
       setCheckpointError(
         cause instanceof Error
           ? cause.message
           : t('Unable to insert checkpoint.'),
       );
     } finally {
-      setCheckpointBusy(false);
+      if (generation === recordingGeneration.current) setCheckpointBusy(false);
     }
   };
   const save = async () => {
@@ -348,7 +428,7 @@ export function StudioScenarioScripts({
       setNameInvalid(true);
       return;
     }
-    if (!stoppedSession || mutationRef.current) return;
+    if (!stoppedSession || mutationRef.current || executionRef.current) return;
     mutationRef.current = true;
     setSaving(true);
     setError(null);
@@ -384,6 +464,56 @@ export function StudioScenarioScripts({
       mutationRef.current = false;
       setSaving(false);
     }
+  };
+
+  const replayDraft = async (mode: SessionMode) => {
+    if (
+      phaseRef.current !== 'draft' ||
+      !stoppedSession ||
+      mutationRef.current ||
+      executionRef.current ||
+      !execution.canStart
+    )
+      return;
+    // Set the guard and ownership before POST: polling can discover a run even
+    // when its start response is lost. Never route that run to the execution page.
+    executionRef.current = true;
+    setStartingReplay(true);
+    setError(null);
+    try {
+      const draft = compileScenarioScript({
+        scenarioId: scenario.id,
+        name: t('Recorded script'),
+        session: stoppedSession,
+      });
+      draftReplayIds.current.add(draft.id);
+      setReplayScript(draft);
+      await execution.start({
+        ...buildScenarioRun(
+          scenario.id,
+          [draft],
+          [{ id: draft.id, startMode: 'automatic' }],
+        ),
+        scenarioName: scenario.name,
+        scenarioDescription: scenario.description,
+        scope: 'script',
+        language: readStoredLanguage(),
+        sessionMode: mode,
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : t('Unable to start execution'),
+      );
+    } finally {
+      setStartingReplay(false);
+    }
+  };
+  const requestDiscard = () => {
+    if (executionRef.current || mutationRef.current) return;
+    discardRequestRef.current?.(false);
+    const resolve = (_allowed: boolean) => {};
+    discardRequestRef.current = resolve;
+    setDiscardRequest(() => resolve);
   };
 
   const applyScriptAction = async () => {
@@ -535,6 +665,7 @@ export function StudioScenarioScripts({
           className="studio-scenario-back"
           icon={<BackIcon />}
           type="text"
+          disabled={replayBusy || saving || discarding}
           onClick={() => {
             if (editDirty) {
               cancelEditor(() => {
@@ -550,10 +681,10 @@ export function StudioScenarioScripts({
               setViewedScript(null);
               setPhase('list');
             } else if (phase === 'draft') {
-              discardRequestRef.current?.(false);
-              const resolve = (_allowed: boolean) => {};
-              discardRequestRef.current = resolve;
-              setDiscardRequest(() => resolve);
+              requestDiscard();
+            } else if (phase === 'recording' || phase === 'stopping') {
+              setForceError(null);
+              setForceRequest(true);
             } else setError(t('Stop recording before leaving.'));
           }}
         />
@@ -637,15 +768,17 @@ export function StudioScenarioScripts({
             <>
               <Button
                 className="studio-script-checkpoint"
-                aria-label={t('Insert checkpoint')}
+                aria-label={t('Add assertion')}
                 icon={<CheckIcon />}
-                title={t('Insert checkpoint')}
+                title={t('Add assertion')}
                 disabled={checkpointBusy}
                 onClick={() => {
                   setCheckpointError(null);
                   setCheckpointOpen(true);
                 }}
-              />
+              >
+                {t('Add assertion')}
+              </Button>
               <Button
                 className="studio-script-stop-recording"
                 icon={
@@ -667,22 +800,52 @@ export function StudioScenarioScripts({
               )}
             </Button>
           ) : null}
-          {phase === 'draft' ? (
+          {phase === 'recording' || phase === 'stopping' ? (
             <Button
-              type="primary"
-              disabled={saving}
+              danger
+              icon={<ExitRecordingIcon />}
               onClick={() => {
-                setScriptName('');
-                setNameInvalid(false);
-                setError(null);
-                setSaveOpen(true);
+                setForceError(null);
+                setForceRequest(true);
               }}
             >
-              {t('Save script')}
+              {t('Force exit')}
             </Button>
           ) : null}
         </div>
-        {!editDirty && (run || startingRun) ? (
+        {phase === 'draft' ? (
+          <StudioRecordingDraftActions
+            run={replayRun}
+            starting={startingReplay}
+            busy={replayBusy}
+            saving={saving || discarding}
+            canReplay={
+              execution.canStart &&
+              Boolean(preview.steps.length) &&
+              !preview.error
+            }
+            canStop={Boolean(
+              replayRun &&
+                scenarioRunActive(replayRun) &&
+                replayRun.status !== 'stopping' &&
+                !execution.pending,
+            )}
+            onReplay={(mode) => void replayDraft(mode)}
+            onStop={() => void execution.stop()}
+            onDiscard={requestDiscard}
+            onSave={() => {
+              if (executionRef.current || mutationRef.current) return;
+              setScriptName('');
+              setNameInvalid(false);
+              setError(null);
+              setSaveOpen(true);
+            }}
+          />
+        ) : null}
+        {!editDirty &&
+        (phase === 'list' || phase === 'saved') &&
+        !isDraftRun &&
+        (run || startingRun) ? (
           <Button
             className="studio-execution-reopen"
             type="text"
@@ -692,12 +855,14 @@ export function StudioScenarioScripts({
             {run && !startingRun ? ` · ${runStatusLabel(run.status)}` : ''}
           </Button>
         ) : null}
-        {error || preview.error ? (
+        {error ||
+        preview.error ||
+        (phase === 'draft' && replayScript && execution.error) ? (
           <div
             className="studio-scenario-error studio-script-error"
             role="alert"
           >
-            {t(error ?? preview.error ?? '')}
+            {t(error ?? preview.error ?? execution.error ?? '')}
           </div>
         ) : null}
         {phase === 'list' ? (
@@ -747,6 +912,14 @@ export function StudioScenarioScripts({
           <StudioScenarioTimeline
             steps={editingScript ? editingSteps : preview.steps}
             script={viewedScript}
+            replay={
+              phase === 'draft' && replayScript
+                ? {
+                    steps: replayRun?.scripts[0]?.steps ?? [],
+                    active: startingReplay || scenarioRunActive(replayRun),
+                  }
+                : undefined
+            }
             onChange={
               phase === 'saved' && viewedScript
                 ? (steps) => {
@@ -764,6 +937,36 @@ export function StudioScenarioScripts({
           />
         )}
       </div>
+      <Modal
+        open={forceRequest}
+        title={t('Exit recording?')}
+        okText={t('Exit and discard')}
+        cancelText={t('Cancel')}
+        okButtonProps={{ danger: true }}
+        confirmLoading={forcing}
+        closable={!forcing}
+        cancelButtonProps={{ disabled: forcing }}
+        maskClosable={false}
+        onCancel={() => {
+          if (forceBusyRef.current) return;
+          setForceRequest(false);
+          forceNavigationRef.current?.(false);
+          forceNavigationRef.current = null;
+        }}
+        onOk={() => void forceExit()}
+        width={400}
+      >
+        <p>
+          {t(
+            'Unsaved recording will be discarded. Completed webpage actions will not be undone.',
+          )}
+        </p>
+        {forceError ? (
+          <div className="studio-scenario-error" role="alert">
+            {forceError}
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         open={active && Boolean(scriptAction)}
         title={t(
@@ -813,13 +1016,12 @@ export function StudioScenarioScripts({
       </Modal>
       <Modal
         open={active && checkpointOpen}
-        title={t('Insert checkpoint')}
+        title={t('Add assertion')}
         okText={t('Insert')}
         cancelText={t('Cancel')}
         confirmLoading={checkpointBusy}
         maskClosable={false}
-        closable={!checkpointBusy}
-        cancelButtonProps={{ disabled: checkpointBusy }}
+        closable
         onCancel={() => setCheckpointOpen(false)}
         onOk={() => void addCheckpoint()}
         width={400}
@@ -895,7 +1097,10 @@ export function StudioScenarioScripts({
         title={t('Unsaved script')}
         okText={t('Discard')}
         cancelText={t('Keep editing')}
-        okButtonProps={{ danger: true }}
+        okButtonProps={{ danger: true, disabled: replayBusy }}
+        confirmLoading={discarding}
+        closable={!discarding}
+        cancelButtonProps={{ disabled: discarding }}
         maskClosable={false}
         onCancel={() => {
           discardRequest?.(false);
@@ -903,6 +1108,8 @@ export function StudioScenarioScripts({
           setDiscardRequest(null);
         }}
         onOk={() => {
+          if (executionRef.current || mutationRef.current || discarding) return;
+          setDiscarding(true);
           void clearDraft()
             .then(() => {
               discardRequest?.(true);
@@ -915,11 +1122,12 @@ export function StudioScenarioScripts({
                   ? cause.message
                   : t('Unable to discard script.'),
               ),
-            );
+            )
+            .finally(() => setDiscarding(false));
         }}
         width={360}
       >
-        <p>{t('This script has not been saved. Discard it and leave?')}</p>
+        <p>{t('This script has not been saved. Discard it?')}</p>
       </Modal>
     </div>
   );

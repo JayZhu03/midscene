@@ -442,8 +442,10 @@ export default class Service {
     opt?: {
       deepDescribe?: boolean;
       context?: UIContext;
+      abortSignal?: AbortSignal;
     },
   ): Promise<Pick<AIDescribeElementResponse, 'description'>> {
+    opt?.abortSignal?.throwIfAborted();
     assert(target, 'target is required for service.describe');
     const context = opt?.context || (await this.contextRetrieverFn());
     const { shotSize } = context;
@@ -586,11 +588,14 @@ export default class Service {
       ReturnType<typeof callAIWithObjectResponse<AIDescribeElementResponse>>
     >;
     try {
+      opt?.abortSignal?.throwIfAborted();
       res = await callAIWithObjectResponse<AIDescribeElementResponse>(
         msgs,
         modelRuntime,
+        { abortSignal: opt?.abortSignal },
       );
     } catch (error) {
+      opt?.abortSignal?.throwIfAborted();
       const recoveredResponse = recoverDescribeResponseFromParseError(error);
       if (!recoveredResponse) {
         throw error;
@@ -599,6 +604,7 @@ export default class Service {
       return recoveredResponse;
     }
 
+    opt?.abortSignal?.throwIfAborted();
     const { content } = res;
     assert(!content.error, `describe failed: ${content.error}`);
     assert(content.description, 'failed to describe the element');

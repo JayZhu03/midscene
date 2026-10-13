@@ -1,3 +1,4 @@
+import type { ScenarioRunInput, ScenarioRunState } from '@midscene/playground';
 import { RecordTimeline } from '@midscene/recorder-ui';
 // @vitest-environment jsdom
 import { ConfigProvider } from 'antd';
@@ -25,6 +26,49 @@ const persistence = vi.hoisted(() => ({
   save: vi.fn(),
   asset: vi.fn(async (_id: string): Promise<Blob | null> => null),
 }));
+const execution = vi.hoisted(() => ({
+  run: null as ScenarioRunState | null,
+  error: null as string | null,
+  pending: false,
+  ready: true,
+  canStart: true,
+  locked: false,
+  isolatedSession: false,
+  start: vi.fn(),
+  stop: vi.fn(),
+  next: vi.fn(),
+  restoreSession: vi.fn(),
+}));
+vi.mock(
+  '../src/renderer/components/StudioScenarios/useScenarioExecution',
+  () => ({
+    useScenarioExecution: () => execution,
+  }),
+);
+function acceptReplay(plan: ScenarioRunInput, id = crypto.randomUUID()) {
+  execution.locked = true;
+  execution.run = {
+    id,
+    scenarioId: plan.scenarioId,
+    status: 'running',
+    scriptIndex: 0,
+    stepIndex: 0,
+    sessionMode: plan.sessionMode,
+    scripts: plan.scripts.map((script) => ({
+      id: script.id,
+      name: script.name,
+      status: 'running',
+      completedSteps: 0,
+      totalSteps: script.steps.length,
+      steps: script.steps.map((step, i) => ({
+        id: step.id,
+        type: step.type,
+        description: step.description,
+        status: i === 0 ? 'running' : 'pending',
+      })),
+    })),
+  };
+}
 vi.mock('../src/renderer/components/StudioScenarios/script-storage', () => ({
   getScenarioScriptAsset: persistence.asset,
   listScenarioScripts: vi.fn(async (id: string) =>
@@ -111,6 +155,17 @@ async function finish() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  execution.run = null;
+  execution.error = null;
+  execution.pending = false;
+  execution.locked = false;
+  execution.canStart = true;
+  execution.ready = true;
+  execution.start
+    .mockReset()
+    .mockImplementation(async (plan: ScenarioRunInput) => acceptReplay(plan));
+  execution.stop.mockReset();
   setStudioLanguage('en');
   vi.stubGlobal('matchMedia', () => ({
     matches: false,
@@ -159,6 +214,7 @@ beforeEach(() => {
       session = { ...session, checkpoints: [checkpoint] };
       return checkpoint;
     }),
+    cancelScenarioRecording: vi.fn(async () => undefined),
     releaseScenarioSession: vi.fn(async () => undefined),
     getRecorderScreenshotAssetUrl: vi.fn(() => null),
   } as unknown as StudioRecorderContextValue;
@@ -173,6 +229,193 @@ afterEach(async () => {
 });
 
 describe('scenario recording workflow', () => {
+  async function recordDraft() {
+    await render();
+    await click('Record new script');
+    session = {
+      ...session,
+      events: [scenarioEvent()],
+      checkpoints: [
+        {
+          id: 'assertion',
+          instruction: 'The order is visible',
+          timestamp: 2,
+          afterEventHashIds: ['event-1'],
+        },
+      ],
+    };
+    await render();
+    await finish();
+  }
+  async function replay(mode = 'Use current session') {
+    await click('Replay script');
+    const item = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent === mode)!;
+    expect(item).toBeTruthy();
+    await act(async () => item.click());
+    await render();
+  }
+  it.each(['Use current session', 'Fresh session'])(
+    'replays an unsaved hybrid script inline with %s and retains its draft',
+    async (mode) => {
+      await recordDraft();
+      const scroll = vi.fn();
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: scroll,
+      });
+      try {
+        await replay(mode);
+        const plan = execution.start.mock.calls[0][0] as ScenarioRunInput;
+        expect(plan.sessionMode).toBe(
+          mode === 'Fresh session' ? 'fresh' : 'current',
+        );
+        expect(plan.scripts[0].steps.map((step) => step.type)).toEqual([
+          'playwright-operation',
+          'agent-assertion',
+        ]);
+        expect(persistence.save).not.toHaveBeenCalled();
+        expect(recorder.releaseScenarioSession).not.toHaveBeenCalled();
+        expect(container.querySelector('.studio-execution-body')).toBeNull();
+        expect(container.querySelector('.studio-execution-reopen')).toBeNull();
+        expect(
+          container.querySelectorAll('[data-replay-status="running"]'),
+        ).toHaveLength(1);
+        expect(scroll).toHaveBeenCalled();
+        expect(button('Save script').disabled).toBe(true);
+        expect(button('Discard recording').disabled).toBe(true);
+        expect(button('Back to scenario').disabled).toBe(true);
+        let allowed = true;
+        await act(async () => {
+          allowed = await canNavigateStudio();
+        });
+        expect(allowed).toBe(false);
+        const run = execution.run!;
+        run.scripts[0].steps![0].status = 'passed';
+        run.scripts[0].steps![1].status = 'running';
+        await render();
+        expect(
+          container.querySelector(
+            '[data-entry-id="assertion:assertion"] [data-replay-status="running"]',
+          ),
+        ).toBeTruthy();
+        expect(
+          container
+            .querySelector('[role="progressbar"]')
+            ?.getAttribute('aria-valuenow'),
+        ).toBe('1');
+        run.status = 'failed';
+        run.scripts[0].status = 'failed';
+        run.scripts[0].steps![1].status = 'failed';
+        run.scripts[0].steps![1].error = 'Order missing';
+        execution.locked = false;
+        await render();
+        expect(
+          container.querySelector('.studio-draft-step-error')?.textContent,
+        ).toBe('Order missing');
+        expect(button('Save script').disabled).toBe(false);
+        expect(container.querySelector('.studio-execution-body')).toBeNull();
+        await click('Save script');
+        await fill('Script name', 'Draft after replay');
+        await click('Save');
+        expect(persistence.records[0].steps).toHaveLength(2);
+        expect(
+          persistence.records[0].steps.some(
+            (step) => 'status' in step || 'error' in step,
+          ),
+        ).toBe(false);
+        expect(container.querySelector('.studio-execution-reopen')).toBeNull();
+      } finally {
+        Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+      }
+    },
+  );
+  it('hides a previous execution during recording and draft preview', async () => {
+    execution.run = {
+      id: 'old',
+      scenarioId: scenario.id,
+      status: 'completed',
+      scriptIndex: 0,
+      stepIndex: 0,
+      scripts: [],
+    };
+    await render();
+    expect(container.querySelector('.studio-execution-reopen')).toBeTruthy();
+    await click('Record new script');
+    expect(button('Add assertion').textContent).toBe('Add assertion');
+    expect(container.querySelector('.studio-execution-reopen')).toBeNull();
+    session = { ...session, events: [scenarioEvent()] };
+    await render();
+    await finish();
+    expect(container.querySelector('.studio-execution-reopen')).toBeNull();
+    expect(container.querySelector('.studio-draft-progress')).toBeNull();
+    expect(
+      container.querySelector('.studio-draft-toolbar')?.textContent,
+    ).toContain('Save script');
+  });
+  it('stops replay, keeps unexecuted steps, and resets results on another replay', async () => {
+    await recordDraft();
+    await replay();
+    const firstId = execution.run!.scripts[0].id;
+    await click('Stop replay');
+    expect(execution.stop).toHaveBeenCalledOnce();
+    execution.run!.status = 'stopped';
+    execution.run!.scripts[0].steps![0].status = 'stopped';
+    execution.locked = false;
+    await render();
+    expect(
+      container.querySelector('[data-replay-status="pending"]')?.textContent,
+    ).toBe('Not executed');
+    await replay();
+    expect(execution.run!.scripts[0].id).not.toBe(firstId);
+    expect(
+      container.querySelector('[data-replay-status="stopped"]'),
+    ).toBeNull();
+    expect(
+      container
+        .querySelector('[role="progressbar"]')
+        ?.getAttribute('aria-valuenow'),
+    ).toBe('0');
+    expect(container.querySelector('.studio-execution-body')).toBeNull();
+  });
+  it('recovers a lost start response inline and ignores stale run results', async () => {
+    await recordDraft();
+    execution.start.mockImplementation(async () => {
+      execution.locked = true;
+      execution.ready = false;
+      execution.error = 'Request timed out';
+    });
+    await replay();
+    expect(container.textContent).toContain('Request timed out');
+    expect(button('Save script').disabled).toBe(true);
+    const plan = execution.start.mock.calls[0][0] as ScenarioRunInput;
+    acceptReplay(plan);
+    execution.ready = true;
+    execution.error = null;
+    await render();
+    expect(container.querySelector('.studio-execution-body')).toBeNull();
+    expect(
+      container.querySelector('[data-replay-status="running"]'),
+    ).toBeTruthy();
+  });
+  it('keeps a draft when starting fails, and confirms explicit discard', async () => {
+    await recordDraft();
+    execution.start.mockImplementation(async () => {
+      execution.error = 'Cannot connect';
+    });
+    await replay();
+    expect(container.textContent).toContain('Cannot connect');
+    expect(button('Save script').disabled).toBe(false);
+    await click('Discard recording');
+    await click('Keep editing');
+    expect(recorder.releaseScenarioSession).not.toHaveBeenCalled();
+    await click('Discard recording');
+    await click('Discard');
+    expect(recorder.releaseScenarioSession).toHaveBeenCalledOnce();
+    expect(button('Record new script')).toBeTruthy();
+    expect(container.querySelector('.studio-draft-toolbar')).toBeNull();
+  });
   it('records ordered mixed steps, drains before saving, and reopens saved content', async () => {
     await render();
     await click('Record new script');
@@ -181,7 +424,7 @@ describe('scenario recording workflow', () => {
     });
     session = { ...session, events: [scenarioEvent()] };
     await render();
-    await click('Insert checkpoint');
+    await click('Add assertion');
     const expectation = '  Confirmation is visible\nThe title stays exact.  ';
     await fill('Expected result', expectation);
     await click('Insert');
@@ -365,12 +608,13 @@ describe('scenario recording workflow', () => {
   it('blocks page/mode navigation during recording and preserves failed/unsaved drafts', async () => {
     await render();
     await click('Record new script');
-    let allowed = true;
+    let navigation!: Promise<boolean>;
     await act(async () => {
-      allowed = await canNavigateStudio();
+      navigation = canNavigateStudio();
     });
-    expect(allowed).toBe(false);
-    expect(container.textContent).toContain('Stop recording before leaving.');
+    await click('Cancel');
+    expect(await navigation).toBe(false);
+    expect(recorder.cancelScenarioRecording).not.toHaveBeenCalled();
     session = { ...session, events: [scenarioEvent()] };
     await render();
     await finish();
@@ -398,5 +642,42 @@ describe('scenario recording workflow', () => {
     expect(await decision).toBe(true);
     expect(recorder.releaseScenarioSession).toHaveBeenCalledWith(session.id);
     expect(container.querySelector('[data-scenario-draft="true"]')).toBeNull();
+  });
+});
+
+describe('forced recording exit', () => {
+  it('cancels stalled recognition without waiting and ignores its late completion', async () => {
+    await render();
+    await click('Record new script');
+    await click('Stop recording');
+    await click('Force exit');
+    await click('Exit and discard');
+    expect(recorder.cancelScenarioRecording).toHaveBeenCalledWith(session.id);
+    expect(recorder.releaseScenarioSession).not.toHaveBeenCalled();
+    expect(button('Record new script')).toBeTruthy();
+    await act(async () => {
+      stopped?.();
+    });
+    expect(button('Record new script')).toBeTruthy();
+    expect(container.textContent).not.toContain('Save script');
+  });
+  it('lets navigation cancel recording and offers retry if cancellation fails', async () => {
+    await render();
+    await click('Record new script');
+    let navigation!: Promise<boolean>;
+    await act(async () => {
+      navigation = canNavigateStudio();
+    });
+    vi.mocked(recorder.cancelScenarioRecording).mockRejectedValueOnce(
+      new Error('offline'),
+    );
+    await click('Exit and discard');
+    expect(document.body.textContent).toContain(
+      'Unable to exit recording. Please retry.',
+    );
+    expect(container.textContent).not.toContain('Record new script');
+    await click('Exit and discard');
+    expect(await navigation).toBe(true);
+    expect(button('Record new script')).toBeTruthy();
   });
 });

@@ -733,10 +733,28 @@ const registerIpcHandlers = () => {
       return generateRecorderMetadataInMain(request);
     },
   );
+  const recorderDescriptions = new Map<string, AbortController>();
+  ipcMain.handle(
+    IPC_CHANNELS.cancelRecorderUIDescription,
+    (event, requestId) => {
+      if (typeof requestId === 'string')
+        recorderDescriptions.get(`${event.sender.id}:${requestId}`)?.abort();
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.describeRecorderUIEvents,
-    async (_event, request) => {
-      return describeRecorderUIEventsInMain(request);
+    async (event, request) => {
+      const key = `${event.sender.id}:${request.requestId ?? crypto.randomUUID()}`;
+      const abort = new AbortController();
+      recorderDescriptions.set(key, abort);
+      const cancel = () => abort.abort();
+      event.sender.once('destroyed', cancel);
+      try {
+        return await describeRecorderUIEventsInMain(request, abort.signal);
+      } finally {
+        recorderDescriptions.delete(key);
+        event.sender.removeListener('destroyed', cancel);
+      }
     },
   );
   ipcMain.handle(

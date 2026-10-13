@@ -42,6 +42,7 @@ export const IPC_CHANNELS = {
   generateRecorderCode: 'studio:generate-recorder-code',
   generateRecorderMetadata: 'studio:generate-recorder-metadata',
   describeRecorderUIEvents: 'studio:describe-recorder-ui-events',
+  cancelRecorderUIDescription: 'studio:cancel-recorder-ui-description',
   prepareRecorderMarkdownReplay: 'studio:prepare-recorder-markdown-replay',
   chooseReplayFile: 'studio:choose-replay-file',
   // Auto-updater bridge — main owns the electron-updater state machine,
@@ -118,6 +119,7 @@ export interface GenerateRecorderMetadataResult {
 }
 
 export interface DescribeRecorderUIEventsRequest {
+  requestId?: string;
   input: {
     target?: MidsceneRecorderTarget;
     events: MidsceneRecorderEvent[];
@@ -306,6 +308,7 @@ export interface StudioRuntimeApi {
   describeRecorderUIEvents: (
     request: DescribeRecorderUIEventsRequest,
   ) => Promise<DescribeRecorderUIEventsResult>;
+  cancelRecorderUIDescription: (requestId: string) => Promise<void>;
   prepareRecorderMarkdownReplay: (
     request: PrepareRecorderMarkdownReplayRequest,
   ) => Promise<PrepareRecorderMarkdownReplayResult>;

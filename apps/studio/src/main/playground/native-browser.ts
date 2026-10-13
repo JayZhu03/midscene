@@ -420,6 +420,7 @@ export class NativeBrowserHost {
                 packet.payload.y = undefined;
               }
             }
+            if (!enabled) return;
             // Buffer in Node, not in the document: navigation can destroy the
             // document before a double-click disambiguation timer fires.
             if (packet.payload.actionType === 'Tap') {
@@ -452,7 +453,10 @@ export class NativeBrowserHost {
           const preload = await page.evaluateOnNewDocument(source);
           current.stopRecording = async () => {
             if (!enabled) return;
+            // Release local ownership before awaiting an unresponsive page.
+            enabled = false;
             clearInterval(captureTimer);
+            flushClick();
             if (!page.isClosed()) {
               await Promise.all(
                 page
@@ -470,8 +474,6 @@ export class NativeBrowserHost {
               );
               await page.removeExposedFunction(binding);
             }
-            flushClick();
-            enabled = false;
           };
           try {
             await Promise.all(

@@ -22,6 +22,7 @@ export interface DescribeRecorderUIEventInput {
 }
 
 export interface DescribeRecorderUIEventOptions {
+  abortSignal?: AbortSignal;
   maxRetries?: number;
   retryDelayMs?: number;
   concurrency?: number;
@@ -450,10 +451,12 @@ async function describeWithRetry(
   modelRuntime: ModelRuntime,
   options: Required<
     Pick<DescribeRecorderUIEventOptions, 'maxRetries' | 'retryDelayMs'>
-  >,
+  > &
+    Pick<DescribeRecorderUIEventOptions, 'abortSignal'>,
 ) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= options.maxRetries; attempt += 1) {
+    options.abortSignal?.throwIfAborted();
     try {
       const afterScreenshot = getRecorderEventAfterScreenshot(event);
       const pageContext = getPageSemanticContext(event);
@@ -512,6 +515,7 @@ The target or region is highlighted in the screenshot below. Convert this event 
             },
           ],
           modelRuntime,
+          { abortSignal: options.abortSignal },
         );
 
       const content = response.content;
@@ -570,6 +574,7 @@ The target or region is highlighted in the screenshot below. Convert this event 
         confidence: content.confidence || 'medium',
       };
     } catch (error) {
+      options.abortSignal?.throwIfAborted();
       lastError = error;
       if (attempt < options.maxRetries) {
         await delay(options.retryDelayMs);
@@ -635,6 +640,7 @@ export async function describeRecorderUIEvent(
   modelConfig: IModelConfig,
   options: DescribeRecorderUIEventOptions = {},
 ): Promise<DescribeRecorderUIEventResult> {
+  options.abortSignal?.throwIfAborted();
   const event = input.event;
   const rect = getRecorderUIEventTargetRect(event);
   const screenshot = getRecorderEventScreenshot(event);
@@ -659,6 +665,7 @@ export async function describeRecorderUIEvent(
       screenshotWithBox || screenshot,
       modelRuntime,
       {
+        abortSignal: options.abortSignal,
         maxRetries: options.maxRetries ?? RECORDER_UI_DESCRIBER_DEFAULT_RETRIES,
         retryDelayMs:
           options.retryDelayMs ?? RECORDER_UI_DESCRIBER_DEFAULT_RETRY_DELAY_MS,
@@ -673,6 +680,7 @@ export async function describeRecorderUIEvent(
       },
     };
   } catch (error) {
+    options.abortSignal?.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
     return {
       usedFallback: true,
@@ -701,6 +709,7 @@ export async function describeRecorderUIEvents(
 
   async function worker() {
     while (cursor < inputs.length) {
+      options.abortSignal?.throwIfAborted();
       const index = cursor;
       cursor += 1;
       results[index] = await describeRecorderUIEvent(

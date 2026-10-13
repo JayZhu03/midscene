@@ -41,6 +41,35 @@ describe('recorder-ui-describer', () => {
     rs.mocked(callAIWithObjectResponse).mockReset();
   });
 
+  it('propagates cancellation to the model and never retries or falls back after abort', async () => {
+    const abort = new AbortController();
+    rs.mocked(callAIWithObjectResponse).mockImplementation(
+      async (_messages, _config, options) => {
+        expect(options?.abortSignal).toBe(abort.signal);
+        abort.abort(new Error('Recording cancelled'));
+        throw new Error('Request aborted');
+      },
+    );
+    await expect(
+      describeRecorderUIEvent(
+        {
+          event: {
+            type: 'click',
+            source: 'studio-preview',
+            timestamp: 1,
+            hashId: 'cancelled',
+            elementRect: { x: 120, y: 160 },
+            pageInfo: { width: 1280, height: 720 },
+            screenshotWithBox: screenshot,
+          },
+        },
+        modelConfig,
+        { abortSignal: abort.signal, maxRetries: 3 },
+      ),
+    ).rejects.toThrow('Recording cancelled');
+    expect(callAIWithObjectResponse).toHaveBeenCalledTimes(1);
+  });
+
   it('converts point-only recorder events into bounded target rectangles', () => {
     const rect = getRecorderUIEventTargetRect({
       type: 'click',

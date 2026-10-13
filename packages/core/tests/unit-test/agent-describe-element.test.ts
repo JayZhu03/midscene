@@ -69,6 +69,29 @@ describe('element describer utils', () => {
     rs.restoreAllMocks();
   });
 
+  it('cancels description without returning a failed result or retrying', async () => {
+    const agent = new Agent(createMockInterface(), {
+      generateReport: false,
+      modelConfig,
+    });
+    const abort = new AbortController();
+    const describe = rs
+      .spyOn(agent.service, 'describe')
+      .mockImplementation(async (_target, _runtime, options) => {
+        expect(options?.abortSignal).toBe(abort.signal);
+        abort.abort(new Error('Recording cancelled'));
+        throw new Error('Aborted');
+      });
+    await expect(
+      describeElementAtPoint(createElementDescriberRuntime(agent), [10, 20], {
+        abortSignal: abort.signal,
+        verifyPrompt: false,
+      }),
+    ).rejects.toThrow('Recording cancelled');
+    expect(describe).toHaveBeenCalledTimes(1);
+    await agent.destroy();
+  });
+
   it('skips locator verification when verifyPrompt is false', async () => {
     const agent = new Agent(createMockInterface(), {
       generateReport: false,

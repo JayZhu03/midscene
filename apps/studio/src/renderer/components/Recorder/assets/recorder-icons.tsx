@@ -97,6 +97,19 @@ export function ReplayIcon() {
   );
 }
 
+export function ExitRecordingIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24" strokeWidth="1.8">
+      <path
+        d="M10 5H5v14h5M10 12h10m-4-4 4 4-4 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function CheckIcon() {
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 24 24" strokeWidth="1.8">

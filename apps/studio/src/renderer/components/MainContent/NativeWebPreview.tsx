@@ -13,7 +13,7 @@ import {
 } from '../ConnectingPreview/use-connection-delay';
 
 const overlays =
-  '[role="dialog"], [role="menu"], .ant-modal-mask, .ant-drawer-mask, .ant-dropdown, .ant-select-dropdown, .ant-popover, .ant-tooltip';
+  '[role="dialog"], [role="menu"], [aria-modal="true"], dialog[open], [popover], .ant-modal-mask, .ant-drawer-mask, .ant-dropdown, .ant-select-dropdown, .ant-popover, .ant-tooltip, .ant-image-preview-wrap, .ant-image-preview-mask, .history-modal-overlay';
 
 /** A layout anchor, not a second browser. Electron paints the live guest here. */
 export function NativeWebPreview({
@@ -51,17 +51,34 @@ export function NativeWebPreview({
     const bridge = window.studioRuntime?.nativeBrowserLayout;
     if (!node || !bridge) return;
     let disposed = false;
-    let inFlight = false;
+    let revision = 0;
     let frame = 0;
     let lastSize = '';
     let lastStatus = '';
     const update = async () => {
-      if (disposed || inFlight) return;
+      if (disposed) return;
+      const currentRevision = ++revision;
       const rect = node.getBoundingClientRect();
-      const obscured = Array.from(document.querySelectorAll(overlays)).some(
-        (el) => {
+      // Fullscreen is a Chromium top layer, not an Ant Design modal. Native
+      // child views still paint above it unless explicitly hidden.
+      const obscured =
+        Boolean(document.fullscreenElement) ||
+        Array.from(document.querySelectorAll(overlays)).some((el) => {
           const style = getComputedStyle(el);
           const bounds = el.getBoundingClientRect();
+          // Retained portals may have a hidden parent after their close motion.
+          for (
+            let parent = el.parentElement;
+            parent;
+            parent = parent.parentElement
+          ) {
+            const parentStyle = getComputedStyle(parent);
+            if (
+              parentStyle.display === 'none' ||
+              parentStyle.visibility === 'hidden'
+            )
+              return false;
+          }
           return (
             style.visibility !== 'hidden' &&
             style.display !== 'none' &&
@@ -73,8 +90,7 @@ export function NativeWebPreview({
             bounds.top < rect.bottom &&
             bounds.bottom > rect.top
           );
-        },
-      );
+        });
       const visible =
         !obscured &&
         !delayedRef.current &&
@@ -82,7 +98,6 @@ export function NativeWebPreview({
         rect.width > 1 &&
         rect.height > 1;
       setCovered(!visible);
-      inFlight = true;
       try {
         const next = await bridge({
           x: Math.max(0, rect.x),
@@ -92,7 +107,9 @@ export function NativeWebPreview({
           visible,
           blocked: blockedRef.current,
         });
-        if (disposed) return;
+        // A hide request may capture a snapshot. Do not let that slow response
+        // block a newer popup/fullscreen change or overwrite its state.
+        if (disposed || currentRevision !== revision) return;
         setState((prior) =>
           prior?.available === next.available &&
           prior?.id === next.id &&
@@ -118,18 +135,19 @@ export function NativeWebPreview({
           );
         }
       } catch (error) {
-        if (!disposed)
+        if (!disposed && currentRevision === revision)
           callbacks.current.onStatus(
             'error',
             error instanceof Error ? error.message : String(error),
           );
-      } finally {
-        inFlight = false;
       }
     };
     const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => void update());
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        void update();
+      });
     };
     scheduleRef.current = schedule;
     const resize = new ResizeObserver(schedule);
@@ -139,10 +157,22 @@ export function NativeWebPreview({
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ['class', 'style', 'aria-hidden'],
+      attributeFilter: [
+        'class',
+        'style',
+        'aria-hidden',
+        'aria-modal',
+        'open',
+        'hidden',
+        'role',
+      ],
     });
     window.addEventListener('resize', schedule);
     document.addEventListener('visibilitychange', schedule);
+    document.addEventListener('fullscreenchange', schedule);
+    document.addEventListener('toggle', schedule, true);
+    document.addEventListener('transitionend', schedule, true);
+    document.addEventListener('animationend', schedule, true);
     // Native status contains only small metadata; no continuous screenshot traffic.
     const timer = setInterval(schedule, 500);
     schedule();
@@ -154,6 +184,10 @@ export function NativeWebPreview({
       mutations.disconnect();
       window.removeEventListener('resize', schedule);
       document.removeEventListener('visibilitychange', schedule);
+      document.removeEventListener('fullscreenchange', schedule);
+      document.removeEventListener('toggle', schedule, true);
+      document.removeEventListener('transitionend', schedule, true);
+      document.removeEventListener('animationend', schedule, true);
       void bridge({
         x: 0,
         y: 0,

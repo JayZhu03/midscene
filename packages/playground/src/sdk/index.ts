@@ -313,9 +313,10 @@ export class PlaygroundSDK {
 
   async describeRecorderEventAtPoint(
     event: PlaygroundRecorderEvent,
+    signal?: AbortSignal,
   ): Promise<PlaygroundRecorderDescribeResult> {
     if (this.adapter instanceof RemoteExecutionAdapter) {
-      return this.adapter.describeRecorderEventAtPoint(event);
+      return this.adapter.describeRecorderEventAtPoint(event, signal);
     }
     return {
       ok: false,

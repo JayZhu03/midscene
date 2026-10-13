@@ -24,6 +24,7 @@ export type LocatorVerifyFn = (input: {
 }) => LocateValidatorResult | boolean;
 
 export type DescribeElementAtPointOptions = {
+  abortSignal?: AbortSignal;
   verifyPrompt?: boolean;
   retryLimit?: number;
   deepDescribe?: boolean;
@@ -160,12 +161,13 @@ export async function verifyLocator(
   locateOpt: LocateOption | undefined,
   expectCenter: [number, number],
   verifyLocateOption?: LocatorValidatorOption &
-    Pick<LocateOption, 'deepLocate'>,
+    Pick<LocateOption, 'deepLocate'> & { abortSignal?: AbortSignal },
 ): Promise<LocateValidatorResult> {
   return locateAndVerify(runtime, prompt, expectCenter, {
     centerDistanceThreshold: verifyLocateOption?.centerDistanceThreshold,
     deepLocate: verifyLocateOption?.deepLocate,
     uiContext: locateOpt?.uiContext,
+    abortSignal: verifyLocateOption?.abortSignal,
   });
 }
 
@@ -195,6 +197,7 @@ export async function describeElementAtPoint(
   center: [number, number],
   opt?: DescribeElementAtPointOptions,
 ): Promise<AgentDescribeElementAtPointResult> {
+  opt?.abortSignal?.throwIfAborted();
   const { verifyPrompt = true, retryLimit = 3 } = opt || {};
   const { screenshotContext, locateOpt, targetCenter } =
     await createScreenshotBoundLocatorContext(center, opt);
@@ -211,6 +214,7 @@ export async function describeElementAtPoint(
   let failureStage: AgentDescribeElementAtPointResult['failureStage'];
 
   while (!success && retryCount < retryLimit) {
+    opt?.abortSignal?.throwIfAborted();
     if (retryCount >= 1 && autoRetryDeepDescribe) {
       deepDescribe = true;
     }
@@ -232,6 +236,7 @@ export async function describeElementAtPoint(
       : {
           deepDescribe,
         };
+    if (opt?.abortSignal) describeOpt.abortSignal = opt.abortSignal;
     let text: Awaited<
       ReturnType<ElementDescriberRuntime['service']['describe']>
     >;
@@ -242,6 +247,7 @@ export async function describeElementAtPoint(
         describeOpt,
       );
     } catch (error) {
+      opt?.abortSignal?.throwIfAborted();
       return {
         prompt: resultPrompt,
         deepLocate,
@@ -252,6 +258,7 @@ export async function describeElementAtPoint(
         failureStage: 'describe',
       };
     }
+    opt?.abortSignal?.throwIfAborted();
     if (!text.description) {
       return {
         prompt: resultPrompt,
@@ -304,6 +311,7 @@ export async function describeElementAtPoint(
       lastError = undefined;
       failureStage = 'verify';
     } catch (error) {
+      opt?.abortSignal?.throwIfAborted();
       lastError = errorMessage(error);
       failureStage = 'verify';
       opt?.onProgress?.({

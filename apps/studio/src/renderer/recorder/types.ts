@@ -102,6 +102,7 @@ export interface StudioRecorderContextValue {
   }) => Promise<StudioRecordingSession | null>;
   stopRecording: () => Promise<void>;
   stopScenarioRecording: (sessionId: string) => Promise<StudioRecordingSession>;
+  cancelScenarioRecording: (sessionId: string) => Promise<void>;
   addCheckpoint: (
     sessionId: string,
     instruction: string,

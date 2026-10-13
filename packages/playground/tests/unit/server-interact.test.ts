@@ -21,6 +21,8 @@ const VALID_PNG_BASE64 =
 
 function createMockResponse() {
   return {
+    on: rs.fn(),
+    off: rs.fn(),
     statusCode: 200,
     body: undefined as unknown,
     headers: {} as Record<string, string>,
@@ -139,6 +141,30 @@ function mockDescribeElementAtPoint(
 }
 
 describe('PlaygroundServer manual interaction APIs', () => {
+  test('force stop releases recording without waiting for captures and ignores stale cancellation', async () => {
+    const server = new PlaygroundServer({ interface: {} } as any);
+    const internal = server as any;
+    internal._recorderSessionId = 'old';
+    internal._recorderEventQueue = new Promise(() => {});
+    const stopNative = rs.fn(async () => {});
+    internal._stopNativeRecording = stopNative;
+    await server.launch(6130);
+    const stop = getRouteHandler(server, 'post', '/recorder/stop');
+    const response = createMockResponse();
+    await stop({ body: { force: true, sessionId: 'old' } }, response);
+    expect(response.body).toEqual({ ok: true });
+    expect(internal._recorderSessionId).toBeNull();
+    expect(stopNative).toHaveBeenCalledTimes(1);
+    internal._recorderSessionId = 'new';
+    internal._stopNativeRecording = rs.fn();
+    await stop(
+      { body: { force: true, sessionId: 'old' } },
+      createMockResponse(),
+    );
+    expect(internal._recorderSessionId).toBe('new');
+    expect(internal._stopNativeRecording).not.toHaveBeenCalled();
+  });
+
   test('recorder stop does not wait for navigation completion', async () => {
     const server = new PlaygroundServer({ interface: {} } as any);
     (server as any)._recorderSessionId = 'session-navigation-pending';

@@ -170,6 +170,7 @@ export async function generateRecorderMetadataInMain(
 
 export async function describeRecorderUIEventsInMain(
   request: DescribeRecorderUIEventsRequest,
+  abortSignal?: AbortSignal,
 ): Promise<DescribeRecorderUIEventsResult> {
   if (!request?.input?.events?.length) {
     return { events: [], results: [] };
@@ -188,6 +189,7 @@ export async function describeRecorderUIEventsInMain(
     request.modelConfig,
     {
       concurrency: 2,
+      abortSignal,
     },
   );
 

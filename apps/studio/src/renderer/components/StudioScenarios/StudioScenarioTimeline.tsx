@@ -1,3 +1,4 @@
+import type { ScenarioStepResult } from '@midscene/playground';
 import {
   RecordTimeline,
   type RecordTimelineEntry,
@@ -10,6 +11,7 @@ import {
   EditIcon,
   TrashIcon,
 } from '../Recorder/assets/recorder-icons';
+import { runStatusLabel } from './StudioScriptSequence';
 import {
   type ScenarioScript,
   type ScenarioScriptStep,
@@ -28,6 +30,7 @@ export function StudioScenarioTimeline({
   onCancel,
   dirty = false,
   busy = false,
+  replay,
 }: {
   steps: ScenarioScriptStep[];
   script: ScenarioScript | null;
@@ -37,12 +40,32 @@ export function StudioScenarioTimeline({
   onCancel?: () => void;
   dirty?: boolean;
   busy?: boolean;
+  replay?: { steps: ScenarioStepResult[]; active: boolean };
 }) {
   useStudioLanguage();
   const checkpointTitle = t('Checkpoint');
   const [assetUrls, setAssetUrls] = useState<Record<string, string>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string>();
+  const replayResults = useMemo(
+    () => new Map(replay?.steps.map((step) => [step.id, step])),
+    [replay?.steps],
+  );
+  const currentReplayStep = replay?.steps.find(
+    (step) => step.status === 'running',
+  )?.id;
+  useEffect(() => {
+    if (!replay?.active || !currentReplayStep) return;
+    const marker = scrollContainerRef.current?.querySelector(
+      '[data-replay-status="running"]',
+    );
+    marker?.closest('[data-entry-id]')?.scrollIntoView?.({
+      block: 'nearest',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    });
+  }, [currentReplayStep, replay?.active]);
   useEffect(() => {
     if (!dirty) setEditingId(undefined);
   }, [dirty, script?.id]);
@@ -213,92 +236,125 @@ export function StudioScenarioTimeline({
           entries={entries}
           layout="parent-scroll"
           scrollContainerRef={scrollContainerRef}
-          autoScroll={!script}
+          autoScroll={!script && !replay}
           renderGap={onChange ? insertAt : undefined}
           renderActions={
-            onChange
+            replay
               ? (index) => {
-                  const step = steps[index];
-                  if (step.type === 'playwright-operation') return null;
+                  const result = replayResults.get(steps[index].id);
+                  const status = result?.status ?? 'pending';
+                  const label =
+                    result?.recovery?.status === 'running'
+                      ? t('Agent taking over')
+                      : result?.recovery?.status === 'recovered'
+                        ? t('Passed · Agent recovery')
+                        : status === 'pending' && !replay.active
+                          ? t('Not executed')
+                          : runStatusLabel(status);
                   return (
-                    <Dropdown
-                      trigger={['click']}
-                      disabled={busy}
-                      overlayClassName="studio-scenario-menu"
-                      menu={{
-                        items: [
-                          {
-                            key: 'edit',
-                            label: t('Edit step'),
-                            icon: <EditIcon />,
-                          },
-                          {
-                            key: 'delete',
-                            label: t('Delete'),
-                            icon: <TrashIcon />,
-                            danger: true,
-                          },
-                        ],
-                        onClick: ({ key, domEvent }) => {
-                          domEvent.stopPropagation();
-                          if (busy) return;
-                          if (key === 'edit') setEditingId(step.id);
-                          else
-                            onChange(
-                              steps.filter((item) => item.id !== step.id),
-                            );
-                        },
-                      }}
+                    <span
+                      className="studio-draft-step-status"
+                      data-replay-status={status}
                     >
-                      <Button
-                        type="text"
-                        size="small"
-                        disabled={busy}
-                        aria-label={`${t('Step actions')} ${index + 1}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        •••
-                      </Button>
-                    </Dropdown>
+                      {label}
+                    </span>
                   );
                 }
-              : undefined
+              : onChange
+                ? (index) => {
+                    const step = steps[index];
+                    if (step.type === 'playwright-operation') return null;
+                    return (
+                      <Dropdown
+                        trigger={['click']}
+                        disabled={busy}
+                        overlayClassName="studio-scenario-menu"
+                        menu={{
+                          items: [
+                            {
+                              key: 'edit',
+                              label: t('Edit step'),
+                              icon: <EditIcon />,
+                            },
+                            {
+                              key: 'delete',
+                              label: t('Delete'),
+                              icon: <TrashIcon />,
+                              danger: true,
+                            },
+                          ],
+                          onClick: ({ key, domEvent }) => {
+                            domEvent.stopPropagation();
+                            if (busy) return;
+                            if (key === 'edit') setEditingId(step.id);
+                            else
+                              onChange(
+                                steps.filter((item) => item.id !== step.id),
+                              );
+                          },
+                        }}
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          disabled={busy}
+                          aria-label={`${t('Step actions')} ${index + 1}`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          •••
+                        </Button>
+                      </Dropdown>
+                    );
+                  }
+                : undefined
           }
           renderEditor={
-            onChange
+            replay
               ? (index) => {
-                  const step = steps[index];
-                  if (
-                    step.type === 'playwright-operation' ||
-                    editingId !== step.id
-                  )
-                    return null;
-                  return (
-                    <Input.TextArea
-                      autoFocus
-                      aria-label={t('Step instruction')}
-                      placeholder={t(
-                        step.type === 'agent-assertion'
-                          ? 'Describe the expected result'
-                          : 'Describe what Agent should do',
-                      )}
-                      autoSize={{ minRows: 2, maxRows: 8 }}
-                      maxLength={100000}
-                      disabled={busy}
-                      value={step.instruction}
-                      onChange={(event) =>
-                        onChange(
-                          steps.map((item) =>
-                            item.id === step.id
-                              ? agentStepInstruction(item, event.target.value)
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  );
+                  const result = replayResults.get(steps[index].id);
+                  const detail =
+                    result?.error ||
+                    (result?.status === 'failed' ? result.detail : undefined);
+                  return detail ? (
+                    <div className="studio-draft-step-error" role="alert">
+                      {t(detail)}
+                    </div>
+                  ) : null;
                 }
-              : undefined
+              : onChange
+                ? (index) => {
+                    const step = steps[index];
+                    if (
+                      step.type === 'playwright-operation' ||
+                      editingId !== step.id
+                    )
+                      return null;
+                    return (
+                      <Input.TextArea
+                        autoFocus
+                        aria-label={t('Step instruction')}
+                        placeholder={t(
+                          step.type === 'agent-assertion'
+                            ? 'Describe the expected result'
+                            : 'Describe what Agent should do',
+                        )}
+                        autoSize={{ minRows: 2, maxRows: 8 }}
+                        maxLength={100000}
+                        disabled={busy}
+                        value={step.instruction}
+                        onChange={(event) =>
+                          onChange(
+                            steps.map((item) =>
+                              item.id === step.id
+                                ? agentStepInstruction(item, event.target.value)
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    );
+                  }
+                : undefined
           }
         />
       </div>
