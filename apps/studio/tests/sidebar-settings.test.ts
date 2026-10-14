@@ -29,8 +29,8 @@ describe('studio sidebar settings entrypoints', () => {
 
     expect(html).toContain('Language');
     expect(html).toContain('Theme');
-    expect(html).toContain('GitHub');
-    expect(html).toContain('Website');
+    expect(html).not.toContain('GitHub');
+    expect(html).not.toContain('Website');
     expect(html).not.toContain('Environment');
     expect(html).not.toContain('Config');
   });

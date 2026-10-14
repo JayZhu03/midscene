@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { UpdateStatus } from '../../../shared/updater-contract';
 import {
   type StudioLanguage,
   setStudioLanguage,
@@ -11,7 +10,6 @@ import {
   useStudioTheme,
 } from '../../theme/ThemeProvider';
 import SettingItem from './SettingItem';
-import UpdaterSection from './UpdaterSection';
 
 const LANGUAGE_OPTIONS: { value: StudioLanguage; label: string }[] = [
   { value: 'en', label: 'English' },
@@ -67,39 +65,6 @@ function CheckIcon() {
   );
 }
 
-function ExternalLinkIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-[12px] w-[12px] text-text-secondary"
-      fill="none"
-      viewBox="0 0 12 12"
-    >
-      <path
-        d="M7.5 2H10V4.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.2"
-      />
-      <path
-        d="M5 7L10 2"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.2"
-      />
-      <path
-        d="M10 7.5V8.8C10 9.46274 9.46274 10 8.8 10H3.2C2.53726 10 2 9.46274 2 8.8V3.2C2 2.53726 2.53726 2 3.2 2H4.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.2"
-      />
-    </svg>
-  );
-}
-
 interface OptionListProps<T extends string> {
   options: { value: T; label: string }[];
   selected: T;
@@ -139,27 +104,14 @@ function OptionList<T extends string>({
 
 export interface SettingsPanelProps {
   className?: string;
-  onGithubClick?: () => void;
   /** Fires after the user picks a theme so the parent can dismiss the
    * popover — the new theme is hidden behind the popover otherwise. */
   onThemeChange?: () => void;
-  onWebsiteClick?: () => void;
-  updater?: {
-    status: UpdateStatus;
-    appVersion: string | null;
-    onDownload: () => void;
-    onInstall: () => void;
-    onOpenDownloadPage?: () => void;
-    onOpenRunDirectory?: () => void;
-  };
 }
 
 export default function SettingsPanel({
   className,
-  onGithubClick,
   onThemeChange,
-  onWebsiteClick,
-  updater,
 }: SettingsPanelProps) {
   const { mode, setMode } = useStudioTheme();
   const language = useStudioLanguage();
@@ -241,35 +193,6 @@ export default function SettingsPanel({
             value={language === 'zh' ? '中文' : 'English'}
           />
         </div>
-
-        <div className="my-[4px] h-px w-full bg-divider" />
-
-        <div className="flex flex-col">
-          <SettingItem
-            label="GitHub"
-            onClick={onGithubClick}
-            trailingIcon={<ExternalLinkIcon />}
-          />
-          <SettingItem
-            label={t('Website')}
-            onClick={onWebsiteClick}
-            trailingIcon={<ExternalLinkIcon />}
-          />
-        </div>
-
-        {updater ? (
-          <>
-            <div className="my-[4px] h-px w-full bg-divider" />
-            <UpdaterSection
-              appVersion={updater.appVersion}
-              onDownload={updater.onDownload}
-              onInstall={updater.onInstall}
-              onOpenDownloadPage={updater.onOpenDownloadPage}
-              onOpenRunDirectory={updater.onOpenRunDirectory}
-              status={updater.status}
-            />
-          </>
-        ) : null}
       </div>
 
       {openPopover === 'theme' ? (

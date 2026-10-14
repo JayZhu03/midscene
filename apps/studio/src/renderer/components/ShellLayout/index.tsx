@@ -476,30 +476,7 @@ export default function ShellLayout() {
         >
           {settingsOpen && (
             <div className="absolute bottom-[78px] left-0 z-50">
-              <SettingsPanel
-                onGithubClick={() =>
-                  openExternalUrl(STUDIO_EXTERNAL_LINKS.github)
-                }
-                onThemeChange={closeSettings}
-                onWebsiteClick={() =>
-                  openExternalUrl(STUDIO_EXTERNAL_LINKS.website)
-                }
-                updater={{
-                  appVersion: updater.appVersion,
-                  onDownload: () => {
-                    void updater.download();
-                  },
-                  onInstall: () => {
-                    void updater.install();
-                  },
-                  onOpenDownloadPage: () =>
-                    openExternalUrl(STUDIO_EXTERNAL_LINKS.studioReleases),
-                  onOpenRunDirectory: () => {
-                    void window.electronShell?.openRunDirectory();
-                  },
-                  status: updater.status,
-                }}
-              />
+              <SettingsPanel onThemeChange={closeSettings} />
             </div>
           )}
           <SidebarFooter
