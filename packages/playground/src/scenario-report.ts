@@ -107,7 +107,7 @@ export function renderScenarioReport(
       ? `${Math.max(0, (run.finishedAt - run.startedAt) / 1000).toFixed(1)} s`
       : '—';
   lines.push(
-    `${clean(date)} · ${tr('耗时', 'Duration')} ${clean(duration)} · ${run.sessionMode === 'fresh' ? tr('全新会话', 'Fresh session') : tr('沿用当前会话', 'Current session')}`,
+    `${clean(date)} · ${tr('耗时', 'Duration')} ${clean(duration)} · ${run.sessionMode === 'fresh' ? (run.platformId === 'android' ? tr('重启应用', 'Restart application') : tr('全新会话', 'Fresh session')) : tr('沿用当前会话', 'Current session')}`,
     '',
   );
   lines.push(

@@ -100,6 +100,79 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('runs Android operations and visual assertions without attaching Playwright or resetting app data', async () => {
+    const { server, agent, status } = await setup();
+    const screenshots = rs.fn(async () => 'data:image/png;base64,live');
+    const terminate = rs.fn(async () => {});
+    const launch = rs.fn(async () => {});
+    Object.assign(agent.interface, {
+      interfaceType: 'android',
+      screenshotBase64: screenshots,
+      terminate,
+      launch,
+    });
+    const input = plan();
+    input.platformId = 'android';
+    input.appPackage = 'com.example.mom';
+    input.sessionMode = 'fresh';
+    input.scripts = [input.scripts[0]];
+    input.scripts[0].steps.unshift({
+      id: 'tap',
+      type: 'agent-operation',
+      description: 'Open orders',
+      instruction: 'Open orders',
+    });
+    const before = rs.mocked(connectScenarioPage).mock.calls.length;
+    try {
+      const res = response();
+      handler(server, 'post', '/scenario-runs')({ body: input }, res);
+      expect(res.statusCode).toBe(202);
+      await until(() => !status().busy);
+      expect(status().run.status).toBe('completed');
+      expect(status().run.platformId).toBe('android');
+      expect(terminate).toHaveBeenCalledWith('com.example.mom');
+      expect(launch).toHaveBeenCalledWith('com.example.mom');
+      expect(screenshots).toHaveBeenCalledTimes(1);
+      expect(agent.aiAct).toHaveBeenCalledTimes(1);
+      expect(agent.aiAssert).toHaveBeenCalledTimes(1);
+      expect(rs.mocked(connectScenarioPage).mock.calls.length).toBe(before);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('rejects a web scenario on Android before executing any steps', async () => {
+    const { server, agent } = await setup();
+    agent.interface.interfaceType = 'android';
+    try {
+      const res = response();
+      handler(server, 'post', '/scenario-runs')({ body: plan() }, res);
+      expect(res.statusCode).toBe(400);
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('does not restart Android without an explicit target app', async () => {
+    const { server, agent, status } = await setup();
+    const terminate = rs.fn();
+    Object.assign(agent.interface, { interfaceType: 'android', terminate });
+    const input = {
+      ...plan(),
+      platformId: 'android' as const,
+      sessionMode: 'fresh' as const,
+    };
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(status().run.error).toContain('target application');
+      expect(terminate).not.toHaveBeenCalled();
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
   test('rechecks an associated route after an Agent claims the failed menu operation completed', async () => {
     const { server, agent, status } = await setup();
     const beforeUrl = 'https://example.test/app/#/workbench';

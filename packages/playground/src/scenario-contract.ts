@@ -17,6 +17,8 @@ export interface ScenarioRunScript {
   steps: ScenarioRunStep[];
 }
 export interface ScenarioRunInput {
+  platformId?: 'web' | 'android';
+  appPackage?: string;
   scenarioId: string;
   sessionMode?: 'current' | 'fresh';
   scenarioName?: string;
@@ -60,6 +62,7 @@ export interface ScenarioContinuation {
   reason?: string;
 }
 export interface ScenarioReportEntry {
+  platformId?: 'web' | 'android';
   id: string;
   name?: string;
   scenarioName?: string;
@@ -92,6 +95,7 @@ export type ScenarioReportPhase =
   | 'saving'
   | 'ready';
 export interface ScenarioRunState {
+  platformId?: 'web' | 'android';
   id: string;
   scenarioId: string;
   sessionMode?: 'current' | 'fresh';

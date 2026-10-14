@@ -9,6 +9,7 @@ import { runStatusLabel } from './StudioScriptSequence';
 import type { SessionMode } from './session-mode';
 
 export function StudioRecordingDraftActions({
+  android = false,
   run,
   starting,
   busy,
@@ -20,6 +21,7 @@ export function StudioRecordingDraftActions({
   onSave,
   onDiscard,
 }: {
+  android?: boolean;
   run: ScenarioRunState | null;
   starting: boolean;
   busy: boolean;
@@ -68,7 +70,12 @@ export function StudioRecordingDraftActions({
             menu={{
               items: [
                 { key: 'current', label: t('Use current session') },
-                { key: 'fresh', label: t('Fresh session') },
+                {
+                  key: 'fresh',
+                  label: t(
+                    android ? 'Restart application then run' : 'Fresh session',
+                  ),
+                },
               ],
               onClick: ({ key }) => {
                 if (

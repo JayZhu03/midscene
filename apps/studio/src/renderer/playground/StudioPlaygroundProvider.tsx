@@ -1,7 +1,9 @@
 import type { PlaygroundBootstrap } from '@shared/electron-contract';
+import type { DiscoverDevicesResult } from '@shared/electron-contract';
 import type { PropsWithChildren } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StudioPlaygroundReadyProvider from './StudioPlaygroundReadyProvider';
+import { bucketDiscoveredDevices, bucketDiscoveryErrors } from './selectors';
 import { StudioPlaygroundContext } from './useStudioPlayground';
 
 function getMissingBridgeError() {
@@ -20,14 +22,31 @@ export function StudioPlaygroundProvider({ children }: PropsWithChildren) {
   >({ phase: 'booting' });
   const [bootstrapTick, setBootstrapTick] = useState(0);
 
-  // Web testing has no physical devices to discover.
-  const discoveredDevices = undefined;
-  const discoveryErrors = undefined;
-  const refreshDiscoveredDevices = useCallback(async () => {}, []);
-  const setDiscoveryPollingPausedValue = useCallback(
-    (_paused: boolean) => {},
-    [],
+  const [discovery, setDiscovery] = useState<DiscoverDevicesResult>({
+    devices: [],
+    errors: [],
+  });
+  const discoveredDevices = useMemo(
+    () => bucketDiscoveredDevices(discovery.devices),
+    [discovery],
   );
+  const discoveryErrors = useMemo(
+    () => bucketDiscoveryErrors(discovery.errors),
+    [discovery],
+  );
+  const refreshDiscoveredDevices = useCallback(async () => {
+    if (window.studioRuntime)
+      setDiscovery(
+        await window.studioRuntime.discoverDevices({ forceRefresh: true }),
+      );
+  }, []);
+  const setDiscoveryPollingPausedValue = useCallback((paused: boolean) => {
+    void window.studioRuntime?.setDiscoveryPollingPaused(paused);
+  }, []);
+  useEffect(() => {
+    void refreshDiscoveredDevices().catch(() => {});
+    return window.studioRuntime?.onDiscoveredDevicesChanged(setDiscovery);
+  }, [refreshDiscoveredDevices]);
 
   const readBootstrap = useCallback(async () => {
     if (!window.studioRuntime) {

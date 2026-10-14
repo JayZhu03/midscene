@@ -152,7 +152,10 @@ describe('playground runtime bootstrap', () => {
       error: null,
     });
 
-    expect(capturedPlatforms?.map((platform) => platform.id)).toEqual(['web']);
+    expect(capturedPlatforms?.map((platform) => platform.id)).toEqual([
+      'web',
+      'android',
+    ]);
     expect(androidLoadCount).toBe(0);
     expect(computerLoadCount).toBe(0);
     expect(harmonyLoadCount).toBe(0);
@@ -166,7 +169,7 @@ describe('playground runtime bootstrap', () => {
 
     expect(
       capturedPlatforms?.find((platform) => platform.id === 'android'),
-    ).toBeUndefined();
+    ).toBeDefined();
     expect(androidLoadCount).toBe(0);
   });
 

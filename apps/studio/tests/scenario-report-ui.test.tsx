@@ -157,7 +157,15 @@ it('loads a saved report from execution records without starting or regenerating
   await act(async () =>
     root.render(
       <StudioPlaygroundContext.Provider
-        value={{ phase: 'ready', serverUrl: 'http://localhost:1234' } as any}
+        value={
+          {
+            phase: 'ready',
+            serverUrl: 'http://localhost:1234',
+            controller: {
+              state: { runtimeInfo: { platformId: 'web' }, formValues: {} },
+            },
+          } as any
+        }
       >
         <StudioExecutionRecords />
       </StudioPlaygroundContext.Provider>,

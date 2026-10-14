@@ -41,6 +41,10 @@ import { startStudioEventLoopWatchdog } from './performance-watchdog';
 import { requestPlaygroundBootstrap } from './playground/bootstrap-request';
 import { runConnectivityTest } from './playground/connectivity-test';
 import {
+  createDeviceDiscoveryService,
+  discoverAndroidDevices,
+} from './playground/device-discovery';
+import {
   createMultiPlatformRuntimeService,
   loadWebPlaygroundModule,
 } from './playground/multi-platform-runtime';
@@ -715,11 +719,26 @@ const registerIpcHandlers = () => {
   ipcMain.handle(IPC_CHANNELS.restartPlayground, async () =>
     (await getPlaygroundRuntime()).restart(),
   );
-  ipcMain.handle(IPC_CHANNELS.discoverDevices, async () => ({
-    devices: [],
-    errors: [],
-  }));
-  ipcMain.handle(IPC_CHANNELS.setDiscoveryPollingPaused, async () => {});
+  const deviceDiscovery = createDeviceDiscoveryService({
+    discoverDevices: discoverAndroidDevices,
+  });
+  deviceDiscovery.subscribe((snapshot) => {
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send(
+        IPC_CHANNELS.discoveredDevicesUpdated,
+        snapshot,
+      );
+  });
+  app.once('will-quit', () => deviceDiscovery.close());
+  ipcMain.handle(IPC_CHANNELS.discoverDevices, async (_event, request) =>
+    deviceDiscovery.getSnapshot({
+      forceRefresh: request?.forceRefresh === true,
+    }),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.setDiscoveryPollingPaused,
+    async (_event, paused) => deviceDiscovery.setPollingPaused(Boolean(paused)),
+  );
   ipcMain.handle(IPC_CHANNELS.runConnectivityTest, async (_event, request) =>
     runConnectivityTest(request),
   );

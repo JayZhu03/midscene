@@ -1,6 +1,7 @@
 import { Button, Form, Input, type InputRef, Modal } from 'antd';
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { t, useStudioLanguage } from '../../i18n';
+import { StudioPlaygroundContext } from '../../playground/useStudioPlayground';
 import { EditIcon, TrashIcon } from '../Recorder/assets/recorder-icons';
 import { StudioActionMenu } from '../StudioActionMenu';
 import { StudioScenarioScripts } from './StudioScenarioScripts';
@@ -42,11 +43,18 @@ function ScenarioPlusIcon() {
 
 export function StudioScenarios({ active }: { active: boolean }) {
   useStudioLanguage();
+  const playground = useContext(StudioPlaygroundContext);
+  const platformId: 'android' | 'web' =
+    playground?.phase === 'ready' &&
+    (playground.controller.state.runtimeInfo?.platformId ||
+      playground.controller.state.formValues?.platformId) === 'android'
+      ? 'android'
+      : 'web';
   const [scenarios, setScenarios] = useState(loadStudioScenarios);
   const transfer = useStudioTransfer(() => {
     setScenarios(loadStudioScenarios());
     setQuery('');
-  });
+  }, platformId);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null } | null>(null);
@@ -57,12 +65,18 @@ export function StudioScenarios({ active }: { active: boolean }) {
   const [deleting, setDeleting] = useState<StudioScenario | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const nameInputRef = useRef<InputRef>(null);
-  const selected = scenarios.find((scenario) => scenario.id === selectedId);
+  const selected = scenarios.find(
+    (scenario) =>
+      scenario.id === selectedId &&
+      (scenario.platformId || 'web') === platformId,
+  );
   const search = query.trim().toLocaleLowerCase();
-  const visibleScenarios = scenarios.filter((scenario) =>
-    `${scenario.name} ${scenario.description}`
-      .toLocaleLowerCase()
-      .includes(search),
+  const visibleScenarios = scenarios.filter(
+    (scenario) =>
+      (scenario.platformId || 'web') === platformId &&
+      `${scenario.name} ${scenario.description}`
+        .toLocaleLowerCase()
+        .includes(search),
   );
 
   const openEditor = (scenario?: StudioScenario) => {
@@ -86,7 +100,7 @@ export function StudioScenarios({ active }: { active: boolean }) {
     }
     try {
       const now = Date.now();
-      const next = editing.id
+      const next: StudioScenario[] = editing.id
         ? scenarios.map((scenario) =>
             scenario.id === editing.id
               ? {
@@ -101,6 +115,7 @@ export function StudioScenarios({ active }: { active: boolean }) {
             ...scenarios,
             {
               id: crypto.randomUUID(),
+              platformId,
               name: trimmedName,
               description: description.trim(),
               createdAt: now,

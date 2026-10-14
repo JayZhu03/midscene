@@ -14,14 +14,24 @@ export interface SavedWebPage {
 }
 
 export const SAVED_WEB_PAGES_KEY = 'studio.webPages.v1';
+
+function findSavedPage(url: URL, pages: SavedWebPage[]) {
+  const exact = pages.find((page) => new URL(page.url).href === url.href);
+  if (exact) return exact;
+  // Navigation may leave the saved entry URL. Only use the site as a fallback
+  // when it identifies one entry, never an arbitrary sibling route.
+  const sameSite = pages.filter(
+    (page) => new URL(page.url).origin === url.origin,
+  );
+  return sameSite.length === 1 ? sameSite[0] : undefined;
+}
+
 export function savedWebPageDisplay(url: unknown, pages: SavedWebPage[]) {
   if (typeof url !== 'string') return undefined;
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
-    const saved = pages.find(
-      (page) => new URL(page.url).origin === parsed.origin,
-    );
+    const saved = findSavedPage(parsed, pages);
     return {
       name: saved?.name || parsed.host,
       url: parsed.href,
@@ -100,18 +110,17 @@ export function loadSavedWebPages(): SavedWebPage[] {
 export function saveWebPage(input: SavedWebPage) {
   const page = normalizeSavedWebPage(input);
   if (!page) throw new Error('Please enter a valid HTTP or HTTPS URL.');
-  // One remembered entry per site. Navigation inside that site does not create
-  // a new sidebar item for every route, and dimensions remain site-specific.
-  const origin = new URL(page.url).origin;
+  // Explicitly opened URLs are separate entries, including query/hash routes.
+  // Ordinary in-page navigation does not call this function.
   const previous = loadSavedWebPages();
-  const saved = previous.find((item) => new URL(item.url).origin === origin);
+  const saved = previous.find((item) => item.url === page.url);
   const pages = [
     {
       ...page,
       ...(saved?.name ? { name: saved.name } : {}),
       ...(saved?.iconUrl ? { iconUrl: saved.iconUrl } : {}),
     },
-    ...previous.filter((item) => new URL(item.url).origin !== origin),
+    ...previous.filter((item) => item.url !== page.url),
   ];
   saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
@@ -120,27 +129,32 @@ export function saveWebPage(input: SavedWebPage) {
 export function renameWebPage(url: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Please enter a page name.');
-  const origin = new URL(url).origin;
+  const href = new URL(url).href;
   const pages = loadSavedWebPages().map((page) =>
-    new URL(page.url).origin === origin
-      ? { ...page, name: trimmed.slice(0, 80) }
-      : page,
+    page.url === href ? { ...page, name: trimmed.slice(0, 80) } : page,
   );
   saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }
 
-export function updateWebPageIcon(value: WebSiteIcon) {
+export function updateWebPageIcon(value: WebSiteIcon, entryUrl?: string) {
   const iconUrl = normalizeSiteIconUrl(value?.iconUrl);
   if (!iconUrl) return;
-  let origin: string;
+  let url: URL;
   try {
-    origin = new URL(value.pageUrl).origin;
+    url = new URL(value.pageUrl);
   } catch {
     return;
   }
   const pages = loadSavedWebPages();
-  const page = pages.find((item) => new URL(item.url).origin === origin);
+  const entry = entryUrl
+    ? pages.find((item) => item.url === entryUrl)
+    : undefined;
+  const page = entry
+    ? new URL(entry.url).origin === url.origin
+      ? entry
+      : undefined
+    : findSavedPage(url, pages);
   if (!page || page.iconUrl === iconUrl) return;
   page.iconUrl = iconUrl;
   saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
@@ -148,10 +162,8 @@ export function updateWebPageIcon(value: WebSiteIcon) {
 }
 
 export function removeWebPage(url: string) {
-  const origin = new URL(url).origin;
-  const pages = loadSavedWebPages().filter(
-    (page) => new URL(page.url).origin !== origin,
-  );
+  const href = new URL(url).href;
+  const pages = loadSavedWebPages().filter((page) => page.url !== href);
   saveStudioPreference(SAVED_WEB_PAGES_KEY, JSON.stringify(pages));
   window.dispatchEvent(new Event(changedEvent));
 }

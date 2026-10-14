@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { STUDIO_EXTERNAL_LINKS } from '../../../shared/external-links';
 import { assetUrls } from '../../assets';
 import { t, useStudioLanguage } from '../../i18n';
@@ -12,6 +12,7 @@ import type {
   StudioSidebarDeviceBuckets,
   StudioSidebarPlatformKey,
 } from '../../playground/types';
+import { saveStudioPreference } from '../../studio-preferences-backup';
 import { WebSiteIcon } from '../WebSiteIcon';
 import { WebCreateAgentCard, type WebCreateInput } from './CreateAgentCard';
 import { ModelConfigCard } from './ModelConfigCard';
@@ -30,6 +31,12 @@ interface PlatformConfig {
 // shell, so the overview cards stay visually aligned with the preview
 // header.
 const PLATFORM_CONFIGS: PlatformConfig[] = [
+  {
+    iconSrc: assetUrls.main.platformAndroid,
+    key: 'android',
+    label: 'Android',
+    idLabel: 'ADB',
+  },
   {
     iconSrc: assetUrls.main.platformWeb,
     key: 'web',
@@ -127,6 +134,7 @@ function ConnectingBadge() {
 }
 
 export interface DeviceListProps {
+  initialPlatform?: 'web' | 'android';
   buckets: StudioSidebarDeviceBuckets;
   connectingDeviceId?: string;
   errors?: DiscoveryErrorsByPlatform;
@@ -151,6 +159,7 @@ export interface DeviceListProps {
   onCreateWebSession?: (input: WebCreateInput) => void | Promise<void>;
   /** Disables form submission while a session is being mutated. */
   sessionMutating?: boolean;
+  onRefresh?: () => Promise<void>;
 }
 
 const PLATFORM_TOOLCHAIN_HINTS: Partial<
@@ -337,6 +346,7 @@ function DeviceCard({
 }
 
 export function DeviceList({
+  initialPlatform = 'web',
   buckets,
   connectingDeviceId,
   errors,
@@ -346,13 +356,53 @@ export function DeviceList({
   onDisconnect,
   onOpenEnvModal,
   sessionMutating,
+  onRefresh,
 }: DeviceListProps) {
   useStudioLanguage();
   const savedPages = useSavedWebPages();
+  const [platform, setPlatform] = useState<'web' | 'android'>(initialPlatform);
+  useEffect(() => setPlatform(initialPlatform), [initialPlatform]);
+  const [appPackage, setAppPackage] = useState(
+    () => localStorage.getItem('studio.android-app') || '',
+  );
+  const [connectionError, setConnectionError] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const connect = async (
+    key: StudioSidebarPlatformKey,
+    device: StudioAndroidDeviceItem,
+  ) => {
+    setConnectionError('');
+    setConnecting(true);
+    try {
+      saveStudioPreference('studio.android-app', appPackage.trim());
+      await onConnect?.(
+        key,
+        key === 'android'
+          ? {
+              ...device,
+              sessionValues: {
+                ...device.sessionValues,
+                deviceId: device.id,
+                appPackage: appPackage.trim(),
+              },
+            }
+          : device,
+      );
+    } catch (error) {
+      setConnectionError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setConnecting(false);
+    }
+  };
 
-  const sections = PLATFORM_CONFIGS.map((config) => ({
+  const sections = PLATFORM_CONFIGS.filter(
+    (config) => config.key === platform,
+  ).map((config) => ({
     ...config,
     devices: buckets[config.key].map((device) => {
+      if (config.key !== 'web') return device;
       const display = savedWebPageDisplay(
         device.sessionValues?.url ?? device.label,
         savedPages,
@@ -375,7 +425,7 @@ export function DeviceList({
     if (key === 'web' && onCreateWebSession) {
       return (
         <WebCreateAgentCard
-          busy={sessionMutating}
+          busy={sessionMutating || connecting}
           onSubmit={onCreateWebSession}
         />
       );
@@ -400,6 +450,60 @@ export function DeviceList({
         ) : null}
       </div>
       <div className="flex w-full max-w-[704px] flex-col gap-6">
+        <div className="flex gap-1 rounded-[10px] bg-surface-muted p-1">
+          {(['web', 'android'] as const).map((key) => (
+            <button
+              type="button"
+              key={key}
+              disabled={sessionMutating || connecting}
+              className={`h-9 flex-1 rounded-lg border-0 text-[13px] text-text-primary ${platform === key ? 'bg-surface shadow-sm' : 'bg-transparent hover:bg-surface-hover'}`}
+              onClick={() => setPlatform(key)}
+            >
+              {t(key === 'web' ? 'Web' : 'Android')}
+            </button>
+          ))}
+        </div>
+        {platform === 'android' ? (
+          <div className="flex flex-col gap-3 rounded-[12px] bg-surface-muted p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-medium text-text-primary">
+                {t('Connect Android Device')}
+              </span>
+              <button
+                type="button"
+                disabled={sessionMutating || connecting}
+                className="rounded-md border-0 bg-transparent px-2 py-1 text-[13px] text-text-secondary hover:bg-surface-hover"
+                onClick={() => {
+                  void onRefresh?.().catch((error) =>
+                    setConnectionError(String(error)),
+                  );
+                }}
+              >
+                {t('Refresh devices')}
+              </button>
+            </div>
+            <label className="flex flex-col gap-2 text-[13px] text-text-secondary">
+              {t('Target application (optional)')}
+              <input
+                className="box-border h-9 w-full rounded-lg border border-border-subtle bg-surface px-3 text-text-primary outline-none focus:border-brand"
+                value={appPackage}
+                disabled={sessionMutating || connecting}
+                placeholder="com.example.app"
+                onChange={(event) => setAppPackage(event.target.value)}
+              />
+            </label>
+            <span className="text-[12px] text-text-tertiary">
+              {t(
+                'Enable USB debugging and authorize this computer, or connect through wireless ADB.',
+              )}
+            </span>
+          </div>
+        ) : null}
+        {connectionError ? (
+          <div role="alert" className="text-[13px] text-status-error">
+            {connectionError}
+          </div>
+        ) : null}
         {sections.map((section) => {
           const createForm = renderSectionCreateForm(section.key);
           const hasDevices = section.devices.length > 0;
@@ -418,16 +522,18 @@ export function DeviceList({
                     return (
                       <DeviceCard
                         device={device}
-                        site={savedWebPageDisplay(
-                          device.description,
-                          savedPages,
-                        )}
+                        site={
+                          section.key === 'web'
+                            ? savedWebPageDisplay(
+                                device.description,
+                                savedPages,
+                              )
+                            : undefined
+                        }
                         iconSrc={section.iconSrc}
                         idLabel={section.idLabel}
                         key={device.id}
-                        onConnect={() =>
-                          onConnect ? onConnect(section.key, device) : undefined
-                        }
+                        onConnect={() => connect(section.key, device)}
                         onDisconnect={() =>
                           onDisconnect
                             ? onDisconnect(section.key, device)

@@ -9,6 +9,25 @@ import { saveStudioPreference } from './studio-preferences-backup';
 
 export { useUiLanguage as useStudioLanguage };
 const webMessages: Record<string, string> = {
+  'Check the device connection and debugging authorization, then retry.':
+    '请检查设备连接和调试授权后重试。',
+  'Switch to the matching platform before importing.':
+    '请切换到对应的网页或安卓设备后导入。',
+  'Unable to connect device. Please retry.': '设备连接失败，请重试。',
+  'Android devices': '安卓设备',
+  'Target application (optional)': '目标应用（选填）',
+  'Restart application then run': '重启应用后执行',
+  'Refresh devices': '刷新设备',
+  'Enable USB debugging and authorize this computer, or connect through wireless ADB.':
+    '开启 USB 调试并授权此电脑，或通过无线 ADB 连接。',
+  'A scenario must use one platform.': '同一场景只能包含同一平台的脚本。',
+  'Connect the matching platform before running this scenario.':
+    '请先连接与场景对应的网页或安卓设备。',
+  'Set a target application before restarting an Android app.':
+    '请先填写目标应用，再使用重启应用后执行。',
+  'Android back': '返回',
+  'Android home': '主屏幕',
+  'Android recent apps': '最近应用',
   'Replay needs @playwright/test. Recorded input values, including test passwords, are preserved.':
     '运行需要 @playwright/test，录制输入值（包括测试密码）会原样保留。',
   New: '新建',

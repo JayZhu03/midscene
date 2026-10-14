@@ -2115,6 +2115,28 @@ class PlaygroundServer {
     };
 
     switch (actionType) {
+      case 'AndroidBackButton':
+      case 'AndroidHomeButton':
+      case 'AndroidRecentAppsButton': {
+        const instruction =
+          actionType === 'AndroidBackButton'
+            ? 'Press the Android system Back button once'
+            : actionType === 'AndroidHomeButton'
+              ? 'Press the Android system Home button once'
+              : 'Open Android recent apps';
+        return {
+          ...base,
+          type: 'click',
+          value: actionType,
+          semantic: {
+            source: 'heuristic',
+            status: 'ready',
+            actionSummary: instruction,
+            replayInstruction: instruction,
+            elementDescription: instruction,
+          },
+        };
+      }
       case 'Tap':
       case 'DoubleClick':
       case 'LongPress':
@@ -3678,6 +3700,18 @@ class PlaygroundServer {
       try {
         this.getActiveAgentOrThrow();
         const plan = validateScenarioRun(req.body);
+        const platform =
+          this._activeConnection.runtime?.platformId ||
+          this.getActiveAgentOrThrow().interface.interfaceType;
+        const normalizedPlatform = ['puppeteer', 'playwright', 'web'].includes(
+          platform || '',
+        )
+          ? 'web'
+          : platform;
+        if (normalizedPlatform !== (plan.platformId || 'web'))
+          throw new Error(
+            'Connect the matching platform before running this scenario.',
+          );
         runner = new ScenarioRunner(plan);
       } catch (error) {
         return res.status(400).json({ error: formatErrorMessage(error) });
@@ -3691,15 +3725,19 @@ class PlaygroundServer {
           | undefined;
         let prepared = false;
         let sourcePage: unknown;
+        const android = runner.plan.platformId === 'android';
+        let sourceInterface: unknown;
         const currentAgent = () => {
           const agent = this.getActiveAgentOrThrow();
-          if (!prepared || !connection)
+          if (!prepared || (!android && !connection))
             throw new ScenarioBlockedError(
               'The execution browser is unavailable.',
             );
           if (
-            (agent.interface as { underlyingPage?: unknown }).underlyingPage !==
-            sourcePage
+            agent.interface !== sourceInterface ||
+            (!android &&
+              (agent.interface as { underlyingPage?: unknown })
+                .underlyingPage !== sourcePage)
           )
             throw new ScenarioBlockedError(
               'The execution page changed. Execution stopped.',
@@ -3708,7 +3746,12 @@ class PlaygroundServer {
         };
         const waitReady = async (signal: AbortSignal) => {
           currentAgent();
-          await connection!.waitForAssertionReady(signal);
+          if (android) {
+            signal.throwIfAborted();
+            // Use a fresh device capture to verify the device is still reachable.
+            await currentAgent().interface.screenshotBase64();
+            signal.throwIfAborted();
+          } else await connection!.waitForAssertionReady(signal);
           currentAgent();
         };
         try {
@@ -3716,7 +3759,7 @@ class PlaygroundServer {
             async (step, signal, scriptIndex) => {
               if (!prepared) {
                 try {
-                  if (runner.plan.sessionMode === 'fresh') {
+                  if (runner.plan.sessionMode === 'fresh' && !android) {
                     await this.switchScenarioSession('fresh');
                     signal.throwIfAborted();
                   }
@@ -3732,11 +3775,28 @@ class PlaygroundServer {
                   }
                   signal.throwIfAborted();
                   const agent = this.getActiveAgentOrThrow();
-                  // Attach once, including Agent-only runs, to validate the shared web target.
-                  connection = await connectScenarioPage(
-                    agent.interface,
-                    signal,
-                  );
+                  sourceInterface = agent.interface;
+                  if (android) {
+                    if (runner.plan.sessionMode === 'fresh') {
+                      const app = runner.plan.appPackage;
+                      const device = agent.interface as unknown as {
+                        terminate: (app: string) => Promise<void>;
+                        launch: (app: string) => Promise<unknown>;
+                      };
+                      if (!app)
+                        throw new Error(
+                          'Set a target application before restarting an Android app.',
+                        );
+                      await device.terminate(app);
+                      signal.throwIfAborted();
+                      await device.launch(app);
+                    }
+                  } else {
+                    connection = await connectScenarioPage(
+                      agent.interface,
+                      signal,
+                    );
+                  }
                   sourcePage = (agent.interface as { underlyingPage?: unknown })
                     .underlyingPage;
                   agent.resetDump?.();
@@ -3810,7 +3870,7 @@ class PlaygroundServer {
                   context.plan.scripts[context.scriptIndex].steps,
                   context.stepIndex,
                 );
-                if (effect)
+                if (effect && connection)
                   await waitForScenarioNavigation(
                     connection!.page,
                     effect,
@@ -4529,7 +4589,12 @@ class PlaygroundServer {
           req.body ?? {},
         );
         const inputPrimitives = agent.interface.inputPrimitives;
-        if (inputPrimitives) {
+        if (
+          inputPrimitives &&
+          (isPointerInteractActionType(actionType) ||
+            (!this.findInteractAction(agent, actionType) &&
+              !this.canRunBrowserChromeInteractAction(agent, actionType)))
+        ) {
           await dispatchPointer(inputPrimitives, req.body ?? {}, () =>
             agent.interface.size(),
           );

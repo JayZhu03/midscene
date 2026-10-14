@@ -918,6 +918,57 @@ describe('PlaygroundServer manual interaction APIs', () => {
     );
   });
 
+  test('records Android system keys even when the device exposes pointer primitives', async () => {
+    const back = rs.fn(async () => {});
+    const server = new PlaygroundServer({
+      interface: {
+        interfaceType: 'android',
+        inputPrimitives: makeInputPrimitiveStub(),
+        actionSpace: () => [
+          { name: 'AndroidBackButton', description: 'Back', call: back },
+        ],
+        screenshotBase64: async () => VALID_PNG_BASE64,
+        size: async () => ({ width: 1080, height: 1920 }),
+      },
+    } as any);
+    await server.launch(6117);
+    try {
+      await getRouteHandler(
+        server,
+        'post',
+        '/recorder/start',
+      )({ body: { sessionId: 'android-back' } }, createMockResponse());
+      const result = createMockResponse();
+      await getRouteHandler(
+        server,
+        'post',
+        '/interact',
+      )({ body: { actionType: 'AndroidBackButton' } }, result);
+      expect(result.statusCode).toBe(200);
+      expect(back).toHaveBeenCalledTimes(1);
+      await server.waitForRecorderIdle();
+      const events = createMockResponse();
+      await getRouteHandler(
+        server,
+        'get',
+        '/recorder/events',
+      )({ query: { since: '0' } }, events);
+      expect(events.body).toMatchObject({
+        events: [
+          {
+            actionType: 'AndroidBackButton',
+            semantic: {
+              status: 'ready',
+              replayInstruction: 'Press the Android system Back button once',
+            },
+          },
+        ],
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
   test('recorder start is unsupported without preview interaction support', async () => {
     const server = new PlaygroundServer({
       interface: {

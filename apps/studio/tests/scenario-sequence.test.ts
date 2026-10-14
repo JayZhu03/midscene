@@ -21,6 +21,20 @@ const script = (id: string) =>
   });
 beforeEach(() => localStorage.clear());
 describe('scenario sequence', () => {
+  it('carries the Android app to the runner and rejects mixing web and Android', () => {
+    const android = script('android');
+    android.sourceSession.target = {
+      platformId: 'android',
+      label: 'Phone',
+      values: { appPackage: 'com.example.mom' },
+    };
+    const plan = buildScenarioRun('scene', [android], []);
+    expect(plan.platformId).toBe('android');
+    expect(plan.appPackage).toBe('com.example.mom');
+    expect(() =>
+      buildScenarioRun('scene', [android, script('web')], []),
+    ).toThrow('one platform');
+  });
   it('loads old scripts in stable order, saves reordering and preserves start modes', () => {
     const scripts = [script('a'), script('b'), script('c')];
     const initial = loadSequence('scene', scripts);

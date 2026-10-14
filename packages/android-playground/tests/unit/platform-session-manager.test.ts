@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, rs, test } from '@rstest/core';
 
 const connectMock = rs.fn();
+const launchMock = rs.fn(async () => {});
 const currentDevice = { connect: connectMock };
 const getConnectedDevicesWithDetailsMock = rs.fn();
 const findAvailablePortMock = rs.fn(async (port: number) => port);
@@ -9,6 +10,7 @@ const androidAgentMock = rs.fn().mockImplementation((device) => ({
     interfaceType: 'android',
     describe: () => 'Mock Android device',
     actionSpace: () => [],
+    launch: launchMock,
   },
   destroy: rs.fn(),
   device,
@@ -38,6 +40,21 @@ rs.mock('@midscene/playground', () => ({
 }));
 
 describe('androidPlaygroundPlatform session manager', () => {
+  test('launches the configured app once and retains its target for scenario replay', async () => {
+    const { androidPlaygroundPlatform } = await import('../../src/platform');
+    const prepared = await androidPlaygroundPlatform.prepare({});
+    const created = await prepared.sessionManager!.createSession({
+      deviceId: 'SERIAL123',
+      appPackage: 'com.example.mom',
+    });
+    expect(launchMock).toHaveBeenCalledWith('com.example.mom');
+    expect(created.metadata).toMatchObject({
+      appPackage: 'com.example.mom',
+      deviceId: 'SERIAL123',
+    });
+    await created.agentFactory!();
+    expect(launchMock).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     rs.clearAllMocks();
     getConnectedDevicesWithDetailsMock.mockResolvedValue([

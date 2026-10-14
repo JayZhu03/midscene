@@ -63,10 +63,21 @@ export function buildScenarioRun(
   scripts: ScenarioScript[],
   sequence: SequenceEntry[],
 ): ScenarioRunInput {
+  const platformId = scripts[0]?.sourceSession.target.platformId || 'web';
+  if (
+    !['web', 'android'].includes(platformId) ||
+    scripts.some((s) => s.sourceSession.target.platformId !== platformId)
+  )
+    throw new Error('A scenario must use one platform.');
   const byId = new Map(scripts.map((script) => [script.id, script]));
+  const ordered = reconcileSequence(scripts, sequence);
+  const appPackage = byId.get(ordered[0]?.id)?.sourceSession.target.values
+    .appPackage;
   return {
+    platformId: platformId as 'web' | 'android',
+    ...(typeof appPackage === 'string' && appPackage ? { appPackage } : {}),
     scenarioId,
-    scripts: reconcileSequence(scripts, sequence).map((entry, index) => {
+    scripts: ordered.map((entry, index) => {
       const script = byId.get(entry.id)!;
       return {
         id: script.id,

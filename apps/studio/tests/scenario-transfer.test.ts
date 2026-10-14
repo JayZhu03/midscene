@@ -104,6 +104,63 @@ async function rewrite(
 }
 
 describe('Studio transfer', () => {
+  it('round-trips Android Agent scripts and app targets without allowing a mixed-platform scenario', async () => {
+    const android = {
+      ...scenario,
+      id: 'android',
+      platformId: 'android' as const,
+    };
+    saveStudioScenarios([scenario, android]);
+    const target = {
+      platformId: 'android' as const,
+      deviceId: 'phone',
+      label: 'Phone',
+      values: { deviceId: 'phone', appPackage: 'com.example.mom' },
+    };
+    const script = await saveScenarioScript(
+      compileScenarioScript({
+        scenarioId: android.id,
+        name: '订单',
+        session: scenarioSession({
+          target,
+          events: [
+            scenarioEvent({
+              platformId: 'android',
+              target,
+              nativeTarget: undefined,
+            }),
+          ],
+          checkpoints: [
+            {
+              id: 'assert',
+              instruction: '订单数量为 3',
+              timestamp: 2,
+              afterEventHashIds: ['event-1'],
+            },
+          ],
+        }),
+      }),
+    );
+    expect(script.steps.map((s) => s.type)).toEqual([
+      'agent-operation',
+      'agent-assertion',
+    ]);
+    const bytes = await createStudioPackage(android);
+    const bundle = await readStudioPackage(bytes, 'scenario');
+    expect(bundle.manifest.platformId).toBe('android');
+    expect(
+      bundle.manifest.scripts[0].sourceSession.target.values.appPackage,
+    ).toBe('com.example.mom');
+    const imported = await importStudioPackage(bundle);
+    expect(imported.platformId).toBe('android');
+    const single = await readStudioPackage(
+      await createStudioPackage(android, script),
+      'script',
+    );
+    await expect(importStudioPackage(single, scenario)).rejects.toThrow(
+      'one platform',
+    );
+  });
   it('preserves password inputs in code, reading notes and imported copies', async () => {
     const value = 'test-password-"quoted"\\value';
     const original = await saveScenarioScript(

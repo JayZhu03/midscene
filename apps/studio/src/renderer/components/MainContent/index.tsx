@@ -33,6 +33,7 @@ import {
   resolveConnectedDeviceLabel,
   resolveSelectedDeviceId,
 } from '../../playground/selectors';
+import type { StudioAndroidDeviceItem } from '../../playground/types';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { type StudioMode, StudioModeTab } from '../../recorder/types';
 import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
@@ -646,6 +647,7 @@ export default function MainContent({
     studioPlayground.phase === 'ready'
       ? studioPlayground.controller.state.playgroundSDK
       : null;
+  const webEntryUrl = runtimeInfo?.metadata?.url;
   useEffect(() => {
     if (!showWebNavigation || !webNavigationServerOnline || !webNavigationSDK) {
       setWebIsLoading(false);
@@ -661,7 +663,12 @@ export default function MainContent({
         const siteIcon = (
           info?.navigationState as { siteIcon?: WebSiteIcon } | undefined
         )?.siteIcon;
-        if (siteIcon) updateWebPageIcon(siteIcon);
+        if (siteIcon) {
+          updateWebPageIcon(
+            siteIcon,
+            typeof webEntryUrl === 'string' ? webEntryUrl : undefined,
+          );
+        }
       } catch (error) {
         if (!cancelled) {
           debugWebNavigation('failed to refresh web loading state: %s', error);
@@ -676,7 +683,12 @@ export default function MainContent({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [showWebNavigation, webNavigationServerOnline, webNavigationSDK]);
+  }, [
+    showWebNavigation,
+    webNavigationServerOnline,
+    webNavigationSDK,
+    webEntryUrl,
+  ]);
 
   const runWebNavigationAction = async (
     actionType: 'GoBack' | 'GoForward' | 'Stop' | 'Reload',
@@ -846,6 +858,58 @@ export default function MainContent({
         );
   }, [isReady, studioPlayground, isSessionMutating, isConnected]);
 
+  const connectDevice = async (
+    platform: StudioPlatformId,
+    device: StudioAndroidDeviceItem,
+  ) => {
+    if (!isReady) {
+      return;
+    }
+    if (!(await canNavigateStudio())) return;
+    const { actions, state } = studioPlayground.controller;
+    const selectionValues = buildDeviceSelectionFormValues(platform, device);
+    setPendingCreatePlatform?.(platform);
+    onSelectDeviceView?.();
+    if (
+      (connectedDeviceId === device.id ||
+        (device.selected && device.status === 'active')) &&
+      (platform !== 'android' ||
+        (runtimeInfo?.metadata?.appPackage || '') ===
+          (device.sessionValues?.appPackage || ''))
+    ) {
+      return;
+    }
+    state.form.setFieldsValue(selectionValues);
+    if (state.sessionViewState.connected) {
+      await stopStudioActivityBeforeSessionDestroy();
+      await actions.destroySession();
+    }
+    const sessionValues = {
+      ...state.form.getFieldsValue(true),
+      ...selectionValues,
+    };
+    const created = await actions.createSession(sessionValues);
+    if (!created) {
+      onSelectOverview?.();
+      throw new Error(t('Unable to connect device. Please retry.'));
+    }
+  };
+  const connectDeviceRef = useRef(connectDevice);
+  connectDeviceRef.current = connectDevice;
+  useEffect(() => {
+    const open = (event: Event) => {
+      const device = (event as CustomEvent<StudioAndroidDeviceItem>).detail;
+      if (device?.id)
+        void connectDeviceRef
+          .current('android', device)
+          .catch((error) =>
+            debugWebNavigation('Unable to connect Android: %s', error),
+          );
+    };
+    window.addEventListener('studio:open-android-device', open);
+    return () => window.removeEventListener('studio:open-android-device', open);
+  }, []);
+
   if (activeView === 'overview') {
     const overviewSessionBuckets = isReady
       ? buildStudioSidebarDeviceBuckets({
@@ -868,6 +932,11 @@ export default function MainContent({
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-surface">
         <div className="app-drag absolute left-0 right-0 top-0 z-0 h-[48px]" />
         <DeviceList
+          initialPlatform={
+            (pendingCreatePlatform || previewPlatform) === 'android'
+              ? 'android'
+              : 'web'
+          }
           buckets={overviewBuckets}
           connectingDeviceId={overviewSelectedDeviceId}
           errors={studioPlayground.discoveryErrors}
@@ -878,35 +947,8 @@ export default function MainContent({
             isReady ? studioPlayground.controller.state.sessionMutating : false
           }
           onCreateWebSession={openWebPage}
-          onConnect={async (platform, device) => {
-            if (!isReady) {
-              return;
-            }
-            if (!(await canNavigateStudio())) return;
-            const { actions, state } = studioPlayground.controller;
-            const selectionValues = buildDeviceSelectionFormValues(
-              platform,
-              device,
-            );
-            setPendingCreatePlatform?.(platform);
-            onSelectDeviceView?.();
-            if (
-              connectedDeviceId === device.id ||
-              (device.selected && device.status === 'active')
-            ) {
-              return;
-            }
-            state.form.setFieldsValue(selectionValues);
-            if (state.sessionViewState.connected) {
-              await stopStudioActivityBeforeSessionDestroy();
-              await actions.destroySession();
-            }
-            const sessionValues = {
-              ...state.form.getFieldsValue(true),
-              ...selectionValues,
-            };
-            await actions.createSession(sessionValues);
-          }}
+          onRefresh={studioPlayground.refreshDiscoveredDevices}
+          onConnect={connectDevice}
           onDisconnect={async () => {
             if (!isReady) {
               return;
@@ -993,6 +1035,59 @@ export default function MainContent({
               </span>
             ) : null}
           </div>
+          {isConnected && previewPlatform === 'android' ? (
+            <div className="app-no-drag ml-2 flex items-center gap-1">
+              {(
+                [
+                  'AndroidBackButton',
+                  'AndroidHomeButton',
+                  'AndroidRecentAppsButton',
+                ] as const
+              ).map((actionType, index) => (
+                <WebNavigationButton
+                  key={actionType}
+                  aria-label={t(
+                    ['Android back', 'Android home', 'Android recent apps'][
+                      index
+                    ],
+                  )}
+                  disabled={
+                    scenarioExecutionBusy || timelineExecutionStatus.running
+                  }
+                  onClick={() => {
+                    void webNavigationSDK
+                      ?.interact({ actionType })
+                      .then((result) => {
+                        if (!result.ok)
+                          setPreviewStatusText(
+                            result.error ||
+                              t('Unable to connect device. Please retry.'),
+                          );
+                      })
+                      .catch((error) => setPreviewStatusText(String(error)));
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    aria-hidden="true"
+                  >
+                    {index === 0 ? (
+                      <path d="m10 3-5 5 5 5" />
+                    ) : index === 1 ? (
+                      <circle cx="8" cy="8" r="5" />
+                    ) : (
+                      <rect x="3" y="3" width="10" height="10" rx="1" />
+                    )}
+                  </svg>
+                </WebNavigationButton>
+              ))}
+            </div>
+          ) : null}
           {showWebNavigation ? (
             <div
               aria-label={t('Web navigation')}
@@ -1181,8 +1276,17 @@ export default function MainContent({
                     }}
                     renderErrorOverlay={({ retry }) => (
                       <ConnectionFailedPreview
-                        pageUrl={webDisplay?.url}
-                        iconSrc={assetUrls.main.platformWeb}
+                        pageUrl={
+                          previewPlatform === 'web'
+                            ? webDisplay?.url
+                            : undefined
+                        }
+                        description={
+                          previewPlatform === 'android'
+                            ? 'Check the device connection and debugging authorization, then retry.'
+                            : undefined
+                        }
+                        iconSrc={resolvePlatformLogo(previewPlatform)}
                         onReconnect={retry}
                       />
                     )}
@@ -1209,7 +1313,7 @@ export default function MainContent({
               </div>
             ) : (
               <DisconnectedPreview
-                iconSrc={assetUrls.main.platformWeb}
+                iconSrc={resolvePlatformLogo(previewPlatform)}
                 title={disconnectedPreviewTitle}
               />
             )}

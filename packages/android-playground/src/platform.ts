@@ -125,6 +125,12 @@ export const androidPlaygroundPlatform = definePlaygroundPlatform<
               defaultValue: targets.find((target) => target.isDefault)?.id,
               placeholder: 'Select a connected Android device',
             },
+            {
+              key: 'appPackage',
+              label: 'Target application (optional)',
+              type: 'text',
+              placeholder: 'com.example.app',
+            },
           ],
           targets,
         };
@@ -154,6 +160,16 @@ export const androidPlaygroundPlatform = definePlaygroundPlatform<
         }
 
         const agent = await connectAgent();
+        const appPackage =
+          typeof input?.appPackage === 'string' ? input.appPackage.trim() : '';
+        if (appPackage) {
+          try {
+            await agent.interface.launch(appPackage);
+          } catch (error) {
+            await agent.destroy();
+            throw error;
+          }
+        }
 
         return {
           agent,
@@ -164,6 +180,7 @@ export const androidPlaygroundPlatform = definePlaygroundPlatform<
           displayName: deviceId,
           metadata: {
             deviceId,
+            appPackage,
             scrcpyPort,
           },
         };

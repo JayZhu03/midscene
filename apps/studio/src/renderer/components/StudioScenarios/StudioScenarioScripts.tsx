@@ -353,6 +353,12 @@ export function StudioScenarioScripts({
   };
   const start = async () => {
     if (!recorder || mutationRef.current || executionRef.current) return;
+    if (recorder.currentTarget?.platformId !== (scenario.platformId || 'web')) {
+      setError(
+        t('Connect the matching platform before running this scenario.'),
+      );
+      return;
+    }
     mutationRef.current = true;
     setPhase('starting');
     phaseRef.current = 'starting';
@@ -739,6 +745,7 @@ export function StudioScenarioScripts({
               sessionModeMenu(
                 sessionMode,
                 execution.locked || execution.pending || protectedWork,
+                scenario.platformId === 'android',
               ),
             ],
             onClick: ({ key }) => {
@@ -830,6 +837,7 @@ export function StudioScenarioScripts({
         </div>
         {phase === 'draft' ? (
           <StudioRecordingDraftActions
+            android={scenario.platformId === 'android'}
             run={replayRun}
             starting={startingReplay}
             busy={replayBusy}

@@ -15,14 +15,24 @@ export function saveSessionMode(scenarioId: string, mode: SessionMode) {
 export function sessionModeMenu(
   mode: SessionMode,
   disabled = false,
+  android = false,
 ): NonNullable<MenuProps['items']>[number] {
   return {
     key: 'session-mode',
-    label: t(mode === 'fresh' ? 'Fresh session' : 'Use current session'),
+    label: t(
+      mode === 'fresh'
+        ? android
+          ? 'Restart application then run'
+          : 'Fresh session'
+        : 'Use current session',
+    ),
     disabled,
     children: [
       { key: 'session-current', label: t('Use current session') },
-      { key: 'session-fresh', label: t('Fresh session') },
+      {
+        key: 'session-fresh',
+        label: t(android ? 'Restart application then run' : 'Fresh session'),
+      },
     ],
   };
 }

@@ -39,7 +39,10 @@ export function TransferIcon({ upload = false }: { upload?: boolean }) {
 }
 
 /** Shared dialog keeps transfer controls out of the recording/execution toolbar. */
-export function useStudioTransfer(onImported: () => void | Promise<void>) {
+export function useStudioTransfer(
+  onImported: () => void | Promise<void>,
+  platformId?: 'web' | 'android',
+) {
   const [request, setRequest] = useState<{
     kind: PackageKind;
     target?: StudioScenario;
@@ -75,6 +78,10 @@ export function useStudioTransfer(onImported: () => void | Promise<void>) {
         new Uint8Array(await file.arrayBuffer()),
         request.kind,
       );
+      const expectedPlatform =
+        request.target?.platformId || platformId || 'web';
+      if ((parsed.manifest.platformId || 'web') !== expectedPlatform)
+        throw new Error('Switch to the matching platform before importing.');
       const existing =
         request.kind === 'scenario'
           ? loadStudioScenarios()
@@ -93,6 +100,7 @@ export function useStudioTransfer(onImported: () => void | Promise<void>) {
             'Studio package is too large.',
             'Unsupported Studio package version.',
             'Choose a package of the correct type.',
+            'Switch to the matching platform before importing.',
           ].includes(message)
             ? message
             : 'Invalid or incomplete Studio package.',

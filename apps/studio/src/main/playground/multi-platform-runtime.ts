@@ -731,7 +731,7 @@ function buildRegisteredPlatforms(
   resolvePackageStaticDir: (packageName: string) => string,
 ): RegisteredPlaygroundPlatform[] {
   return studioPlatformSpecs
-    .filter((spec) => spec.id === 'web')
+    .filter((spec) => spec.id === 'web' || spec.id === 'android')
     .map((spec) => {
       const staticDir = resolvePackageStaticDir(spec.staticDirPackage);
       return {

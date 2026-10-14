@@ -2,6 +2,7 @@ import { getDebug } from '@midscene/shared/logger';
 import { saveStudioPreference } from '../../studio-preferences-backup';
 
 export interface StudioScenario {
+  platformId?: 'web' | 'android';
   id: string;
   name: string;
   description: string;
@@ -29,6 +30,8 @@ function validateScenarios(value: unknown): StudioScenario[] {
       !item.name.trim() ||
       item.name.length > SCENARIO_NAME_MAX_LENGTH ||
       typeof item.description !== 'string' ||
+      (item.platformId !== undefined &&
+        !['web', 'android'].includes(item.platformId)) ||
       item.description.length > SCENARIO_DESCRIPTION_MAX_LENGTH ||
       !Number.isSafeInteger(item.createdAt) ||
       item.createdAt < 0 ||
@@ -40,6 +43,7 @@ function validateScenarios(value: unknown): StudioScenario[] {
     ids.add(item.id);
     return {
       id: item.id,
+      ...(item.platformId ? { platformId: item.platformId } : {}),
       name: item.name.trim(),
       description: item.description.trim(),
       createdAt: item.createdAt,

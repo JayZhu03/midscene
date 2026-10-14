@@ -235,10 +235,7 @@ export function WebCreateAgentCard({
               const next = normalizeSavedWebPage({ url });
               const previous =
                 next &&
-                loadSavedWebPages().find(
-                  (page) =>
-                    new URL(page.url).origin === new URL(next.url).origin,
-                );
+                loadSavedWebPages().find((page) => page.url === next.url);
               if (previous) {
                 setWidth(previous.viewportWidth);
                 setHeight(previous.viewportHeight);

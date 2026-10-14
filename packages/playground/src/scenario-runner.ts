@@ -64,6 +64,12 @@ export async function executeScenarioAgentStep(
 export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
   if (
     !value ||
+    (value.platformId !== undefined &&
+      !['web', 'android'].includes(value.platformId)) ||
+    (value.appPackage !== undefined &&
+      (typeof value.appPackage !== 'string' ||
+        value.appPackage.length > 255 ||
+        !value.appPackage.trim())) ||
     typeof value.scenarioId !== 'string' ||
     !value.scenarioId ||
     !Array.isArray(value.scripts) ||
@@ -109,6 +115,10 @@ export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
       )
         throw new Error('Invalid scenario step.');
       if (step.type === 'playwright-operation') {
+        if (value.platformId === 'android')
+          throw new Error(
+            'Android scenarios cannot contain Playwright operations.',
+          );
         if (
           !step.event ||
           !Number.isSafeInteger(step.operationIndex) ||
@@ -171,6 +181,7 @@ export class ScenarioRunner {
       id: randomUUID(),
       scenarioId: plan.scenarioId,
       sessionMode: plan.sessionMode || 'current',
+      platformId: plan.platformId || 'web',
       scenarioName: plan.scenarioName,
       scenarioDescription: plan.scenarioDescription,
       scope: plan.scope,
@@ -298,7 +309,9 @@ export class ScenarioRunner {
                 : 'Scenario execution failed.';
             let recovered = false;
             if (
-              script.steps[j].type === 'playwright-operation' &&
+              (script.steps[j].type === 'playwright-operation' ||
+                (this.plan.platformId === 'android' &&
+                  script.steps[j].type === 'agent-operation')) &&
               !(error instanceof ScenarioBlockedError)
             ) {
               stepResult.recovery = {

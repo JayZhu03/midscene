@@ -117,6 +117,7 @@ function targetSnapshot(value: unknown): StudioRecorderTarget {
     'viewportHeight',
     'headed',
     'deviceId',
+    'appPackage',
     'displayId',
     'wdaHost',
     'wdaPort',

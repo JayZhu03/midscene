@@ -119,7 +119,7 @@ function createConnectedWebContextValue() {
 
 beforeEach(() => localStorage.clear());
 describe('Web sidebar', () => {
-  it('offers only Workbench and no platform groups', () => {
+  it('offers Workbench, saved pages and Android without unrelated platforms', () => {
     const html = renderToStaticMarkup(
       createElement(
         StudioPlaygroundContext.Provider,
@@ -132,9 +132,7 @@ describe('Web sidebar', () => {
       ),
     );
     expect(html).toContain('Workbench');
-    expect(html).not.toMatch(
-      /Android|HarmonyOS|Platform|No devices|Computer|iOS/,
-    );
+    expect(html).not.toMatch(/HarmonyOS|Platform|No devices|Computer|iOS/);
   });
   it('reopens a saved page with its stored viewport and does not disconnect the active page', async () => {
     saveWebPage({

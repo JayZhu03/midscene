@@ -8,6 +8,10 @@ import {
   renameWebPage,
   useSavedWebPages,
 } from '../../playground/saved-web-pages';
+import {
+  buildStudioSidebarDeviceBuckets,
+  mergeSidebarDeviceBucketsWithDiscovery,
+} from '../../playground/selectors';
 import type { StudioSidebarPlatformKey } from '../../playground/types';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { MaskedIcon } from '../MaskedIcon';
@@ -26,6 +30,7 @@ export default function Sidebar({
   activeView,
   onSelectOverview,
   onSelectDevice,
+  onPendingCreatePlatform,
 }: SidebarProps) {
   useStudioLanguage();
   const pages = useSavedWebPages();
@@ -41,6 +46,14 @@ export default function Sidebar({
   const state =
     playground.phase === 'ready' ? playground.controller.state : null;
   const connectedUrl = state?.runtimeInfo?.metadata?.url;
+  const androidDevices = mergeSidebarDeviceBucketsWithDiscovery(
+    buildStudioSidebarDeviceBuckets({
+      formValues: state?.formValues || {},
+      runtimeInfo: state?.runtimeInfo || null,
+      targets: state?.sessionSetup?.targets || [],
+    }),
+    playground.discoveredDevices,
+  ).android;
   const rowClass =
     'flex h-9 w-full items-center gap-2 rounded-lg border-0 px-3 text-left text-[13px] text-text-secondary hover:bg-surface-hover disabled:opacity-50';
   return (
@@ -68,7 +81,7 @@ export default function Sidebar({
           state?.sessionViewState.connected;
         return (
           <div
-            key={new URL(page.url).origin}
+            key={page.url}
             className={`group flex items-center rounded-lg ${active ? 'bg-surface-hover' : 'hover:bg-surface-hover'}`}
           >
             <button
@@ -132,6 +145,55 @@ export default function Sidebar({
           </div>
         );
       })}
+      <div className="px-3 pt-3 text-[12px] text-text-tertiary">
+        {t('Android devices')}
+      </div>
+      {androidDevices.length === 0 ? (
+        <button
+          type="button"
+          className={`${rowClass} bg-transparent`}
+          onClick={() => {
+            onPendingCreatePlatform?.('android');
+            onSelectOverview();
+          }}
+        >
+          {t('Connect Android Device')}
+        </button>
+      ) : (
+        androidDevices.map((device) => (
+          <button
+            type="button"
+            key={device.id}
+            disabled={!state || state.sessionMutating}
+            className={`${rowClass} ${activeView === 'device' && device.status === 'active' ? 'bg-surface-hover' : 'bg-transparent'}`}
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent('studio:open-android-device', {
+                  detail: {
+                    ...device,
+                    sessionValues: {
+                      ...device.sessionValues,
+                      deviceId: device.id,
+                      appPackage:
+                        state?.runtimeInfo?.platformId === 'android' &&
+                        device.status === 'active'
+                          ? state.runtimeInfo.metadata?.appPackage
+                          : localStorage.getItem('studio.android-app') || '',
+                    },
+                  },
+                }),
+              )
+            }
+          >
+            <img
+              alt=""
+              src={assetUrls.main.platformAndroid}
+              className="size-4 shrink-0 object-contain"
+            />
+            <span className="truncate">{device.label}</span>
+          </button>
+        ))
+      )}
       <Modal
         title={t('Rename page')}
         open={!!editing}

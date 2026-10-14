@@ -165,6 +165,7 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
   );
   return {
     scenario: run.scenarioName,
+    platform: run.platformId || 'web',
     intent: run.scenarioDescription?.slice(0, 4000),
     scope: run.scope,
     status: run.status,

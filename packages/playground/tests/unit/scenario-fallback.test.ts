@@ -40,6 +40,26 @@ function setup() {
   return { plan, runner, recover, canContinue, calls, execute };
 }
 describe('scenario fallback policy', () => {
+  test('Android operation failure uses bounded recovery and gates the next script if recovery fails', async () => {
+    const s = setup();
+    s.plan.platformId = 'android';
+    for (const script of s.plan.scripts)
+      for (const step of script.steps) {
+        step.type = 'agent-operation';
+        step.instruction = step.description;
+      }
+    const runner = new ScenarioRunner(s.plan);
+    s.canContinue.mockResolvedValue({
+      allowed: false,
+      reason: 'The preceding order was not created',
+    });
+    await runner.run(s.execute, s);
+    expect(s.recover).toHaveBeenCalledTimes(1);
+    expect(s.canContinue).toHaveBeenCalledTimes(1);
+    expect(s.calls).toEqual(['A0']);
+    expect(runner.state.status).toBe('blocked');
+    expect(runner.state.scripts[0].steps![0].recovery?.status).toBe('failed');
+  });
   test('recovers once and resumes at the next step without replaying the successful prefix', async () => {
     const s = setup();
     s.recover.mockImplementation(async (_context, evidence) => {

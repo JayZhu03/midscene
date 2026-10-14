@@ -132,6 +132,7 @@ export async function listScenarioReports(directory: string) {
     return reports.map(
       (run): ScenarioReportEntry => ({
         id: run.id,
+        platformId: run.platformId || 'web',
         scenarioName: run.scenarioName,
         name: run.scope === 'script' ? run.scripts[0]?.name : run.scenarioName,
         scope: run.scope,

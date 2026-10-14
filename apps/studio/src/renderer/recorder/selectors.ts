@@ -221,6 +221,9 @@ export function resolveStudioRecorderTarget(
         label,
         values: {
           deviceId: targetDeviceId,
+          ...(typeof metadata.appPackage === 'string'
+            ? { appPackage: metadata.appPackage }
+            : {}),
         },
       };
     }

@@ -1,6 +1,7 @@
 import { t, useStudioLanguage } from '../../i18n';
 export interface ConnectionFailedPreviewProps {
   pageUrl?: string;
+  description?: string;
   className?: string;
   iconSrc: string;
   onReconnect?: () => void;
@@ -8,6 +9,7 @@ export interface ConnectionFailedPreviewProps {
 
 export default function ConnectionFailedPreview({
   pageUrl,
+  description = 'Unable to connect to this page.',
   className,
   iconSrc,
   onReconnect,
@@ -41,7 +43,7 @@ export default function ConnectionFailedPreview({
           title={pageUrl}
           className="mt-[4px] w-[190px] break-words text-center text-[12px] leading-[20px] text-text-secondary"
         >
-          {t('Unable to connect to this page.')}
+          {t(description)}
         </div>
 
         <button

@@ -277,7 +277,14 @@ export function StudioScriptSequence({
                         disabled: !canRun,
                       },
                       ...(onSessionModeChange
-                        ? [sessionModeMenu(sessionMode)]
+                        ? [
+                            sessionModeMenu(
+                              sessionMode,
+                              false,
+                              script.sourceSession.target.platformId ===
+                                'android',
+                            ),
+                          ]
                         : []),
                     ],
                     onClick: ({ key }) => {

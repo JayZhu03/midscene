@@ -403,6 +403,17 @@ export async function discoverAllDevices(): Promise<DiscoverDevicesResult> {
   return { devices, errors };
 }
 
+export async function discoverAndroidDevices(): Promise<DiscoverDevicesResult> {
+  const result = await withPlatformDiscoveryTimeout(
+    'android',
+    scanAndroidDevices(),
+  );
+  return {
+    devices: result.devices,
+    errors: result.error ? [result.error] : [],
+  };
+}
+
 async function scanAndroidDevices(): Promise<PlatformScanResult> {
   try {
     ensureStudioShellEnvHydrated();

@@ -16,6 +16,12 @@ import { runStatusLabel } from './StudioScriptSequence';
 
 export function StudioExecutionRecords() {
   const playground = useContext(StudioPlaygroundContext);
+  const platformId =
+    playground?.phase === 'ready' &&
+    (playground.controller.state.runtimeInfo?.platformId ||
+      playground.controller.state.formValues?.platformId) === 'android'
+      ? 'android'
+      : 'web';
   const serverUrl = playground?.phase === 'ready' ? playground.serverUrl : null;
   const [records, setRecords] = useState<ScenarioReportEntry[]>([]);
   const [revision, setRevision] = useState(0);
@@ -45,7 +51,13 @@ export function StudioExecutionRecords() {
         const data = await response.json();
         if (!controller.signal.aborted) {
           if (selected) setRun(data.run);
-          else setRecords(data.reports);
+          else
+            setRecords(
+              data.reports.filter(
+                (record: ScenarioReportEntry) =>
+                  (record.platformId || 'web') === platformId,
+              ),
+            );
         }
       } catch {
         if (!controller.signal.aborted)
@@ -56,7 +68,11 @@ export function StudioExecutionRecords() {
     };
     void load();
     return () => controller.abort();
-  }, [serverUrl, selected, revision]);
+  }, [serverUrl, selected, revision, platformId]);
+  useEffect(() => {
+    setSelected(null);
+    setRun(null);
+  }, [platformId]);
   if (selected && run && !loading && serverUrl) {
     return (
       <StudioScenarioExecution

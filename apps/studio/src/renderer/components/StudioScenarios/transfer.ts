@@ -17,6 +17,7 @@ import {
 
 export type PackageKind = 'script' | 'scenario';
 interface Manifest {
+  platformId?: 'web' | 'android';
   format: 'midscene-studio-bundle';
   version: 1;
   kind: PackageKind;
@@ -63,6 +64,13 @@ function validateManifest(value: unknown): Manifest {
     fail();
   if (m.kind === 'script' && m.scripts.length !== 1) fail();
   const scripts = m.scripts.map(validateScenarioScript);
+  const platformId =
+    m.platformId || scripts[0]?.sourceSession.target.platformId || 'web';
+  if (
+    !['web', 'android'].includes(platformId) ||
+    scripts.some((s) => s.sourceSession.target.platformId !== platformId)
+  )
+    fail();
   const ids = new Set(scripts.map((s) => s.id));
   if (ids.size !== scripts.length || m.sequence.length !== scripts.length)
     fail();
@@ -76,7 +84,6 @@ function validateManifest(value: unknown): Manifest {
   }
   const assetIds = new Set<string>();
   for (const script of scripts) {
-    if (script.sourceSession.target.platformId !== 'web') fail();
     for (const ref of script.assets) {
       if (assetIds.has(ref.id)) fail();
       assetIds.add(ref.id);
@@ -94,6 +101,7 @@ function validateManifest(value: unknown): Manifest {
     }
   }
   return {
+    platformId: platformId as 'web' | 'android',
     format: m.format,
     version: 1,
     kind: m.kind,
@@ -119,6 +127,7 @@ const assetPath = (script: number, asset: number, mime: string) => {
   return `assets/${script}-${asset}.${extension}`;
 };
 function markdown(manifest: Manifest): string {
+  const android = manifest.platformId === 'android';
   const lines = [
     '# Midscene Studio 测试包 / Test package',
     '',
@@ -127,7 +136,12 @@ function markdown(manifest: Manifest): string {
     manifest.description,
     '',
     '## 执行说明 / Execution contract',
-    '- 按 manifest.json 的 sequence 和各脚本 steps 顺序，在同一浏览器页面交替执行以下三类步骤，保留会话上下文；manual 表示等待用户继续。README 仅作说明。 / Follow manifest.json sequence and script steps on the same browser page, preserving session context; manual means wait for user continuation. README is explanatory only.',
+    ...(android
+      ? [
+          '- 安卓测试：连接可用安卓设备，按步骤顺序使用实时截图和设备操作工具执行 Agent 操作与断言；设备序列号可映射到当前手机，不需要 Playwright。fresh 表示重启目标应用，保留应用数据，不是清空登录状态。 / Android: connect an available device and execute Agent operations and assertions in order using live screenshots and device tools. Map the recorded serial to the current phone; Playwright is not required. fresh restarts the target app without clearing its data.',
+        ]
+      : []),
+    '- 按 manifest.json 的 sequence 和各脚本 steps 顺序，在同一测试对象中执行，保留会话上下文；manual 表示等待用户继续。README 仅作说明。 / Follow manifest.json sequence and script steps on the same target, preserving session context; manual means wait for user continuation. README is explanatory only.',
     '- playwright-operation：执行保存的 code，可补齐运行依赖和必要等待，不得擅改操作目标或断言条件。 / Execute saved code; supply runtime dependencies and necessary waits without changing operation targets or assertion conditions.',
     '- agent-operation：执行助手充当 Agent，主动截图观察当前页面，按 instruction 使用浏览器或 Computer Use 工具实际操作，检查操作结果后继续。无需强制调用 Midscene aiAct。 / Act as the Agent: take a live screenshot, use browser or Computer Use tools to carry out instruction, then check the outcome. Midscene aiAct is optional.',
     '- agent-assertion：执行助手等待页面加载完成后，主动截取当前页面并视觉识别，按 instruction 判断通过或失败；可用 DOM 辅助核验，不得用录制截图代替实时证据。无需强制调用 Midscene aiAssert。 / Wait for the page to finish loading, take a fresh screenshot and visually evaluate instruction; DOM may corroborate it. Recording screenshots are not live evidence. Midscene aiAssert is optional.',
@@ -194,6 +208,7 @@ export async function createStudioPackage(
   if (scripts.reduce((n, s) => n + s.assets.length, 3) > 5000)
     throw new Error('Studio package is too large.');
   const manifest = validateManifest({
+    platformId: scenario.platformId || 'web',
     format: 'midscene-studio-bundle',
     version: 1,
     kind: script ? 'script' : 'scenario',
@@ -438,11 +453,14 @@ export async function importStudioPackage(
   try {
     const m = validateManifest(bundle.manifest);
     if ((m.kind === 'script') !== Boolean(target)) fail();
+    if (target && (target.platformId || 'web') !== (m.platformId || 'web'))
+      throw new Error('A scenario must use one platform.');
     const scenarios = loadStudioScenarios();
     if (target && !scenarios.some((s) => s.id === target.id))
       throw new Error('The destination scenario no longer exists.');
     const now = Date.now();
     const scenario = target ?? {
+      platformId: m.platformId || 'web',
       id: crypto.randomUUID(),
       name: importName(
         m.name,
