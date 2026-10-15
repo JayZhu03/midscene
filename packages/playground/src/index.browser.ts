@@ -70,3 +70,4 @@ export type {
   PlaygroundSessionTarget,
 } from './platform';
 export type { PlaygroundRuntimeInfo } from './runtime-metadata';
+export { composeScenarioHtml } from './scenario-report-html';

@@ -12,9 +12,9 @@ import type {
 } from './scenario-contract';
 import {
   type ScenarioReportAnalysis,
-  renderScenarioReport,
   reportStepIsAbnormal,
 } from './scenario-report';
+import { renderScenarioHtmlConclusion } from './scenario-report-html';
 
 const prose = {
   type: 'string',
@@ -172,6 +172,7 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
     error: run.error?.slice(0, 2000),
     totalSteps: steps.length,
     passedSteps: steps.filter((s) => s.status === 'passed').length,
+    skippedSteps: steps.filter((s) => s.status === 'skipped').length,
     unexecutedSteps: steps.filter((s) => s.status === 'pending').length,
     blockedSteps: steps.filter((s) => s.status === 'blocked').length,
     checkpoints: {
@@ -179,6 +180,7 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
       passed: checkpoints.filter((s) => s.status === 'passed').length,
       failed: checkpoints.filter((s) => s.status === 'failed').length,
       blocked: checkpoints.filter((s) => s.status === 'blocked').length,
+      skipped: checkpoints.filter((s) => s.status === 'skipped').length,
       unexecuted: checkpoints.filter((s) => s.status === 'pending').length,
     },
     omittedSteps,
@@ -254,9 +256,9 @@ export function basicScenarioSummary(
 ): NonNullable<ScenarioRunState['summary']> {
   return {
     status: 'failed',
-    format: 'markdown',
+    format: 'html',
     skillVersion: '2',
-    text: renderScenarioReport(run),
+    text: renderScenarioHtmlConclusion(run),
   };
 }
 
@@ -291,9 +293,13 @@ export async function generateScenarioSummary(
       );
       return {
         status: 'completed',
-        format: 'markdown',
+        format: 'html',
         skillVersion: '2',
-        text: renderScenarioReport(run, analysis, evidence.omittedSteps),
+        text: renderScenarioHtmlConclusion(
+          run,
+          analysis,
+          evidence.omittedSteps,
+        ),
       };
     } catch (error) {
       correction = `\nYour previous response was rejected: ${error instanceof Error ? error.message : 'Invalid JSON'}. Regenerate a complete conforming JSON object. This is the final attempt.`;

@@ -652,6 +652,7 @@ export function StudioScenarioScripts({
         ready={execution.ready}
         onBack={() => setExecutionPage(false)}
         onNext={() => void execution.next()}
+        onSkip={() => void execution.skip()}
         onStop={() => void execution.stop()}
         canRestoreSession={execution.isolatedSession && !execution.locked}
         onRestoreSession={() => void execution.restoreSession()}

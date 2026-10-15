@@ -132,7 +132,7 @@ describe('Web sidebar', () => {
       ),
     );
     expect(html).toContain('Workbench');
-    expect(html).not.toMatch(/HarmonyOS|Platform|No devices|Computer|iOS/);
+    expect(html).not.toMatch(/HarmonyOS|Platform|Computer|iOS/);
   });
   it('reopens a saved page with its stored viewport and does not disconnect the active page', async () => {
     saveWebPage({

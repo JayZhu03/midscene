@@ -174,7 +174,7 @@ export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
 export class ScenarioRunner {
   readonly state: ScenarioRunState;
   readonly abort = new AbortController();
-  private resume?: () => void;
+  private resume?: (action: 'next' | 'skip') => void;
   private started = false;
   constructor(readonly plan: ScenarioRunInput) {
     this.state = {
@@ -213,14 +213,30 @@ export class ScenarioRunner {
     )
       throw new Error('This script is not waiting for the next step.');
     this.state.status = 'running';
-    this.resume?.();
+    this.resume?.('next');
+    this.resume = undefined;
+  }
+  skip(scriptIndex: number) {
+    if (
+      this.state.status !== 'waiting' ||
+      this.state.scriptIndex !== scriptIndex
+    )
+      throw new Error('This script is not waiting for the next step.');
+    const result = this.state.scripts[scriptIndex];
+    result.status = 'skipped';
+    for (const step of result.steps || []) {
+      step.status = 'skipped';
+      step.finishedAt = Date.now();
+    }
+    this.state.status = 'running';
+    this.resume?.('skip');
     this.resume = undefined;
   }
   stop() {
     if (!scenarioRunActive(this.state)) return;
     this.state.status = 'stopping';
     this.abort.abort(new Error('Scenario stopped.'));
-    this.resume?.();
+    this.resume?.('next');
     this.resume = undefined;
   }
   async run(
@@ -242,11 +258,12 @@ export class ScenarioRunner {
         const script = this.plan.scripts[i];
         const result = this.state.scripts[i];
         result.status = 'running';
+        this.state.phase = 'executing';
         if (
           hooks &&
           this.state.scripts
             .slice(0, i)
-            .some((s) => s.status === 'failed' || s.status === 'blocked')
+            .some((s) => ['failed', 'blocked', 'skipped'].includes(s.status))
         ) {
           this.state.phase = 'checking';
           result.continuation = { status: 'checking' };
@@ -284,10 +301,11 @@ export class ScenarioRunner {
         if (i > 0 && script.startMode === 'manual') {
           this.state.status = 'waiting';
           result.status = 'waiting';
-          await new Promise<void>((resolve) => {
+          const action = await new Promise<'next' | 'skip'>((resolve) => {
             this.resume = resolve;
           });
           this.abort.signal.throwIfAborted();
+          if (action === 'skip') continue;
           result.status = 'running';
         }
         for (let j = 0; j < script.steps.length; j++) {
@@ -390,15 +408,16 @@ export class ScenarioRunner {
         : error instanceof ScenarioBlockedError
           ? 'blocked'
           : 'failed';
-      this.state.scripts[this.state.scriptIndex].status = stopped
-        ? 'stopped'
-        : this.state.status;
+      const currentScript = this.state.scripts[this.state.scriptIndex];
+      if (currentScript.status !== 'skipped')
+        currentScript.status = stopped ? 'stopped' : this.state.status;
       this.state.error = stopped
         ? undefined
         : error instanceof Error
           ? error.message
           : 'Scenario execution failed.';
-      this.state.scripts[this.state.scriptIndex].error = this.state.error;
+      if (currentScript.status !== 'skipped')
+        currentScript.error = this.state.error;
       const step =
         this.state.scripts[this.state.scriptIndex].steps?.[
           this.state.stepIndex

@@ -41,6 +41,7 @@ function createRecorderContextValue(): StudioRecorderContextValue {
     startRecording: vi.fn(async () => null),
     stopRecording: vi.fn(async () => undefined),
     stopScenarioRecording: vi.fn(),
+    cancelScenarioRecording: vi.fn(),
     addCheckpoint: vi.fn(),
     getSessionSnapshot: vi.fn(() => null),
     releaseScenarioSession: vi.fn(async () => undefined),

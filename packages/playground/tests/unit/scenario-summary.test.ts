@@ -199,11 +199,11 @@ describe('execution evidence', () => {
       call,
     );
     expect(text.status).toBe('completed');
-    expect(text.format).toBe('markdown');
-    expect(text.text).toContain('## 1. 测试结论');
+    expect(text.format).toBe('html');
+    expect(text.text).toContain('<h2>');
     expect(text.text).toContain('订单检查未通过');
     expect(loadScenarioReportSkill()).toContain('Version: 2');
-    expect(call.mock.calls[0][0][0].content).toContain(
+    expect((call.mock.calls as any)[0][0][0].content).toContain(
       'Execution report analysis',
     );
     expect(call).toHaveBeenCalledTimes(1);
@@ -259,6 +259,7 @@ describe('execution evidence', () => {
       failed: 1,
       blocked: 0,
       unexecuted: 1,
+      skipped: 0,
     });
     expect(evidence.scripts[0].steps).toEqual(
       expect.arrayContaining([

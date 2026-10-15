@@ -89,3 +89,4 @@ export type {
   RegisteredPlaygroundPlatform,
 } from './multi-platform';
 export * from './scenario-contract';
+export { composeScenarioHtml } from './scenario-report-html';

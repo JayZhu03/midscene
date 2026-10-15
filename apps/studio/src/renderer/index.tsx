@@ -2,7 +2,8 @@ import { initializeStudioPreferences } from './studio-preferences-backup';
 
 void initializeStudioPreferences()
   .then(() => import('./bootstrap'))
-  .catch(() => {
+  .catch((error) => {
+    console.error('Studio initialization failed:', error);
     const root = document.getElementById('root');
     if (root) {
       root.textContent =

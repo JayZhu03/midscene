@@ -23,6 +23,7 @@ export const runStatusLabel = (status: string) =>
         failed: 'Failed',
         blocked: 'Blocked',
         stopped: 'Stopped',
+        skipped: 'Skipped',
         stopping: 'Stopping',
         completed: 'Completed',
       } as Record<string, string>

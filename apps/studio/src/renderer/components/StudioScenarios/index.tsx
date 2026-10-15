@@ -9,6 +9,7 @@ import {
   SCENARIO_DESCRIPTION_MAX_LENGTH,
   SCENARIO_NAME_MAX_LENGTH,
   type StudioScenario,
+  deleteStudioScenario,
   loadStudioScenarios,
   saveStudioScenarios,
 } from './storage';
@@ -64,6 +65,7 @@ export function StudioScenarios({ active }: { active: boolean }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<StudioScenario | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
   const nameInputRef = useRef<InputRef>(null);
   const selected = scenarios.find(
     (scenario) =>
@@ -131,22 +133,23 @@ export function StudioScenarios({ active }: { active: boolean }) {
       );
     }
   };
-  const remove = () => {
-    if (!deleting) return;
+  const remove = async () => {
+    if (!deleting || deletePending) return;
+    setDeletePending(true);
+    setDeleteError(null);
     try {
-      persist(
-        scenarios.filter((scenario) => scenario.id !== deleting.id),
-        () => {
-          if (selectedId === deleting.id) setSelectedId(null);
-          setDeleting(null);
-        },
-      );
+      const next = await deleteStudioScenario(deleting.id);
+      setScenarios(next);
+      if (selectedId === deleting.id) setSelectedId(null);
+      setDeleting(null);
     } catch (error) {
       setDeleteError(
         error instanceof Error
           ? error.message
           : 'Unable to save scenarios locally. Please retry.',
       );
+    } finally {
+      setDeletePending(false);
     }
   };
   const actions = (scenario: StudioScenario) =>
@@ -330,11 +333,16 @@ export function StudioScenarios({ active }: { active: boolean }) {
         ) : null}
       </Modal>
       <Modal
+        closable={!deletePending}
+        confirmLoading={deletePending}
+        cancelButtonProps={{ disabled: deletePending }}
         cancelText={t('Cancel')}
         maskClosable={false}
         okButtonProps={{ danger: true }}
         okText={t('Delete')}
-        onCancel={() => setDeleting(null)}
+        onCancel={() => {
+          if (!deletePending) setDeleting(null);
+        }}
         onOk={remove}
         open={active && deleting !== null}
         title={t('Delete scenario')}

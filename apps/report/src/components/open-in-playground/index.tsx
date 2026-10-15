@@ -1,3 +1,4 @@
+import { reportText } from '@/i18n';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import type { UIContext } from '@midscene/core';
 import { staticAgentFromContext } from '@midscene/visualizer';
@@ -52,7 +53,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
   const tabItems: TabsProps['items'] = [
     {
       key: tabKeys.PLAYGROUND,
-      label: 'Playground',
+      label: reportText('Playground'),
     },
     ...(location.href.indexOf('beta') >= 0
       ? [
@@ -123,7 +124,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
           disabled
           icon={<PlayCircleOutlined />}
         >
-          Open in Playground
+          {reportText('Open in Playground')}
         </Button>
       </Tooltip>
     );
@@ -136,7 +137,7 @@ export default function OpenInPlayground(props?: { context?: UIContext }) {
         onClick={showPlayground}
         icon={<PlayCircleOutlined />}
       >
-        Open in Playground
+        {reportText('Open in Playground')}
       </Button>
       <Drawer
         title={tabComponent}

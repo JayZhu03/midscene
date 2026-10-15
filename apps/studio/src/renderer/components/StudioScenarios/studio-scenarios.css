@@ -65,6 +65,19 @@
 .studio-report-entry {
   flex: 0 0 auto;
 }
+.studio-report-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+}
+.studio-report-html {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
 .studio-report-drawer .ant-drawer-content {
   /* The body portal overlays the native window drag strip. Z-index alone
      cannot restore pointer events; exclude the report from that drag region. */

@@ -170,13 +170,11 @@ export interface WebCreateAgentCardProps {
   defaultUrl?: string;
   defaultViewportWidth?: number;
   defaultViewportHeight?: number;
-  defaultHeaded?: boolean;
   onSubmit: (input: WebCreateInput) => void | Promise<void>;
 }
 
 export function WebCreateAgentCard({
   busy,
-  defaultHeaded = false,
   defaultUrl = 'https://example.com',
   defaultViewportHeight = DEFAULT_STUDIO_WEB_VIEWPORT.height,
   defaultViewportWidth = DEFAULT_STUDIO_WEB_VIEWPORT.width,
@@ -192,7 +190,6 @@ export function WebCreateAgentCard({
   const [height, setHeight] = useState(
     saved?.viewportHeight ?? defaultViewportHeight,
   );
-  const [headed, setHeaded] = useState(saved?.headed ?? defaultHeaded);
   const [error, setError] = useState('');
 
   return (
@@ -205,7 +202,7 @@ export function WebCreateAgentCard({
           url,
           viewportWidth: width,
           viewportHeight: height,
-          headed,
+          headed: false,
         });
         if (!input) {
           setError(t('Please enter a valid HTTP or HTTPS URL.'));
@@ -224,7 +221,7 @@ export function WebCreateAgentCard({
           {error}
         </div>
       ) : null}
-      <div className="grid w-full grid-cols-1 gap-4 min-[1000px]:grid-cols-3">
+      <div className="grid w-full grid-cols-1 gap-4 min-[1000px]:grid-cols-[2fr_1fr]">
         <div className="flex min-w-0 flex-col">
           <FieldLabel required>{t('URL')}</FieldLabel>
           <input
@@ -239,7 +236,6 @@ export function WebCreateAgentCard({
               if (previous) {
                 setWidth(previous.viewportWidth);
                 setHeight(previous.viewportHeight);
-                setHeaded(previous.headed);
               }
             }}
             placeholder="https://example.com"
@@ -262,23 +258,6 @@ export function WebCreateAgentCard({
               prefix="H"
               value={height}
             />
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-col">
-          <FieldLabel>{t('Browser window')}</FieldLabel>
-          <div className="relative h-[36px]">
-            <select
-              aria-label={t('Browser window mode')}
-              className={`${inputBaseClass} appearance-none pr-[32px]`}
-              onChange={(event) => setHeaded(event.target.value === 'headed')}
-              value={headed ? 'headed' : 'headless'}
-            >
-              <option value="headless">{t('Headless')}</option>
-              <option value="headed">{t('Visible Chrome window')}</option>
-            </select>
-            <span className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 text-text-secondary">
-              <ChevronDown flipped={false} />
-            </span>
           </div>
         </div>
       </div>

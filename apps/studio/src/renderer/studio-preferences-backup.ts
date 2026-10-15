@@ -8,12 +8,15 @@ let pending: Promise<void> = Promise.resolve();
 const isPreference = (key: string) =>
   key.startsWith('studio.') || key.startsWith('studio:');
 
-function persist(entries: Array<[string, string]>): Promise<void> {
+function persist(entries: Array<[string, string | null]>): Promise<void> {
   if (!database) return Promise.resolve();
   const db = database;
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
-    for (const [key, value] of entries) tx.objectStore(STORE).put(value, key);
+    for (const [key, value] of entries) {
+      if (value === null) tx.objectStore(STORE).delete(key);
+      else tx.objectStore(STORE).put(value, key);
+    }
     tx.oncomplete = () => resolve();
     tx.onabort = () =>
       reject(tx.error || new Error('Preference backup was aborted.'));
@@ -66,6 +69,16 @@ export async function initializeStudioPreferences(): Promise<void> {
 /** Keep intentional empty values too, so removed scenarios are not resurrected. */
 export function saveStudioPreference(key: string, value: string): void {
   localStorage.setItem(key, value);
+  enqueuePreferenceBackup(key, value);
+}
+
+/** Remove from both stores so deleted scenario settings cannot be restored. */
+export function removeStudioPreference(key: string): void {
+  localStorage.removeItem(key);
+  enqueuePreferenceBackup(key, null);
+}
+
+function enqueuePreferenceBackup(key: string, value: string | null): void {
   if (!isPreference(key) || !database) return;
   pending = pending
     .then(() => persist([[key, value]]))

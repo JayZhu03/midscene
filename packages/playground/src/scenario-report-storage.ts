@@ -14,6 +14,7 @@ import type {
   ScenarioReportEntry,
   ScenarioRunState,
 } from './scenario-contract';
+import { composeScenarioHtml } from './scenario-report-html';
 
 const reportLimit = 10;
 const debug = getDebug('playground:scenario-reports', { console: true });
@@ -43,6 +44,17 @@ function reportPath(directory: string, id: string) {
   return join(directory, `${id}.json`);
 }
 
+export async function readScenarioHtml(directory: string, id: string) {
+  const path = reportPath(directory, id).replace(/\.json$/, '.html');
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    // Existing Markdown records remain readable, but all downloads are HTML.
+    return composeScenarioHtml(await readScenarioReport(directory, id));
+  }
+}
+
 export async function saveScenarioReport(
   directory: string,
   run: ScenarioRunState,
@@ -50,12 +62,34 @@ export async function saveScenarioReport(
   const destination = reportPath(directory, run.id);
   return withDirectoryLock(directory, async () => {
     await mkdir(directory, { recursive: true });
+    const previous = await stat(destination).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (previous && !previous.isFile())
+      throw new Error('Invalid report destination.');
     const temporary = `${destination}.${randomUUID()}.tmp`;
+    const htmlPath = destination.replace(/\.json$/, '.html');
+    const htmlTemporary = `${htmlPath}.${randomUUID()}.tmp`;
+    const evidencePath = destination.replace(/\.json$/, '.evidence.html');
     try {
+      let official: string | undefined;
+      try {
+        official = await readFile(evidencePath, 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      await writeFile(
+        htmlTemporary,
+        composeScenarioHtml(run, official),
+        'utf8',
+      );
+      await rename(htmlTemporary, htmlPath);
       await writeFile(temporary, JSON.stringify(run), 'utf8');
       await rename(temporary, destination);
     } finally {
       await rm(temporary, { force: true });
+      await rm(htmlTemporary, { force: true });
     }
     await retainedReports(directory);
   });
@@ -122,7 +156,11 @@ async function retainedReports(directory: string) {
   reports.sort((a, b) => b.time - a.time || b.run.id.localeCompare(a.run.id));
   // Only owned, validated JSON records are removed; raw Agent reports and assets
   // are outside this directory and are never part of retention.
-  for (const report of reports.slice(reportLimit)) await rm(report.path);
+  for (const report of reports.slice(reportLimit)) {
+    await rm(report.path);
+    await rm(report.path.replace(/\.json$/, '.html'), { force: true });
+    await rm(report.path.replace(/\.json$/, '.evidence.html'), { force: true });
+  }
   return reports.slice(0, reportLimit).map(({ run }) => run);
 }
 
@@ -145,6 +183,7 @@ export async function listScenarioReports(directory: string) {
           blocked: run.scripts.filter((s) => s.status === 'blocked').length,
           pending: run.scripts.filter((s) => s.status === 'pending').length,
           stopped: run.scripts.filter((s) => s.status === 'stopped').length,
+          skipped: run.scripts.filter((s) => s.status === 'skipped').length,
         },
         recoveryCount: run.scripts.reduce(
           (n, s) => n + (s.steps?.filter((step) => step.recovery).length || 0),

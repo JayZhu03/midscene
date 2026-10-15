@@ -32,7 +32,14 @@ export interface ScenarioStepResult {
   type: ScenarioRunStep['type'];
   description: string;
   instruction?: string;
-  status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'stopped';
+  status:
+    | 'pending'
+    | 'running'
+    | 'passed'
+    | 'failed'
+    | 'blocked'
+    | 'stopped'
+    | 'skipped';
   startedAt?: number;
   finishedAt?: number;
   detail?: string;
@@ -76,6 +83,7 @@ export interface ScenarioReportEntry {
     blocked: number;
     pending: number;
     stopped: number;
+    skipped?: number;
   };
   recoveryCount: number;
 }
@@ -109,7 +117,7 @@ export interface ScenarioRunState {
     status: 'generating' | 'completed' | 'failed';
     phase?: ScenarioReportPhase;
     text?: string;
-    format?: 'markdown';
+    format?: 'markdown' | 'html';
     skillVersion?: string;
     storageError?: string;
   };
@@ -119,6 +127,13 @@ export interface ScenarioRunState {
   stepDescription?: string;
   phase?: 'executing' | 'recovering' | 'checking';
   error?: string;
+  evidenceError?: string;
+  evidenceLinks?: Array<{
+    scriptIndex: number;
+    stepIds: string[];
+    taskId: string;
+    label: string;
+  }>;
   scripts: Array<{
     id: string;
     name: string;
@@ -129,7 +144,8 @@ export interface ScenarioRunState {
       | 'passed'
       | 'failed'
       | 'blocked'
-      | 'stopped';
+      | 'stopped'
+      | 'skipped';
     error?: string;
     continuation?: ScenarioContinuation;
     completedSteps: number;

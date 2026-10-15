@@ -1,7 +1,9 @@
 import { describe, expect, test } from '@rstest/core';
 import type { ScenarioRunStep } from '../../src/scenario-contract';
 import {
+  isScenarioNavigationObservation,
   scenarioNavigationEffect,
+  scenarioOperationPrecedesAssertion,
   scenarioRoute,
 } from '../../src/scenario-navigation';
 
@@ -34,6 +36,42 @@ function observation(): ScenarioRunStep {
 }
 
 describe('recorded navigation effects', () => {
+  test('observes the triggering click across passive route records, but not across real actions', () => {
+    const click = operation('click', beforeUrl);
+    const assertion: ScenarioRunStep = {
+      id: 'assert',
+      type: 'agent-assertion',
+      description: '退出登录成功',
+      instruction: '退出登录成功',
+    };
+    const route = observation();
+    const changed = observation();
+    changed.event!.actionType = 'NavigationChanged';
+    changed.event!.rawPayload = undefined;
+    const steps = [click, route, changed, assertion];
+    expect(scenarioOperationPrecedesAssertion(steps, 0)).toBe(true);
+    expect(scenarioOperationPrecedesAssertion(steps, 1)).toBe(false);
+    expect(scenarioOperationPrecedesAssertion(steps, 2)).toBe(false);
+    expect(scenarioOperationPrecedesAssertion(steps, 3)).toBe(false);
+    for (const action of [
+      'Navigate',
+      'InitialNavigation',
+      'GoBack',
+      'GoForward',
+      'Reload',
+    ]) {
+      const active = operation('navigation', afterUrl);
+      active.event!.actionType = action;
+      expect(isScenarioNavigationObservation(active)).toBe(false);
+      expect(
+        scenarioOperationPrecedesAssertion([click, active, assertion], 0),
+      ).toBe(false);
+      expect(
+        scenarioOperationPrecedesAssertion([click, active, assertion], 1),
+      ).toBe(true);
+    }
+    expect(scenarioOperationPrecedesAssertion([click, route], 0)).toBe(false);
+  });
   test('an early session route belongs only to the menu item, not the preceding menu expansion', () => {
     const steps = [
       operation('click', beforeUrl),

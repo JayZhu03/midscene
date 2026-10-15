@@ -125,6 +125,7 @@ export async function connectScenarioPage(iface: unknown, signal: AbortSignal) {
             const native = (
               iface as {
                 studioNative?: {
+                  captureScreenshot?: () => Promise<string>;
                   setViewport(size: {
                     width: number;
                     height: number;
@@ -137,6 +138,9 @@ export async function connectScenarioPage(iface: unknown, signal: AbortSignal) {
             const readiness = observeScenarioReadiness(page);
             return {
               page,
+              ...(native?.captureScreenshot
+                ? { captureScreenshot: native.captureScreenshot }
+                : {}),
               waitForAssertionReady: (signal: AbortSignal) =>
                 readiness.wait(signal),
               close: async () => {
@@ -197,6 +201,7 @@ export async function executeScenarioNative(
   options?: {
     navigationEffect?: ScenarioNavigationEffect;
     waitReady?: (signal: AbortSignal) => Promise<void>;
+    beforeAction?: (target: Locator) => Promise<void>;
   },
 ) {
   const event = step.event!;
@@ -277,6 +282,8 @@ export async function executeScenarioNative(
     });
     throw error;
   }
+  await options?.beforeAction?.(target);
+  signal.throwIfAborted();
   switch (event.type) {
     case 'click':
       if (event.actionType === 'DoubleClick') await target.dblclick();

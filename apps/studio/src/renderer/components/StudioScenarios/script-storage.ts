@@ -105,6 +105,41 @@ export async function deleteScenarioScript(id: string): Promise<void> {
   });
 }
 
+/** Delete all owned scripts and assets together, without loading image blobs. */
+export async function deleteScenarioScripts(
+  scenarioId: string,
+  beforeCommit: () => void,
+): Promise<void> {
+  validateScenarioIdentifier(scenarioId);
+  let failure: unknown;
+  try {
+    await transaction<void>([SCRIPT_STORE, ASSET_STORE], 'readwrite', (tx) => {
+      const scripts = tx.objectStore(SCRIPT_STORE);
+      const assets = tx.objectStore(ASSET_STORE);
+      const request = scripts.index('scenarioId').openCursor(scenarioId);
+      request.onsuccess = () => {
+        try {
+          const cursor = request.result;
+          if (!cursor) {
+            // A synchronous metadata failure must abort the pending deletions.
+            beforeCommit();
+            return;
+          }
+          for (const asset of cursor.value.assets || [])
+            assets.delete(asset.id);
+          cursor.delete();
+          cursor.continue();
+        } catch (error) {
+          failure = error;
+          tx.abort();
+        }
+      };
+    });
+  } catch (error) {
+    throw failure || error;
+  }
+}
+
 export type ScenarioScriptAssetLoader = (
   assetId: string,
 ) => Promise<string | Blob | null>;

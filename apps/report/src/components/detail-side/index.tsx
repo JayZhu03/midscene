@@ -1,5 +1,6 @@
+import { reportText } from '@/i18n';
 /* eslint-disable max-lines */
-'use client';
+('use client');
 import './index.less';
 
 import {
@@ -73,7 +74,7 @@ const Card = (props: {
         className={`title ${titleRightPaddingClass}`}
         style={{ display: title ? 'block' : 'none' }}
       >
-        {title}
+        {title ? reportText(title) : title}
         {titleTag}
       </div>
       <div
@@ -107,7 +108,7 @@ const CollapsibleCard = (props: {
         className="title title-collapsible"
         onClick={() => setCollapsed(!collapsed)}
       >
-        {title}
+        {title ? reportText(title) : title}
         <span className="collapse-icon">
           {collapsed ? <RightOutlined /> : <DownOutlined />}
         </span>
@@ -214,7 +215,7 @@ const MetaKV = (props: {
       {props.data.map((item, index) => {
         return (
           <div className="meta" key={index}>
-            <div className="meta-key">{item.key}</div>
+            <div className="meta-key">{reportText(item.key)}</div>
             <div className="meta-value">{renderMetaContent(item.content)}</div>
             {item.images && item.images.length > 0 && (
               <div className="meta-images">
@@ -385,11 +386,11 @@ const DetailSide = ({ onClose }: { onClose?: () => void }): JSX.Element => {
     data: [
       {
         key: 'type',
-        content: (task && typeStr(task)) || '',
+        content: (task && reportText(typeStr(task))) || '',
       },
       {
         key: 'status',
-        content: task?.status || '',
+        content: reportText(task?.status || ''),
       },
       {
         key: 'start',
@@ -1103,7 +1104,7 @@ const DetailSide = ({ onClose }: { onClose?: () => void }): JSX.Element => {
   return (
     <div className="detail-side">
       <div className="info-tabs">
-        <div className="info-tab">Information</div>
+        <div className="info-tab">{reportText('Information')}</div>
         {onClose && (
           <button
             type="button"
@@ -1118,7 +1119,7 @@ const DetailSide = ({ onClose }: { onClose?: () => void }): JSX.Element => {
       <div className="info-content">
         <details open>
           <summary>
-            <span className="summary-text">Param</span>
+            <span className="summary-text">{reportText('Param')}</span>
           </summary>
           {taskInput}
         </details>
@@ -1126,7 +1127,7 @@ const DetailSide = ({ onClose }: { onClose?: () => void }): JSX.Element => {
           <details open>
             <summary>
               <span className="summary-text">
-                {task?.subType === 'Locate' ? 'Element' : 'Output'}
+                {reportText(task?.subType === 'Locate' ? 'Element' : 'Output')}
               </span>
             </summary>
             <div className="item-list">{outputDataContent}</div>
@@ -1134,7 +1135,7 @@ const DetailSide = ({ onClose }: { onClose?: () => void }): JSX.Element => {
         )}
         <details open>
           <summary>
-            <span className="summary-text">Meta</span>
+            <span className="summary-text">{reportText('Meta')}</span>
           </summary>
           {metaKVElement}
         </details>

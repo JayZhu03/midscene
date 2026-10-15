@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ConnectingPreview from '../src/renderer/components/ConnectingPreview';
 import { NativeWebPreview } from '../src/renderer/components/MainContent/NativeWebPreview';
+import { coverNativePreview } from '../src/renderer/components/MainContent/native-preview-cover';
 import { setStudioLanguage } from '../src/renderer/i18n';
 import type { NativeBrowserState } from '../src/shared/native-browser';
 
@@ -158,6 +159,49 @@ async function tickLayout() {
 }
 const readyPreview = { available: true, id: 1, width: 1920, height: 1080 };
 
+it('acknowledges pre-open hiding and keeps the guest hidden until the overlay releases it', async () => {
+  const bridge = vi.fn(async (): Promise<NativeBrowserState> => readyPreview);
+  const cleanup = await mountOverlayPreview(bridge);
+  let release: (() => void) | undefined;
+  try {
+    let acknowledge!: (state: NativeBrowserState) => void;
+    bridge.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    let ready = false;
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = coverNativePreview().then((value) => {
+        release = value;
+        ready = true;
+      });
+    });
+    expect(bridge).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visible: false }),
+    );
+    expect(ready).toBe(false);
+    await act(async () => {
+      acknowledge(readyPreview);
+      await pending;
+    });
+    await tickLayout();
+    expect(ready).toBe(true);
+    expect(bridge).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visible: false }),
+    );
+    await act(async () => release?.());
+    expect(bridge).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visible: true }),
+    );
+  } finally {
+    await act(async () => release?.());
+    await cleanup();
+  }
+});
+
 it('hides the native guest for player fullscreen and restores it without waiting for an old snapshot', async () => {
   let fullscreen: Element | null = null;
   Object.defineProperty(document, 'fullscreenElement', {
@@ -165,7 +209,7 @@ it('hides the native guest for player fullscreen and restores it without waiting
     get: () => fullscreen,
   });
   let resolveSnapshot!: (state: NativeBrowserState) => void;
-  const bridge = vi.fn(async () => readyPreview);
+  const bridge = vi.fn(async (): Promise<NativeBrowserState> => readyPreview);
   const cleanup = await mountOverlayPreview(bridge);
   try {
     expect(bridge).toHaveBeenLastCalledWith(
@@ -198,14 +242,21 @@ it('hides the native guest for player fullscreen and restores it without waiting
   }
 });
 
-it.each(['ant-image-preview-wrap', 'history-modal-overlay', 'ant-modal-mask'])(
+it.each([
+  'ant-image-preview-wrap',
+  'history-modal-overlay',
+  'ant-modal-mask',
+  'studio-settings-hover',
+])(
   'yields to %s and restores after its retained parent hides',
   async (className) => {
-    const bridge = vi.fn(async () => readyPreview);
+    const bridge = vi.fn(async (): Promise<NativeBrowserState> => readyPreview);
     const cleanup = await mountOverlayPreview(bridge);
     const portal = document.createElement('div');
     const overlay = document.createElement('div');
     overlay.className = className;
+    if (className === 'studio-settings-hover')
+      overlay.setAttribute('data-studio-overlay', '');
     overlay.style.opacity = '1';
     portal.appendChild(overlay);
     try {

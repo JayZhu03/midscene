@@ -1,4 +1,5 @@
-'use client';
+import { reportText } from '@/i18n';
+('use client');
 import './index.less';
 import { isElementField, useExecutionDump } from '@/components/store';
 import {
@@ -11,7 +12,6 @@ import {
 } from '@ant-design/icons';
 import type {
   ExecutionDump,
-  ExecutionTaskPlanning,
   ExecutionTaskPlanningLocate,
   IExecutionDump,
 } from '@midscene/core';
@@ -29,7 +29,6 @@ import {
   downloadMarkdownZip,
   markdownZipDownloadTooltip,
 } from '../../utils/markdown-export';
-import OpenInPlayground from '../open-in-playground';
 import { sanitizeJsonViewData } from './json-view-data';
 import { getExecutionMarkdownView } from './markdown-view';
 
@@ -147,7 +146,8 @@ const DetailPanel = ({
   );
 
   const hasReplay =
-    activeTask?.type === 'Planning' &&
+    (activeTask?.type === 'Planning' ||
+      activeTask?.hitBy?.from === 'Playwright') &&
     animationScripts &&
     animationScripts.length > 0;
 
@@ -178,6 +178,7 @@ const DetailPanel = ({
   if (activeExecution && viewType === VIEW_TYPE_REPLAY) {
     content = (
       <Player
+        hideVideoExport
         key={`${activeExecutionId}`}
         replayScripts={animationScripts || []}
         imageWidth={imageWidth || 0}
@@ -197,10 +198,10 @@ const DetailPanel = ({
         <div>Failed to render markdown: {markdownResult.errorMessage}</div>
       );
     } else {
-      content = <div>No markdown available</div>;
+      content = <div>{reportText('No markdown available')}</div>;
     }
   } else if (!activeTask) {
-    content = <div>please select a task</div>;
+    content = <div>{reportText('please select a task')}</div>;
   } else if (viewType === VIEW_TYPE_JSON) {
     content = (
       <div className="json-content scrollable">
@@ -255,7 +256,7 @@ const DetailPanel = ({
 
     contextLocatorView = activeTask.uiContext ? (
       <ScreenshotDisplay
-        title={`${isPageContextFrozen ? 'UI Context (Frozen)' : 'UI Context'} / ${contextScreenshotAt}`}
+        title={`${reportText(isPageContextFrozen ? 'UI Context (Frozen)' : 'UI Context')} / ${contextScreenshotAt}`}
       >
         <Blackboard
           key={`${_contextLoadId}`}
@@ -286,7 +287,9 @@ const DetailPanel = ({
     if (screenshotItems.length > 0 || contextLocatorView) {
       content = (
         <div className="screenshot-item-wrapper scrollable">
-          {contextLocatorView && <div>{contextLocatorView}</div>}
+          {contextLocatorView && activeTask?.type !== 'Log' && (
+            <div>{contextLocatorView}</div>
+          )}
           {screenshotItems.map((item) => {
             const timeText =
               item.description || item.timing || 'unknown-timing';
@@ -303,7 +306,7 @@ const DetailPanel = ({
         </div>
       );
     } else {
-      content = <div>No screenshot</div>;
+      content = <div>{reportText('No screenshot')}</div>;
     }
   }
 
@@ -330,7 +333,7 @@ const DetailPanel = ({
   const options = availableViewTypes.map((type) => {
     if (type === VIEW_TYPE_REPLAY) {
       return {
-        label: 'Replay',
+        label: reportText('Replay'),
         value: type,
         icon: <VideoCameraOutlined />,
       };
@@ -344,14 +347,14 @@ const DetailPanel = ({
     }
     if (type === VIEW_TYPE_SCREENSHOT) {
       return {
-        label: 'Screenshots',
+        label: reportText('Screenshots'),
         value: type,
         icon: <CameraOutlined />,
       };
     }
     if (type === VIEW_TYPE_JSON) {
       return {
-        label: 'JSON View',
+        label: reportText('JSON View'),
         value: type,
         icon: <FileTextOutlined />,
       };
@@ -393,35 +396,34 @@ const DetailPanel = ({
                     )
                   }
                 >
-                  <DownloadOutlined /> Download ZIP
+                  <DownloadOutlined /> {reportText('Download ZIP')}
                 </a>
               </Tooltip>
             )}
           {viewType === VIEW_TYPE_JSON && activeTaskJsonText && (
-            <Tooltip title="Copy JSON">
+            <Tooltip title={reportText('Copy JSON')}>
               <button
                 type="button"
                 className="copy-json-link"
-                aria-label="Copy JSON"
+                aria-label={reportText('Copy JSON')}
                 onClick={() => {
                   navigator.clipboard
                     .writeText(activeTaskJsonText)
                     .then(() => {
-                      message.success('JSON copied to clipboard');
+                      message.success(reportText('JSON copied to clipboard'));
                     })
                     .catch(() => {
-                      message.error('Copy failed');
+                      message.error(reportText('Copy failed'));
                     });
                 }}
               >
                 <CopyOutlined />
-                <span className="copy-json-label">Copy JSON</span>
+                <span className="copy-json-label">
+                  {reportText('Copy JSON')}
+                </span>
               </button>
             </Tooltip>
           )}
-          <OpenInPlayground
-            context={(activeTask as ExecutionTaskPlanning)?.uiContext}
-          />
         </div>
       </div>
       <div className="detail-content">{content}</div>

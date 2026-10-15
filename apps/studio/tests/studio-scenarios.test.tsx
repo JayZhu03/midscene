@@ -1,9 +1,17 @@
+import { Blob as NodeBlob } from 'node:buffer';
 import { ConfigProvider } from 'antd';
+import { IDBFactory } from 'fake-indexeddb';
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudioScenarios } from '../src/renderer/components/StudioScenarios';
+import { compileScenarioScript } from '../src/renderer/components/StudioScenarios/script-model';
+import {
+  getScenarioScript,
+  getScenarioScriptAsset,
+  saveScenarioScript,
+} from '../src/renderer/components/StudioScenarios/script-storage';
 import {
   SCENARIOS_STORAGE_KEY,
   loadStudioScenarios,
@@ -15,6 +23,7 @@ import type {
 } from '../src/renderer/components/StudioWorkspace/preferences';
 import { setStudioLanguage } from '../src/renderer/i18n';
 import { StudioModeTab } from '../src/renderer/recorder/types';
+import { scenarioEvent, scenarioSession } from './fixtures/scenario-script';
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -49,6 +58,12 @@ async function click(label: string, scope: ParentNode = document) {
     button(label, scope).click();
   });
 }
+async function waitForUI(assertion: () => void) {
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    assertion();
+  });
+}
 async function fill(label: string, value: string) {
   const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     `[aria-label="${label}"]`,
@@ -79,6 +94,8 @@ async function menu(action: string) {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.stubGlobal('indexedDB', new IDBFactory());
+  vi.stubGlobal('Blob', NodeBlob);
   setStudioLanguage('en');
   vi.stubGlobal('matchMedia', () => ({
     matches: false,
@@ -263,7 +280,9 @@ describe('local scenario management', () => {
       'Login',
     );
     await click('LoginUser login', container);
-    expect(container.textContent).toContain('No scripts yet');
+    await waitForUI(() =>
+      expect(container.textContent).toContain('No scripts yet'),
+    );
     expect(
       container.querySelector('.studio-scenario-detail h3')?.textContent,
     ).toBe('Login');
@@ -354,9 +373,38 @@ describe('local scenario management', () => {
     await click('Back to scenarios', container);
     await menu('Delete scenario');
     await click('Delete');
+    await waitForUI(() =>
+      expect(container.textContent).toContain('No scenarios yet'),
+    );
     expect(loadStudioScenarios()).toEqual([]);
     expect(container.querySelector('.studio-scenario-detail')).toBeNull();
     expect(container.textContent).toContain('No scenarios yet');
+  });
+
+  it('cleans up script assets when deleting through the actual list menu', async () => {
+    await render();
+    await create();
+    const selected = loadStudioScenarios()[0];
+    const saved = await saveScenarioScript(
+      compileScenarioScript({
+        id: 'owned-script',
+        scenarioId: selected.id,
+        name: 'Owned script',
+        session: scenarioSession({
+          events: [
+            scenarioEvent({ screenshotBefore: 'data:image/png;base64,AQID' }),
+          ],
+        }),
+      }),
+    );
+    await menu('Delete scenario');
+    await click('Delete');
+    await waitForUI(() =>
+      expect(container.textContent).toContain('No scenarios yet'),
+    );
+    expect(await getScenarioScript(saved.id)).toBeNull();
+    for (const asset of saved.assets)
+      expect(await getScenarioScriptAsset(asset.id)).toBeNull();
   });
 
   it('preserves details and unsaved editor fields when the panel is hidden and shown', async () => {
@@ -457,14 +505,20 @@ describe('local scenario management', () => {
     await click('Cancel');
     await menu('Delete scenario');
     await click('Delete');
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-      'Local storage is full. Unable to save.',
+    await waitForUI(() =>
+      expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+        'Local storage is full. Unable to save.',
+      ),
     );
     expect(container.querySelectorAll('.studio-scenario-row')).toHaveLength(1);
     expect(localStorage.getItem(SCENARIOS_STORAGE_KEY)).toBe(before);
     failure.mockRestore();
     await click('Delete');
-    expect(container.querySelectorAll('.studio-scenario-row')).toHaveLength(0);
+    await waitForUI(() =>
+      expect(container.querySelectorAll('.studio-scenario-row')).toHaveLength(
+        0,
+      ),
+    );
   });
 
   it('shows the Chinese form and field length limits', async () => {

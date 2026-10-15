@@ -340,11 +340,9 @@ const getPlaygroundRuntime = async (): Promise<PlaygroundRuntimeService> => {
               ...legacy,
               nativePreview: true,
               launchPuppeteerPage: (target, preference) =>
-                preference?.headed
-                  ? legacy.launchPuppeteerPage(target, preference)
-                  : nativeBrowserHost!.launch(target, () =>
-                      legacy.launchPuppeteerPage(target, preference),
-                    ),
+                nativeBrowserHost!.launch(target, () =>
+                  legacy.launchPuppeteerPage(target, preference),
+                ),
             };
           },
         }),
@@ -414,7 +412,10 @@ const createMainWindow = () => {
     onDidFinishLoad: (listener) =>
       window.webContents.once('did-finish-load', listener),
     onReadyToShow: (listener) => window.once('ready-to-show', listener),
-    show: () => window.show(),
+    show: () => {
+      if (process.platform === 'win32') window.maximize();
+      window.show();
+    },
   });
   mainWindowRevealController = revealController;
 
@@ -564,6 +565,14 @@ const registerIpcHandlers = () => {
     )
       throw new Error('Invalid native browser caller');
     return nativeBrowserHost?.updateLayout(layout) ?? { available: false };
+  });
+  ipcMain.handle(IPC_CHANNELS.nativeBrowserInput, (event, input) => {
+    if (
+      event.sender !== mainWindow?.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame
+    )
+      throw new Error('Invalid native browser caller');
+    return nativeBrowserHost?.input(input);
   });
   ipcMain.handle(IPC_CHANNELS.openExternalUrl, async (_event, url: string) => {
     await shell.openExternal(resolveExternalUrl(url));
@@ -811,12 +820,8 @@ if (shouldBootstrapStudio) {
     registerUpdaterHandlers(studioUpdater);
     ensureMainWindow();
 
-    // studioUpdater.init() no-ops when !app.isPackaged, and we skip the
-    // call entirely when running under the smoke/e2e harness so test runs
-    // do not hit the GitHub Releases API.
-    if (!isStudioSmokeTest && !isStudioE2ETest) {
-      studioUpdater.init(() => mainWindow);
-    }
+    // Internal builds are upgraded with our installer. Do not initialize the
+    // upstream GitHub updater: it would offer stock releases over this fork.
   });
 
   const requestMainWindowActivation = () => {
@@ -835,9 +840,7 @@ if (shouldBootstrapStudio) {
       });
   };
 
-  if (app.isPackaged) {
-    app.on('second-instance', requestMainWindowActivation);
-  }
+  app.on('second-instance', requestMainWindowActivation);
   app.on('activate', requestMainWindowActivation);
 
   app.on('window-all-closed', () => {

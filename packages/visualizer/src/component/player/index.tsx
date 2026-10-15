@@ -81,6 +81,8 @@ export function Player(props?: {
   hideControls?: boolean;
   /** Hide the fullscreen control for hosts that cannot support it. */
   hideFullscreenControl?: boolean;
+  /** Reports can omit video export while retaining playback settings. */
+  hideVideoExport?: boolean;
   presentation?: PlayerPresentation;
 }) {
   const uiLanguage = useUiLanguage();
@@ -115,9 +117,9 @@ export function Player(props?: {
   const lastTaskIdRef = useRef<string | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  // Observe render layer size to compute scale factor
+  // Measure the available canvas, not a child whose size depends on our scale.
   useEffect(() => {
-    const el = renderLayerRef.current;
+    const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -131,7 +133,7 @@ export function Player(props?: {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [Boolean(frameMap)]);
 
   const player = useFramePlayer({
     durationInFrames: Math.max(frameMap?.totalDurationInFrames ?? 1, 1),
@@ -333,15 +335,19 @@ export function Player(props?: {
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const toggleFullscreen = useCallback(() => {
+  const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
     if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen().then(() => setIsFullscreen(true));
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false));
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      notifyError(error, { title: t('无法进入全屏') });
     }
-  }, []);
+  }, [uiLanguage]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -604,55 +610,59 @@ export function Player(props?: {
                 overlayStyle={{ minWidth: '148px' }}
                 dropdownRender={() => (
                   <div className="player-settings-dropdown">
-                    {/* Export video */}
-                    <div
-                      className="player-settings-item"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        height: '32px',
-                        padding: '0 8px',
-                        borderRadius: '4px',
-                        cursor: isExporting ? 'not-allowed' : 'pointer',
-                        opacity: isExporting ? 0.5 : 1,
-                      }}
-                      onClick={isExporting ? undefined : handleExportVideo}
-                    >
-                      <span
-                        style={{
-                          width: 16,
-                          height: 16,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isExporting ? (
-                          <Progress
-                            type="circle"
-                            percent={exportProgress}
-                            size={16}
-                            strokeWidth={14}
-                            showInfo={false}
-                            strokeColor="#1677ff"
-                            trailColor="rgba(0, 0, 0, 0.12)"
-                          />
-                        ) : (
-                          <ExportOutlined
-                            style={{ width: '16px', height: '16px' }}
-                          />
-                        )}
-                      </span>
-                      <span className="player-export-label">
-                        {isExporting
-                          ? `Exporting ${exportProgress}%`
-                          : t('导出视频')}
-                      </span>
-                    </div>
+                    {!props?.hideVideoExport && (
+                      <>
+                        {/* Export video */}
+                        <div
+                          className="player-settings-item"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            height: '32px',
+                            padding: '0 8px',
+                            borderRadius: '4px',
+                            cursor: isExporting ? 'not-allowed' : 'pointer',
+                            opacity: isExporting ? 0.5 : 1,
+                          }}
+                          onClick={isExporting ? undefined : handleExportVideo}
+                        >
+                          <span
+                            style={{
+                              width: 16,
+                              height: 16,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isExporting ? (
+                              <Progress
+                                type="circle"
+                                percent={exportProgress}
+                                size={16}
+                                strokeWidth={14}
+                                showInfo={false}
+                                strokeColor="#1677ff"
+                                trailColor="rgba(0, 0, 0, 0.12)"
+                              />
+                            ) : (
+                              <ExportOutlined
+                                style={{ width: '16px', height: '16px' }}
+                              />
+                            )}
+                          </span>
+                          <span className="player-export-label">
+                            {isExporting
+                              ? `Exporting ${exportProgress}%`
+                              : t('导出视频')}
+                          </span>
+                        </div>
 
-                    <div className="player-settings-divider" />
+                        <div className="player-settings-divider" />
+                      </>
+                    )}
 
                     {/* Focus on cursor toggle */}
                     <div
@@ -766,9 +776,14 @@ export function Player(props?: {
               </Dropdown>
 
               {!props?.hideFullscreenControl && (
-                <div className="status-icon" onClick={toggleFullscreen}>
+                <button
+                  type="button"
+                  className="status-icon"
+                  aria-label={isFullscreen ? t('退出全屏') : t('放大观看')}
+                  onClick={() => void toggleFullscreen()}
+                >
                   {isFullscreen ? <CompressOutlined /> : <ExpandOutlined />}
-                </div>
+                </button>
               )}
             </div>
           </div>

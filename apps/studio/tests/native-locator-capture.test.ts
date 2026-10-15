@@ -1,7 +1,7 @@
+import type { MidsceneRecorderNativeLocator } from '@midscene/shared/recorder';
+import { captureRecorderNativeTarget } from '@midscene/shared/recorder-native-capture';
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MidsceneRecorderNativeLocator } from '../../../packages/shared/src/recorder';
-import { captureRecorderNativeTarget } from '../../../packages/shared/src/recorder-native-capture';
 
 // jsdom has no layout. Model only visibility and the known pointer hit; all
 // locator queries still run against real, independently constructed DOM trees.

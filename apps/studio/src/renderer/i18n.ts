@@ -116,6 +116,9 @@ const webMessages: Record<string, string> = {
   'Loading reports': '正在加载报告',
   'Back to execution records': '返回执行记录',
   'Unable to download report.': '报告下载失败，请重试',
+  'Loading report...': '正在加载报告…',
+  'Unable to load process evidence. Showing the test conclusion only.':
+    '过程证据加载失败，当前仅显示测试结论。',
   'Unable to read execution reports.': '执行报告读取失败，请重新打开',
   'Unable to save execution report. Download it before leaving.':
     '报告保存失败，请先下载报告',
@@ -142,6 +145,9 @@ const webMessages: Record<string, string> = {
   'Move up': '上移',
   'Move down': '下移',
   'Next step': '下一步',
+  Skip: '跳过',
+  Skipped: '已跳过',
+  'Completed · Some skipped': '执行完成 · 存在跳过项',
   'Not started': '未执行',
   'Waiting for next': '等待下一步',
   Running: '执行中',
@@ -284,6 +290,8 @@ const webMessages: Record<string, string> = {
   'Remove this page from the list? Browser login data will be kept.':
     '从列表中删除此网页？浏览器登录信息会保留。',
   'Page size': '网页尺寸',
+  'Web preview': '网页预览',
+  'Web page input': '网页输入',
   'Page width': '网页宽度',
   'Page height': '网页高度',
   'Refresh pages': '刷新网页',

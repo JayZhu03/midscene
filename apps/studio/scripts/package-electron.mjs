@@ -426,8 +426,22 @@ export const resolvePackagerIconPath = (platform) => {
   return undefined;
 };
 
-export const buildPackagerOptions = ({ arch, outDir, platform, stageDir }) => ({
+export const buildPackagerOptions = ({
   arch,
+  outDir,
+  platform,
+  stageDir,
+  version,
+}) => ({
+  arch,
+  // PE version resources accept only numeric components, unlike package.json.
+  ...(platform === 'win32' && version
+    ? {
+        appVersion: normalizeReleaseVersion(version)
+          .split('-')[0]
+          .split('+')[0],
+      }
+    : {}),
   // Store the JS payload in app.asar so release artifacts do not have to
   // compress/extract tens of thousands of tiny node_modules files. Native
   // modules and helper binaries stay unpacked because the OS dynamic loader and
@@ -451,9 +465,16 @@ const packageManagerCommand =
 export const buildWindowsNsisArtifactName = (baseName) =>
   `${baseName}-setup.exe`;
 
-export const buildWindowsNsisConfig = ({ artifactName, iconPath }) => ({
+export const buildWindowsNsisConfig = ({
+  artifactName,
+  iconPath,
+  version,
+}) => ({
   appId: packagedWindowsAppId,
   productName: packagedProductName,
+  ...(version
+    ? { extraMetadata: { version: normalizeReleaseVersion(version) } }
+    : {}),
   directories: {
     output: artifactDir,
   },
@@ -472,9 +493,14 @@ export const buildWindowsNsisConfig = ({ artifactName, iconPath }) => ({
     ...(iconPath ? { icon: iconPath } : {}),
   },
   nsis: {
-    oneClick: true,
+    oneClick: false,
     perMachine: false,
     allowElevation: false,
+    allowToChangeInstallationDirectory: true,
+    deleteAppDataOnUninstall: false,
+    createStartMenuShortcut: true,
+    installerLanguages: ['zh_CN', 'en_US'],
+    language: '2052',
     artifactName,
     shortcutName: packagedProductName,
     uninstallDisplayName: packagedProductName,
@@ -1641,6 +1667,10 @@ const copyStudioBuildOutputToStageDir = async (stageDir) => {
     recursive: true,
   });
   await copyStudioFontLicenseToStageDir(stageDir);
+  await fs.copyFile(
+    path.join(workspaceRootDir, 'LICENSE'),
+    path.join(stageDir, 'LICENSE'),
+  );
 };
 
 const installStageDependencies = async (stageDir) => {
@@ -2307,6 +2337,7 @@ export const buildWindowsNsisInstaller = async ({
   arch,
   baseName,
   packagedAppPath,
+  version,
 }) => {
   // electron-builder's NSIS target only ships x64-compatible installers on
   // Windows; arm64 NSIS support is not yet stable upstream. The Studio
@@ -2331,6 +2362,7 @@ export const buildWindowsNsisInstaller = async ({
       buildWindowsNsisConfig({
         artifactName,
         iconPath: resolvePackagerIconPath('win32'),
+        version,
       }),
       null,
       2,
@@ -2380,6 +2412,7 @@ export const packageStudioElectronApp = async ({
 
   const packagedAppPaths = await packager(
     buildPackagerOptions({
+      version: normalizedVersion,
       arch,
       outDir: packagedDir,
       platform,
@@ -2454,6 +2487,7 @@ export const packageStudioElectronApp = async ({
       arch,
       baseName,
       packagedAppPath,
+      version: normalizedVersion,
     });
     updaterArtifactPath = windowsInstallerArtifactPath;
   }

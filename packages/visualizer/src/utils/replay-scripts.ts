@@ -1,7 +1,8 @@
 'use client';
 import { mousePointer } from '@/utils';
-import { paramStr, typeStr } from '@midscene/core/agent';
+import { paramStr, typeStr as taskTypeStr } from '@midscene/core/agent';
 import { getTaskSearchArea } from '@midscene/core/dump/task-service-dump';
+import { t } from '../ui-language';
 import { getCenterHighlightBox } from './highlight-element';
 
 import type {
@@ -72,6 +73,7 @@ const locateDuration = 800;
 const actionDuration = 500;
 const clearInsightDuration = 200;
 const lastFrameDuration = 200;
+const typeStr = (task: ExecutionTask) => t(taskTypeStr(task));
 
 // fit rect to camera
 export const cameraStateForRect = (
@@ -377,10 +379,6 @@ export const generateAnimationScripts = (
       return null;
     }
 
-    if (startIndex === execution.tasks.length - 1) {
-      return null;
-    }
-
     taskStartIndex = startIndex;
     for (let i = startIndex; i < execution.tasks.length; i++) {
       if (
@@ -584,6 +582,52 @@ export const generateAnimationScripts = (
     } else if (task.type === 'Action Space') {
       const title = typeStr(task);
       const subTitle = paramStr(task);
+
+      // Native Playwright actions have no AI planning task. Reuse the official
+      // target highlight and pointer animation with this run's observed click,
+      // rather than fabricating a model Locate step or recording coordinates.
+      const nativeTarget =
+        task.hitBy?.from === 'Playwright'
+          ? (task.param?.locate as LocateResultElement | undefined)
+          : undefined;
+      if (
+        nativeTarget?.center &&
+        nativeTarget.rect &&
+        task.uiContext?.screenshot
+      ) {
+        const { width, height } = resolveTaskShotSize(
+          task,
+          imageWidth,
+          imageHeight,
+        );
+        scripts.push(
+          createScript(
+            {
+              type: 'insight',
+              context: task.uiContext,
+              highlightElement: nativeTarget,
+              camera: {
+                ...cameraStateForRect(
+                  getCenterHighlightBox(nativeTarget),
+                  width,
+                  height,
+                ),
+                pointerLeft: nativeTarget.center[0],
+                pointerTop: nativeTarget.center[1],
+              },
+              duration: locateDuration * 0.5,
+              insightCameraDuration: locateDuration,
+              title,
+              subTitle,
+              imageWidth: width,
+              imageHeight: height,
+              taskId: currentTaskId,
+            },
+            asScreenshot(task.uiContext.screenshot),
+          ),
+        );
+        insightOnTop = true;
+      }
 
       scripts.push({
         type: 'spinning-pointer',

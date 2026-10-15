@@ -1,7 +1,7 @@
 import { getUiLanguage, t } from '../ui-language';
 const actionLabels: Record<string, string> = {
   aiAct: '自动操作',
-  aiTap: '点击',
+  aiTap: 'Click',
   aiDoubleClick: '双击',
   aiHover: '悬停',
   aiInput: '输入',

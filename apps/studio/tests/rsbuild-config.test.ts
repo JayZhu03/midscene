@@ -9,19 +9,19 @@ describe('rsbuild config', () => {
   it('resolves renderer workspace packages from source-safe entries', () => {
     const alias = config.resolve?.alias as Record<string, string | false>;
 
-    expect(alias['@midscene/playground-app$']).toContain(
-      'packages/playground-app/src/index.ts',
-    );
-    expect(alias['@midscene/playground$']).toContain(
-      'packages/playground/src/index.browser.ts',
-    );
-    expect(alias['@midscene/visualizer$']).toContain(
-      'packages/visualizer/src/index.tsx',
-    );
-    expect(alias['@midscene/web/static$']).toContain(
-      'packages/web-integration/src/static/index.ts',
-    );
-    expect(alias['@/utils$']).toContain(
+    expect(
+      String(alias['@midscene/playground-app$']).split('\\').join('/'),
+    ).toContain('packages/playground-app/src/index.ts');
+    expect(
+      String(alias['@midscene/playground$']).split('\\').join('/'),
+    ).toContain('packages/playground/src/index.browser.ts');
+    expect(
+      String(alias['@midscene/visualizer$']).split('\\').join('/'),
+    ).toContain('packages/visualizer/src/index.tsx');
+    expect(
+      String(alias['@midscene/web/static$']).split('\\').join('/'),
+    ).toContain('packages/web-integration/src/static/index.ts');
+    expect(String(alias['@/utils$']).split('\\').join('/')).toContain(
       'packages/visualizer/src/utils/index.ts',
     );
     expect(alias['@silvia-odwyer/photon']).toBe(false);

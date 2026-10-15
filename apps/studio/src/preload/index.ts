@@ -5,6 +5,9 @@ import {
 } from '@shared/electron-contract';
 import type { UpdateStatus, UpdaterApi } from '@shared/updater-contract';
 import { contextBridge, ipcRenderer } from 'electron';
+import { registerNativeBrowserPreview } from './native-browser';
+
+registerNativeBrowserPreview();
 
 /**
  * Preload is intentionally thin.
@@ -44,6 +47,8 @@ const electronShellApi: ElectronShellApi = {
 };
 
 const studioRuntimeApi: StudioRuntimeApi = {
+  nativeBrowserInput: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.nativeBrowserInput, input),
   nativeBrowserLayout: (layout) =>
     ipcRenderer.invoke(IPC_CHANNELS.nativeBrowserLayout, layout),
   getPlaygroundBootstrap: () =>

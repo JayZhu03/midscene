@@ -308,9 +308,9 @@ export async function assessScenarioContinuation(
         })),
     });
     const result = (await agent.aiQuery(
-      `Decide if the next test script can meaningfully execute after the recorded failures. Inspect ALL previous failures, not just the immediately preceding script. Return JSON { "allowed": boolean, "reason": "specific evidence and prerequisite explanation" }.
+      `Decide if the next test script can meaningfully execute after the recorded failures or user-skipped scripts. Inspect ALL previous failures and skipped scripts, not just the immediately preceding script. Return JSON { "allowed": boolean, "reason": "specific evidence and prerequisite explanation" }.
 The runner will use the next script's recorded initial URL. Being on a different page alone is NOT a dependency. A failed count/display assertion alone does NOT imply that later independent navigation or querying is blocked.
-If the next script needs an order, identifier, state change, login or other result that an earlier script failed to produce, return false. Also return false if prerequisites or side effects are uncertain. Do not manufacture missing data. A URL does not establish business prerequisites. Do not perform any actions.
+If the next script needs an order, identifier, state change, login or other result that an earlier script failed to produce, return false. Also return false if prerequisites or side effects are uncertain. Skipped scripts did not execute and produced no new results. Skipping is a user decision, not a business failure; allow independent scripts to proceed. Do not manufacture missing data. A URL does not establish business prerequisites. Do not perform any actions.
 Test context: ${facts}`,
       {
         abortSignal: bounded,

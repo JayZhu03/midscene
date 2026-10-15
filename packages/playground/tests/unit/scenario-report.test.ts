@@ -120,7 +120,12 @@ test('saves only the latest ten scenario and single-script executions on disk', 
     );
     expect(records.some((record) => record.scope === 'script')).toBe(true);
     expect(records.some((record) => record.scope === 'scenario')).toBe(true);
-    expect(await readdir(dir)).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.json')),
+    ).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.html')),
+    ).toHaveLength(10);
     await expect(readScenarioReport(dir, 'retained-2')).rejects.toThrow();
     expect((await readScenarioReport(dir, 'retained-12')).summary?.text).toBe(
       '# Report 12',
@@ -129,7 +134,12 @@ test('saves only the latest ten scenario and single-script executions on disk', 
       ...savedRun(12),
       summary: { status: 'completed', text: '# Updated' },
     });
-    expect(await readdir(dir)).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.json')),
+    ).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.html')),
+    ).toHaveLength(10);
     expect((await readScenarioReport(dir, 'retained-12')).summary?.text).toBe(
       '# Updated',
     );
@@ -262,7 +272,12 @@ test('serializes overlapping saves and lists without losing retained reports or 
     expect((await readScenarioReport(dir, 'retained-26')).summary?.text).toBe(
       '# Final report',
     );
-    expect(await readdir(dir)).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.json')),
+    ).toHaveLength(10);
+    expect(
+      (await readdir(dir)).filter((name) => name.endsWith('.html')),
+    ).toHaveLength(10);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

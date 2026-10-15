@@ -13,6 +13,7 @@ export function StudioScenarioExecution({
   ready,
   onBack,
   onNext,
+  onSkip,
   onStop,
   canRestoreSession,
   onRestoreSession,
@@ -24,6 +25,7 @@ export function StudioScenarioExecution({
   ready: boolean;
   onBack: () => void;
   onNext: () => void;
+  onSkip: () => void;
   onStop: () => void;
   canRestoreSession?: boolean;
   onRestoreSession?: () => void;
@@ -44,7 +46,7 @@ export function StudioScenarioExecution({
         n +
         (s.steps
           ? s.steps.filter((step) =>
-              ['passed', 'failed', 'blocked'].includes(step.status),
+              ['passed', 'failed', 'blocked', 'skipped'].includes(step.status),
             ).length
           : s.completedSteps),
       0,
@@ -63,18 +65,25 @@ export function StudioScenarioExecution({
       hasFailures &&
       run.scripts.length > 0 &&
       run.scripts.every((script) =>
-        ['passed', 'failed'].includes(script.status),
+        ['passed', 'failed', 'skipped'].includes(script.status),
       ));
+  const hasSkipped = run?.scripts.some((script) => script.status === 'skipped');
   const outcome =
     run?.status === 'blocked' || (run?.status === 'failed' && !finished)
       ? 'error'
       : finished
-        ? hasFailures
+        ? hasFailures || hasSkipped
           ? 'warning'
           : 'success'
         : 'normal';
   const scriptCounts = run
-    ? ['passed', 'failed', 'blocked', ...(!active ? ['pending'] : [])]
+    ? [
+        'passed',
+        'failed',
+        'blocked',
+        'skipped',
+        ...(!active ? ['pending'] : []),
+      ]
         .map((state) => ({
           state,
           count: run.scripts.filter((script) => script.status === state).length,
@@ -92,7 +101,9 @@ export function StudioScenarioExecution({
           ? t(
               hasFailures
                 ? 'Completed · Some failures'
-                : 'Completed · All passed',
+                : hasSkipped
+                  ? 'Completed · Some skipped'
+                  : 'Completed · All passed',
             )
           : run?.status === 'blocked'
             ? t('Execution blocked')
@@ -159,14 +170,23 @@ export function StudioScenarioExecution({
             {completed} / {total}
           </span>
           {run?.status === 'waiting' ? (
-            <Button
-              size="small"
-              type="primary"
-              disabled={pending || !ready}
-              onClick={onNext}
-            >
-              {t('Next step')}
-            </Button>
+            <>
+              <Button
+                size="small"
+                type="primary"
+                disabled={pending || !ready}
+                onClick={onNext}
+              >
+                {t('Next step')}
+              </Button>
+              <Button
+                size="small"
+                disabled={pending || !ready}
+                onClick={onSkip}
+              >
+                {t('Skip')}
+              </Button>
+            </>
           ) : null}
           {active ? (
             <Button

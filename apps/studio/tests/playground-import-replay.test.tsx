@@ -107,9 +107,15 @@ vi.mock('../src/renderer/components/PlaygroundShell/mode-icons', () => ({
   ReplayModeIcon: () => createElement('span'),
 }));
 
-vi.mock('../src/renderer/playground/useStudioPlayground', () => ({
-  useStudioPlayground: () => mocks.playground,
-}));
+vi.mock(
+  '../src/renderer/playground/useStudioPlayground',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('../src/renderer/playground/useStudioPlayground')
+    >()),
+    useStudioPlayground: () => mocks.playground,
+  }),
+);
 
 vi.mock('../src/renderer/recorder/useStudioRecorder', () => ({
   useStudioRecorder: () => mocks.recorder,

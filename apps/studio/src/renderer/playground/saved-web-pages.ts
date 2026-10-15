@@ -176,7 +176,7 @@ export function webPageFormValues(page?: SavedWebPage) {
           'web.url': page.url,
           'web.viewportWidth': page.viewportWidth,
           'web.viewportHeight': page.viewportHeight,
-          'web.headed': page.headed,
+          'web.headed': false,
         }
       : {}),
   };

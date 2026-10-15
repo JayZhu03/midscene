@@ -7,9 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { getDebug } from '@midscene/shared/logger';
 import type { MidsceneRecorderNativeTarget } from '@midscene/shared/recorder';
 import {
-  type BrowserWindow,
+  BrowserWindow,
   type CookiesSetDetails,
-  WebContentsView,
   app,
   safeStorage,
   session,
@@ -18,8 +17,11 @@ import puppeteer, { type Browser, type Page } from 'puppeteer';
 import {
   type NativeBrowserLayout,
   type NativeBrowserState,
+  validNativeBrowserInput,
   validNativeBrowserLayout,
 } from '../../shared/native-browser';
+import { nativeBrowserUsesSharedTexture } from './native-browser-gpu';
+import { attachNativeBrowserPreview } from './native-browser-preview';
 import { nativeRecorderScript } from './native-recorder';
 import {
   createRecorderDelivery,
@@ -43,13 +45,14 @@ type Packet = {
 type RecordListener = (packet: Packet) => void;
 export interface NativePageHooks {
   activate(): void;
+  captureScreenshot(): Promise<string>;
   startRecording(listener: RecordListener): Promise<void>;
   stopRecording(): Promise<void>;
   setViewport(size: { width: number; height: number }): Promise<void>;
 }
 export type NativePage = Page & { studioNative?: NativePageHooks };
 type Guest = {
-  view: WebContentsView;
+  view: BrowserWindow;
   page: NativePage;
   browser: Browser;
   width: number;
@@ -57,15 +60,15 @@ type Guest = {
   error?: string;
   loadingSince?: number;
   stopRecording: () => Promise<void>;
+  stopPreview: () => void;
+  updatePreview: () => void;
+  inputQueue: Promise<void>;
 };
 
 /** A single owner for display and automation. Never browser.close() on Electron. */
 export class NativeBrowserHost {
   private active?: Guest;
   private layout?: NativeBrowserLayout;
-  private snapshot?: string;
-  private shield?: WebContentsView;
-  private shieldBlocking = false;
   constructor(
     private window: () => BrowserWindow | null,
     private root: string,
@@ -97,44 +100,65 @@ export class NativeBrowserHost {
   private place() {
     const guest = this.active;
     const layout = this.layout;
-    if (!guest || guest.view.webContents.isDestroyed()) return;
     if (
-      !layout ||
-      !layout.visible ||
-      guest.error ||
-      layout.width < 2 ||
-      layout.height < 2
-    ) {
-      guest.view.setVisible(false);
-      this.shield?.setVisible(false);
+      !guest ||
+      guest.view.isDestroyed() ||
+      guest.view.webContents.isDestroyed()
+    )
       return;
-    }
-    const scale = Math.min(
-      layout.width / guest.width,
-      layout.height / guest.height,
-    );
-    const width = Math.max(1, Math.round(guest.width * scale));
-    const height = Math.max(1, Math.round(guest.height * scale));
-    const bounds = {
-      x: Math.round(layout.x + (layout.width - width) / 2),
-      y: Math.round(layout.y + (layout.height - height) / 2),
-      width,
-      height,
-    };
-    if (JSON.stringify(bounds) !== JSON.stringify(guest.view.getBounds()))
-      guest.view.setBounds(bounds);
-    if (Math.abs(guest.view.webContents.getZoomFactor() - scale) > 0.00001)
-      guest.view.webContents.setZoomFactor(scale);
-    guest.view.setVisible(true);
-    if (this.shield) {
-      this.shield.setBounds(bounds);
-      this.shield.setVisible(layout.blocked);
-      if (layout.blocked) {
-        this.window()?.contentView.addChildView(this.shield);
-        if (!this.shieldBlocking) this.shield.webContents.focus();
+    // The preview never changes the webpage's render dimensions or zoom.
+    if (
+      layout?.visible &&
+      !guest.error &&
+      layout.width >= 2 &&
+      layout.height >= 2
+    )
+      guest.updatePreview();
+  }
+
+  async input(value: unknown): Promise<void> {
+    if (!validNativeBrowserInput(value))
+      throw new Error('Invalid browser input');
+    const guest = this.active;
+    if (
+      !guest ||
+      guest.view.isDestroyed() ||
+      guest.view.webContents.isDestroyed()
+    )
+      return;
+    const run = guest.inputQueue.then(async () => {
+      if (
+        this.active !== guest ||
+        guest.view.isDestroyed() ||
+        value.id !== guest.view.webContents.id ||
+        !this.layout?.visible ||
+        this.layout.blocked ||
+        guest.error ||
+        guest.view.webContents.isDestroyed()
+      )
+        return;
+      const wc = guest.view.webContents;
+      if (value.type === 'insertText') await wc.insertText(value.text);
+      else if (value.type === 'shortcut') wc[value.action]();
+      else {
+        const { id: _id, ...event } = value;
+        if (event.type === 'mouseWheel')
+          wc.sendInputEvent({
+            ...event,
+            deltaX: -event.deltaX,
+            deltaY: -event.deltaY,
+          });
+        else wc.sendInputEvent(event);
+        if (event.type === 'keyDown' && event.keyCode === 'Return')
+          wc.sendInputEvent({
+            type: 'char',
+            keyCode: '\r',
+            modifiers: event.modifiers,
+          });
       }
-      this.shieldBlocking = layout.blocked;
-    }
+    });
+    guest.inputQueue = run.catch(() => {});
+    return run;
   }
 
   async updateLayout(value: unknown): Promise<NativeBrowserState> {
@@ -147,30 +171,10 @@ export class NativeBrowserHost {
       width: Math.max(0, Math.min(value.width, width - value.x)),
       height: Math.max(0, Math.min(value.height, height - value.y)),
     };
-    const guest = this.active;
-    const wasVisible = this.layout?.visible;
+    const guest =
+      this.active && !this.active.view.isDestroyed() ? this.active : undefined;
     this.layout = layout;
     this.place();
-    // Capture only when a shell overlay covers the guest. Normal display has no
-    // screenshot stream, JPEG encoding, network transport or input forwarding.
-    if (
-      guest &&
-      !guest.view.webContents.isDestroyed() &&
-      wasVisible &&
-      !layout.visible
-    ) {
-      guest.view.setVisible(false);
-      try {
-        this.snapshot = (
-          await guest.view.webContents.capturePage(undefined, {
-            stayHidden: true,
-            stayAwake: true,
-          })
-        ).toDataURL();
-      } catch {
-        this.snapshot = undefined;
-      }
-    }
     return guest
       ? {
           available: true,
@@ -179,7 +183,6 @@ export class NativeBrowserHost {
           height: guest.height,
           error: guest.error,
           loadingSince: guest.loadingSince,
-          snapshot: !layout.visible ? this.snapshot : undefined,
         }
       : { available: false };
   }
@@ -211,46 +214,50 @@ export class NativeBrowserHost {
     const guestSession = profile
       ? session.fromPath(directory)
       : session.fromPartition(`studio-run-${randomUUID()}`);
-    const view = new WebContentsView({
+    const useSharedTexture = await nativeBrowserUsesSharedTexture();
+    if (win.isDestroyed()) throw new Error('Studio window is unavailable');
+    const view = new BrowserWindow({
+      width: target.viewportWidth,
+      height: target.viewportHeight,
+      useContentSize: true,
+      show: false,
+      frame: false,
+      skipTaskbar: true,
       webPreferences: {
         session: guestSession,
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
         backgroundThrottling: false,
+        offscreen: { useSharedTexture },
       },
     });
-    view.setBorderRadius(12);
-    view.setBounds({
-      x: 0,
-      y: 0,
-      width: target.viewportWidth,
-      height: target.viewportHeight,
-    });
-    view.setVisible(false);
-    win.contentView.addChildView(view);
+    // Windows clamps the initial bounds to the monitor's work area.
+    view.setContentSize(target.viewportWidth, target.viewportHeight);
+    const resetZoom = () => {
+      // The former native preview saved its fitted zoom per origin. Existing
+      // profiles must render at full size too, including after redirects.
+      if (view.webContents.getZoomFactor() !== 1)
+        view.webContents.setZoomFactor(1);
+    };
+    resetZoom();
+    view.webContents.on('did-navigate', resetZoom);
+    view.webContents.setFrameRate(useSharedTexture ? 30 : 10);
+    const closeWithShell = () => {
+      if (!view.isDestroyed()) view.destroy();
+    };
+    win.once('closed', closeWithShell);
+    const preview = attachNativeBrowserPreview(
+      view.webContents,
+      win.webContents,
+      () =>
+        this.active?.view === view &&
+        Boolean(this.layout?.visible) &&
+        !this.active.error,
+    );
     let browser: Browser | undefined;
     let guest: Guest | undefined;
     try {
-      if (!this.shield || this.shield.webContents.isDestroyed()) {
-        this.shield = new WebContentsView({
-          webPreferences: {
-            sandbox: true,
-            contextIsolation: true,
-            nodeIntegration: false,
-          },
-        });
-        const shield = this.shield;
-        shield.setBackgroundColor('#00000000');
-        shield.setVisible(false);
-        win.contentView.addChildView(shield);
-        await shield.webContents.loadURL(
-          'data:text/html,<html style="background:transparent"><body style="margin:0;background:transparent"></body></html>',
-        );
-        win.once('closed', () => {
-          if (!shield.webContents.isDestroyed()) shield.webContents.close();
-        });
-      }
       await view.webContents.loadURL('about:blank');
       const endpoint = await this.endpoint();
       browser = await puppeteer.connect({
@@ -279,6 +286,9 @@ export class NativeBrowserHost {
         width: target.viewportWidth,
         height: target.viewportHeight,
         stopRecording: async () => {},
+        stopPreview: preview.dispose,
+        updatePreview: preview.update,
+        inputQueue: Promise.resolve(),
       };
       const current = guest;
       let navigationFailed = false;
@@ -302,12 +312,9 @@ export class NativeBrowserHost {
           navigationFailed = true;
           current.loadingSince = undefined;
           current.error = `网页加载失败（${description}），请检查网络后刷新。`;
-          this.snapshot = undefined;
           this.place();
         },
       );
-      // The transparent sibling view absorbs OS input during execution. Do not
-      // cancel before-mouse-event: Electron fires it for CDP input as well.
       view.webContents.on('render-process-gone', (_event, details) => {
         current.loadingSince = undefined;
         current.error = `网页进程已退出（${details.reason}），请重新连接。`;
@@ -320,6 +327,7 @@ export class NativeBrowserHost {
       });
       // Slow subresources must not hide an already usable document.
       view.webContents.on('dom-ready', () => {
+        resetZoom();
         current.loadingSince = undefined;
       });
       view.webContents.setWindowOpenHandler(({ url }) => {
@@ -330,14 +338,7 @@ export class NativeBrowserHost {
         return { action: 'deny' };
       });
       const activate = () => {
-        if (
-          this.active &&
-          this.active !== current &&
-          !this.active.view.webContents.isDestroyed()
-        )
-          this.active.view.setVisible(false);
         this.active = current;
-        this.snapshot = undefined;
         this.place();
       };
       const setViewport = async (size: { width: number; height: number }) => {
@@ -349,13 +350,61 @@ export class NativeBrowserHost {
           throw new Error('Invalid page size');
         current.width = size.width;
         current.height = size.height;
+        view.setContentSize(size.width, size.height);
+        await page.waitForFunction(
+          (width, height) => innerWidth === width && innerHeight === height,
+          { timeout: 5000 },
+          size.width,
+          size.height,
+        );
         this.place();
       };
       page.setViewport = setViewport;
       page.viewport = () => ({ width: current.width, height: current.height });
+      let captureQueue: Promise<unknown> = Promise.resolve();
+      const captureScreenshot = async () => {
+        // DOM changes can precede Chromium's compositor, particularly while
+        // minimized. Wait for rendering before copying its surface.
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve, reject) => {
+              const timeout = setTimeout(
+                () => reject(new Error('网页画面尚未就绪，请重试。')),
+                2000,
+              );
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  clearTimeout(timeout);
+                  resolve();
+                }),
+              );
+            }),
+        );
+        // Capture the full-size source surface, independently of the preview.
+        const image = await view.webContents.capturePage(undefined, {
+          stayHidden: true,
+          stayAwake: true,
+        });
+        if (image.isEmpty()) throw new Error('原生浏览器截图为空，请重试。');
+        // Normalize high-DPI rendering to the page's CSS coordinate space.
+        return image
+          .resize({
+            width: current.width,
+            height: current.height,
+            quality: 'good',
+          })
+          .toDataURL();
+      };
       page.studioNative = {
         activate,
         setViewport,
+        captureScreenshot: () => {
+          // An Agent request after an action must not reuse a recorder capture
+          // that started before it. Serialize fresh captures instead of sharing one.
+          const pending = captureQueue.then(captureScreenshot);
+          captureQueue = pending.catch(() => {});
+          return pending;
+        },
         startRecording: async (listener) => {
           await current.stopRecording();
           const binding = `__studioRecord_${randomUUID().replace(/-/g, '')}`;
@@ -364,14 +413,16 @@ export class NativeBrowserHost {
           let screenshot: string | undefined;
           let capturing = false;
           const capture = async () => {
-            if (capturing || !enabled || view.webContents.isDestroyed()) return;
+            if (
+              capturing ||
+              !enabled ||
+              view.isDestroyed() ||
+              view.webContents.isDestroyed()
+            )
+              return;
             capturing = true;
             try {
-              const image = await view.webContents.capturePage(undefined, {
-                stayHidden: true,
-                stayAwake: true,
-              });
-              screenshot = `data:image/jpeg;base64,${image.toJPEG(75).toString('base64')}`;
+              screenshot = await page.studioNative!.captureScreenshot();
             } catch (error) {
               debug('Native recorder frame unavailable', error);
             } finally {
@@ -581,7 +632,11 @@ export class NativeBrowserHost {
             name: 'studio_native_browser',
             fn: async () => {
               await current.stopRecording();
-              if (profile && !view.webContents.isDestroyed()) {
+              if (
+                profile &&
+                !view.isDestroyed() &&
+                !view.webContents.isDestroyed()
+              ) {
                 try {
                   const state = await page.evaluate(() => ({
                     origin: location.origin,
@@ -609,12 +664,12 @@ export class NativeBrowserHost {
               }
               if (this.active === current) {
                 this.active = undefined;
-                this.shield?.setVisible(false);
               }
-              if (!win.isDestroyed()) win.contentView.removeChildView(view);
-              if (!view.webContents.isDestroyed()) {
+              current.stopPreview();
+              win.removeListener('closed', closeWithShell);
+              if (!view.isDestroyed()) {
                 guestSession.flushStorageData();
-                view.webContents.close();
+                view.destroy();
               }
               await current.browser.disconnect();
             },
@@ -626,8 +681,9 @@ export class NativeBrowserHost {
         this.active = previousGuest;
         this.place();
       }
-      if (!win.isDestroyed()) win.contentView.removeChildView(view);
-      if (!view.webContents.isDestroyed()) view.webContents.close();
+      preview.dispose();
+      win.removeListener('closed', closeWithShell);
+      if (!view.isDestroyed()) view.destroy();
       await browser?.disconnect();
       throw error;
     }

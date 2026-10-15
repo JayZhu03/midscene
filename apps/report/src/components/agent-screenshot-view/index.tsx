@@ -1,3 +1,4 @@
+import { reportText } from '@/i18n';
 import './index.less';
 
 import { Empty } from 'antd';
@@ -51,7 +52,9 @@ const AgentScreenshotView = ({
             aria-hidden="true"
             className="agent-screenshot-title-icon"
           />
-          <span className="agent-screenshot-title-text">Screenshots</span>
+          <span className="agent-screenshot-title-text">
+            {reportText('Screenshots')}
+          </span>
           <span className="agent-screenshot-count">{screenshots.length}</span>
         </div>
       </div>

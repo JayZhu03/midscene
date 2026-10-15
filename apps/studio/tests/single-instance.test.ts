@@ -48,12 +48,22 @@ function createWindow({
 }
 
 describe('Studio single-instance lock', () => {
-  it('keeps unpackaged development instances independent', () => {
+  it('locks unpackaged shortcut and development instances too', () => {
     const application = createApplication({ isPackaged: false });
 
     expect(acquireStudioSingleInstanceLock(application)).toBe(true);
-    expect(application.requestSingleInstanceLock).not.toHaveBeenCalled();
+    expect(application.requestSingleInstanceLock).toHaveBeenCalledOnce();
     expect(application.quit).not.toHaveBeenCalled();
+  });
+
+  it('quits an unpackaged secondary instance before opening its profile', () => {
+    const application = createApplication({
+      isPackaged: false,
+      acquired: false,
+    });
+    expect(acquireStudioSingleInstanceLock(application)).toBe(false);
+    expect(application.requestSingleInstanceLock).toHaveBeenCalledOnce();
+    expect(application.quit).toHaveBeenCalledOnce();
   });
 
   it('continues bootstrapping when the packaged instance acquires the lock', () => {

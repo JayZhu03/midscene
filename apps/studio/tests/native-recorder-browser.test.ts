@@ -69,6 +69,39 @@ it('captures real browser typing immediately followed by stop with the native lo
   }
 });
 
+it.each([
+  ['input', '<input id="entry">'],
+  ['textarea', '<textarea id="entry"></textarea>'],
+  ['contenteditable', '<div id="entry" contenteditable="true"></div>'],
+])(
+  'records mixed-case text without a separate Caps Lock action (%s)',
+  async (_type, html) => {
+    const h = await setup(`${html}<button id="save">保存</button>`);
+    try {
+      await h.page.focus('#entry');
+      await h.page.keyboard.type('s');
+      await h.page.keyboard.press('CapsLock');
+      await h.page.keyboard.down('Shift');
+      await h.page.keyboard.press('KeyU');
+      await h.page.keyboard.up('Shift');
+      await h.page.keyboard.type('PER');
+      await h.page.keyboard.press('CapsLock');
+      await h.page.click('#save');
+      await h.stop();
+      expect(
+        h.packets.filter((p) => p.payload.actionType === 'KeyboardPress'),
+      ).toEqual([]);
+      const inputs = h.packets.filter((p) => p.payload.actionType === 'Input');
+      expect(inputs.at(-1).payload.value).toBe('sUPER');
+      expect(inputs.every((p) => p.nativeTarget.locator)).toBe(true);
+      expect(h.packets.at(-1).payload.actionType).toBe('Tap');
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.page.close();
+    }
+  },
+);
+
 it('retains rapid actions when React-like rendering replaces the clicked button', async () => {
   const h = await setup(
     '<button id="next" onclick="this.outerHTML=\'<button id=confirm>确认</button>\'">下一步</button>',

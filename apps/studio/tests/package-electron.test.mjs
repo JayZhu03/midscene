@@ -323,7 +323,9 @@ describe('package-electron helpers', () => {
   it('points packager at the Midscene .icns on macOS', () => {
     const iconPath = resolvePackagerIconPath('darwin');
     expect(iconPath).toBeTruthy();
-    expect(iconPath).toMatch(/apps\/studio\/assets\/midscene-icon\.icns$/);
+    expect(iconPath.replaceAll('\\', '/')).toMatch(
+      /apps\/studio\/assets\/midscene-icon\.icns$/,
+    );
   });
 
   it('returns no icon for Linux so packager uses its default', () => {
@@ -333,7 +335,9 @@ describe('package-electron helpers', () => {
   it('points packager at the Midscene .ico on Windows', () => {
     const iconPath = resolvePackagerIconPath('win32');
     expect(iconPath).toBeTruthy();
-    expect(iconPath).toMatch(/apps\/studio\/assets\/midscene-icon\.ico$/);
+    expect(iconPath.replaceAll('\\', '/')).toMatch(
+      /apps\/studio\/assets\/midscene-icon\.ico$/,
+    );
   });
 
   it('threads the resolved icon into the packager options', () => {
@@ -387,9 +391,14 @@ describe('package-electron helpers', () => {
         ],
       },
       nsis: {
-        oneClick: true,
+        oneClick: false,
         perMachine: false,
         allowElevation: false,
+        allowToChangeInstallationDirectory: true,
+        deleteAppDataOnUninstall: false,
+        createStartMenuShortcut: true,
+        installerLanguages: ['zh_CN', 'en_US'],
+        language: '2052',
         artifactName: 'midscene-studio-beta-v1.8.1-win32-x64-setup.exe',
         shortcutName: 'Midscene Studio Beta',
         uninstallDisplayName: 'Midscene Studio Beta',
@@ -413,6 +422,26 @@ describe('package-electron helpers', () => {
     });
 
     expect(nsisConfig.win.executableName).toBe(packagerOptions.name);
+  });
+
+  it('uses a numeric Windows resource version for internal prereleases', () => {
+    expect(
+      buildPackagerOptions({
+        arch: 'x64',
+        platform: 'win32',
+        stageDir: '/tmp/stage',
+        outDir: '/tmp/out',
+        version: '1.14.0-mom.20261014.1',
+      }).appVersion,
+    ).toBe('1.14.0');
+  });
+
+  it('uses the release version for the installer rather than the development manifest', () => {
+    const config = buildWindowsNsisConfig({
+      artifactName: 'studio-setup.exe',
+      version: '1.14.0-mom.20261014.1',
+    });
+    expect(config.extraMetadata.version).toBe('1.14.0-mom.20261014.1');
   });
 
   it('builds electron-builder CLI args for a prepackaged Windows NSIS installer', () => {
@@ -938,8 +967,9 @@ describe('package-electron helpers', () => {
         {
           path: path.join(packagedNodeModulesDir, 'playground'),
           reason: 'absolute',
-          target:
-            '/Users/runner/work/midscene/midscene/.release/studio/deploy/node_modules/.pnpm/@midscene+playground/node_modules/@midscene/playground',
+          target: await fs.readlink(
+            path.join(packagedNodeModulesDir, 'playground'),
+          ),
         },
       ]);
 

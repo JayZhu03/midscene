@@ -3,6 +3,10 @@ import type { ScenarioRunState } from '@midscene/playground';
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+  isNativePreviewCovered,
+  subscribeNativePreviewCover,
+} from '../src/renderer/components/MainContent/native-preview-cover';
 import { StudioExecutionRecords } from '../src/renderer/components/StudioScenarios/StudioExecutionRecords';
 import { StudioScenarioReport } from '../src/renderer/components/StudioScenarios/StudioScenarioReport';
 import { setStudioLanguage } from '../src/renderer/i18n';
@@ -53,19 +57,48 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-it('previews Markdown tables safely and downloads the exact saved text without an AI call', async () => {
+it('waits for native hiding before mounting the report, and releases on unmount', async () => {
+  let acknowledge!: () => void;
+  const unsubscribe = subscribeNativePreviewCover(
+    () =>
+      new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  try {
+    await act(async () => root.render(<StudioScenarioReport run={run} />));
+    await click('View report');
+    expect(isNativePreviewCovered()).toBe(true);
+    expect(document.querySelector('iframe')).toBeNull();
+    await act(async () => acknowledge());
+    expect(document.querySelector('[role="dialog"] iframe')).toBeTruthy();
+    await act(async () => root.render(null));
+    expect(isNativePreviewCovered()).toBe(false);
+    acknowledge();
+  } finally {
+    unsubscribe();
+  }
+});
+it('previews an isolated HTML report and downloads HTML without an AI call', async () => {
   await act(async () => root.render(<StudioScenarioReport run={run} />));
   expect(container.querySelector('table')).toBeNull();
   await click('View report');
-  expect(document.querySelector('h1')?.textContent).toBe('Test report');
-  expect(document.querySelectorAll('table')).toHaveLength(1);
+  expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe(
+    'allow-scripts',
+  );
+  expect(document.querySelector('iframe')?.getAttribute('allow')).toBe(
+    'fullscreen *',
+  );
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
+    '&lt;script&gt;bad()&lt;/script&gt;',
+  );
   expect(container.querySelector('script')).toBeNull();
   expect(container.querySelector('img')).toBeNull();
   await click('Download report');
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
-      content: text,
-      defaultFileName: 'Orders-run-1234.md',
+      content: expect.stringContaining('<!doctype html>'),
+      defaultFileName: 'Orders-run-1234.html',
     }),
   );
 });
@@ -90,13 +123,13 @@ it('keeps the report button clickable while generating and opens the report once
   }
   await act(async () => root.render(<StudioScenarioReport run={run} />));
   await click('View report');
-  expect(document.querySelector('[role="dialog"] table')).toBeTruthy();
+  expect(document.querySelector('[role="dialog"] iframe')).toBeTruthy();
   await act(async () =>
     document.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click(),
   );
   expect(document.querySelector('.ant-drawer-open')).toBeNull();
   await click('View report');
-  expect(document.querySelector('[role="dialog"] table')).toBeTruthy();
+  expect(document.querySelector('[role="dialog"] iframe')).toBeTruthy();
   expect(save).not.toHaveBeenCalled();
 });
 it('reports generation failure instead of telling users to wait indefinitely', async () => {
@@ -119,7 +152,7 @@ it('keeps the basic report downloadable after AI failure and surfaces export err
     ),
   );
   await click('View report');
-  expect(document.querySelector('table')).toBeTruthy();
+  expect(document.querySelector('iframe')).toBeTruthy();
   await click('Download report');
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
     'Unable to download report',
@@ -128,6 +161,7 @@ it('keeps the basic report downloadable after AI failure and surfaces export err
 it('loads a saved report from execution records without starting or regenerating a run', async () => {
   const fetchMock = vi.fn(async (url: string) => ({
     ok: true,
+    text: async () => '<!doctype html><html><body>Saved report</body></html>',
     json: async () =>
       url.endsWith('/scenario-reports')
         ? {
@@ -189,11 +223,12 @@ it('loads a saved report from execution records without starting or regenerating
   expect(container.querySelector('.studio-execution-page')).toBeTruthy();
   expect(document.querySelector('table')).toBeNull();
   await click('View report');
-  expect(document.querySelector('table')).toBeTruthy();
+  expect(document.querySelector('iframe')).toBeTruthy();
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
     'http://localhost:1234/scenario-reports',
     'http://localhost:1234/scenario-reports',
     `http://localhost:1234/scenario-reports/${run.id}`,
+    `http://localhost:1234/scenario-reports/${run.id}/html`,
   ]);
   await act(async () =>
     document.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click(),

@@ -11,11 +11,16 @@ import {
   CONNECTION_DELAY_MESSAGE,
   useConnectionDelay,
 } from '../ConnectingPreview/use-connection-delay';
+import { attachNativeBrowserInput } from './native-browser-input';
+import {
+  isNativePreviewCovered,
+  subscribeNativePreviewCover,
+} from './native-preview-cover';
 
 const overlays =
-  '[role="dialog"], [role="menu"], [aria-modal="true"], dialog[open], [popover], .ant-modal-mask, .ant-drawer-mask, .ant-dropdown, .ant-select-dropdown, .ant-popover, .ant-tooltip, .ant-image-preview-wrap, .ant-image-preview-mask, .history-modal-overlay';
+  '[data-studio-overlay], [role="dialog"], [role="menu"], [aria-modal="true"], dialog[open], [popover], .ant-modal-mask, .ant-drawer-mask, .ant-dropdown, .ant-select-dropdown, .ant-popover, .ant-tooltip, .ant-image-preview-wrap, .ant-image-preview-mask, .history-modal-overlay';
 
-/** A layout anchor, not a second browser. Electron paints the live guest here. */
+/** Scaled GPU preview of the same full-resolution page used for automation. */
 export function NativeWebPreview({
   blocked,
   onSize,
@@ -31,6 +36,8 @@ export function NativeWebPreview({
 }) {
   useStudioLanguage();
   const root = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const textInput = useRef<HTMLTextAreaElement>(null);
   const callbacks = useRef({ onSize, onStatus });
   const blockedRef = useRef(blocked);
   const scheduleRef = useRef<() => void>();
@@ -55,13 +62,14 @@ export function NativeWebPreview({
     let frame = 0;
     let lastSize = '';
     let lastStatus = '';
-    const update = async () => {
+    const update = async (requireAcknowledgement = false) => {
       if (disposed) return;
       const currentRevision = ++revision;
       const rect = node.getBoundingClientRect();
-      // Fullscreen is a Chromium top layer, not an Ant Design modal. Native
-      // child views still paint above it unless explicitly hidden.
+      // Pause preview transfers under dialogs/fullscreen, retaining the last
+      // canvas frame so opening a report never flashes or hides the webpage.
       const obscured =
+        isNativePreviewCovered() ||
         Boolean(document.fullscreenElement) ||
         Array.from(document.querySelectorAll(overlays)).some((el) => {
           const style = getComputedStyle(el);
@@ -107,8 +115,7 @@ export function NativeWebPreview({
           visible,
           blocked: blockedRef.current,
         });
-        // A hide request may capture a snapshot. Do not let that slow response
-        // block a newer popup/fullscreen change or overwrite its state.
+        // A newer popup/fullscreen change must not be overwritten by a stale reply.
         if (disposed || currentRevision !== revision) return;
         setState((prior) =>
           prior?.available === next.available &&
@@ -140,6 +147,7 @@ export function NativeWebPreview({
             'error',
             error instanceof Error ? error.message : String(error),
           );
+        if (requireAcknowledgement) throw error;
       }
     };
     const schedule = () => {
@@ -150,6 +158,7 @@ export function NativeWebPreview({
       });
     };
     scheduleRef.current = schedule;
+    const unsubscribeCover = subscribeNativePreviewCover(() => update(true));
     const resize = new ResizeObserver(schedule);
     resize.observe(node);
     const mutations = new MutationObserver(schedule);
@@ -165,6 +174,7 @@ export function NativeWebPreview({
         'open',
         'hidden',
         'role',
+        'data-studio-overlay',
       ],
     });
     window.addEventListener('resize', schedule);
@@ -178,6 +188,7 @@ export function NativeWebPreview({
     schedule();
     return () => {
       disposed = true;
+      unsubscribeCover();
       clearInterval(timer);
       cancelAnimationFrame(frame);
       resize.disconnect();
@@ -201,6 +212,30 @@ export function NativeWebPreview({
   useEffect(() => {
     scheduleRef.current?.();
   }, [blocked, delayed]);
+  useEffect(() => {
+    const send = window.studioRuntime?.nativeBrowserInput;
+    if (
+      !canvas.current ||
+      !textInput.current ||
+      !send ||
+      !state?.id ||
+      !state.width ||
+      !state.height
+    )
+      return;
+    return attachNativeBrowserInput(canvas.current, textInput.current, {
+      id: state.id,
+      width: state.width,
+      height: state.height,
+      blocked: () => blockedRef.current || delayedRef.current,
+      send,
+      onError: (error) =>
+        callbacks.current.onStatus(
+          'error',
+          error instanceof Error ? error.message : String(error),
+        ),
+    });
+  }, [state?.id, state?.width, state?.height]);
   return (
     <div
       className="studio-native-preview-stage"
@@ -214,8 +249,27 @@ export function NativeWebPreview({
     >
       <div
         ref={root}
-        className="studio-native-preview-frame flex items-center justify-center"
+        className="studio-native-preview-frame relative flex items-center justify-center rounded-xl"
       >
+        <canvas
+          ref={canvas}
+          data-studio-browser-id={state?.id}
+          aria-label={t('Web preview')}
+          tabIndex={blocked ? -1 : 0}
+          className="absolute inset-0 h-full w-full rounded-xl outline-none"
+          style={{
+            visibility: state?.error || delayed ? 'hidden' : 'visible',
+            touchAction: 'none',
+          }}
+        />
+        <textarea
+          ref={textInput}
+          aria-label={t('Web page input')}
+          tabIndex={-1}
+          autoComplete="off"
+          spellCheck={false}
+          className="pointer-events-none absolute h-6 w-px resize-none opacity-0"
+        />
         {!state?.error && !delayed && covered && state?.snapshot ? (
           <img
             alt=""

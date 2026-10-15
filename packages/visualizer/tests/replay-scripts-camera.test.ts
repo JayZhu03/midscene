@@ -83,6 +83,40 @@ function createLocateTask(): ExecutionTaskPlanningLocate {
 }
 
 describe('generateAnimationScripts', () => {
+  it('animates an observed Playwright click from its live before-frame and ends at the result, even when selected alone', () => {
+    const task = createActionTask({
+      taskId: 'native-click',
+      screenshot: 'after-submit',
+      width: 800,
+      height: 600,
+    });
+    task.subType = 'Tap';
+    task.hitBy = { from: 'Playwright', context: {} };
+    task.param = {
+      locate: {
+        center: [120, 80],
+        rect: { left: 100, top: 60, width: 40, height: 40 },
+      },
+    };
+    task.uiContext!.screenshot = { base64: 'before-submit' } as any;
+    const scripts = generateAnimationScripts(
+      { name: 'native', logTime: 0, tasks: [task] },
+      task,
+      800,
+      600,
+    )!;
+    expect(scripts.find((s) => s.type === 'insight')?.camera).toMatchObject({
+      pointerLeft: 120,
+      pointerTop: 80,
+    });
+    expect(scripts.find((s) => s.type === 'insight')?.img).toBe(
+      'before-submit',
+    );
+    expect(scripts.some((s) => s.type === 'spinning-pointer')).toBe(true);
+    expect(
+      scripts.some((s) => s.type === 'img' && s.img === 'after-submit'),
+    ).toBe(true);
+  });
   it('uses each task shotSize when building full-page camera frames', () => {
     const execution = {
       name: 'camera-size-regression',

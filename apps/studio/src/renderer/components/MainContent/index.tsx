@@ -77,6 +77,7 @@ export interface MainContentProps {
   workbenchMenu?: StudioWorkbenchMenu;
   onWorkspaceModeChange?: (mode: StudioWorkspaceMode) => void;
   onWorkbenchMenuChange?: (menu: StudioWorkbenchMenu) => void;
+  onWebExecutionChange?: (active: boolean) => void;
   /** Shell-level "user just clicked this platform" hint. Bridges the gap
    * between a click in Sidebar (or Overview cards) and antd Form.useWatch
    * actually propagating the new platformId — without it, ConnectingPreview
@@ -291,6 +292,7 @@ export default function MainContent({
   workbenchMenu = 'scenarios',
   onWorkspaceModeChange,
   onWorkbenchMenuChange,
+  onWebExecutionChange,
   pendingCreatePlatform,
   onPendingCreatePlatformChange,
   onSelectDeviceView,
@@ -440,6 +442,12 @@ export default function MainContent({
     pendingCreatePlatform && (!isConnected || isSessionMutating)
       ? pendingCreatePlatform
       : (resolvedPreviewPlatform ?? pendingCreatePlatform ?? 'web');
+  const webExecutionActive =
+    previewPlatform === 'web' &&
+    (timelineExecutionStatus.running || scenarioExecutionBusy);
+  useEffect(() => {
+    onWebExecutionChange?.(webExecutionActive);
+  }, [onWebExecutionChange, webExecutionActive]);
   const webPreviewAspectRatio =
     resolveStudioWebPreviewAspectRatio(previewFormValues);
   const webPreviewCanvasStyle: CSSProperties | undefined =

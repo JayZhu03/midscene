@@ -59,6 +59,36 @@ function harness(throwCapture = false) {
 }
 
 describe('native recorder input methods', () => {
+  it('keeps case switches inside the pending input and retains the final mixed-case value', async () => {
+    const h = harness();
+    const input = new h.Element();
+    input.matches = (selector?: string) => selector === 'input,textarea';
+    input.value = 's';
+    h.event('input', input);
+    for (const key of ['CapsLock', 'Shift', 'CapsLock'])
+      h.event('keydown', input, { key });
+    expect(h.packets).toHaveLength(0);
+    input.value = 'sUPER';
+    h.event('input', input);
+    await h.window.stop();
+    expect(h.packets.map((p) => p.payload)).toEqual([
+      { actionType: 'Input', mode: 'replace', value: 'sUPER', x: 50, y: 10 },
+    ]);
+  });
+
+  it('keeps Caps Lock outside editable fields and submit/focus shortcuts as actions', async () => {
+    const h = harness();
+    const target = new h.Element();
+    for (const key of ['CapsLock', 'Enter', 'Tab'])
+      h.event('keydown', target, { key });
+    await h.window.stop();
+    expect(h.packets.map((p) => p.payload.keyName)).toEqual([
+      'CapsLock',
+      'Enter',
+      'Tab',
+    ]);
+  });
+
   it('keeps every rapid click including detail=2 and detail=3 with target identity', async () => {
     const h = harness();
     const first = new h.Element();

@@ -401,7 +401,7 @@ export async function prepareStudioWebPlatform({
     async getSetupSchema() {
       return {
         title: 'Open a web page',
-        description: 'Start a Chromium page and stream it into Studio.',
+        description: 'Open a web page in Studio.',
         primaryActionLabel: 'Open Page',
         fields: [
           {
@@ -424,22 +424,6 @@ export async function prepareStudioWebPlatform({
             type: 'number',
             defaultValue: DEFAULT_STUDIO_WEB_VIEWPORT.height,
           },
-          {
-            key: 'headed',
-            label: 'Browser window',
-            type: 'select',
-            defaultValue: false,
-            options: [
-              {
-                label: 'Headless',
-                value: false,
-              },
-              {
-                label: 'Visible Chrome window',
-                value: true,
-              },
-            ],
-          },
         ],
       };
     },
@@ -459,7 +443,7 @@ export async function prepareStudioWebPlatform({
         input?.viewportHeight,
         DEFAULT_STUDIO_WEB_VIEWPORT.height,
       );
-      const headed = input?.headed === true;
+      const headed = !webModule.nativePreview && input?.headed === true;
       currentInput = { url, viewportWidth, viewportHeight, headed };
 
       const agentFactory = async () => {
@@ -502,18 +486,22 @@ export async function prepareStudioWebPlatform({
           ...getAgentOptions(),
           cacheId: 'studio-web',
         });
-        const nativePage = currentPage as {
-          studioNative?: import('./native-browser').NativePageHooks;
-        };
+        const nativePage = currentPage as import('./native-browser').NativePage;
         if (nativePage.studioNative) {
           nativePage.studioNative.activate();
           Object.assign(agent.interface, {
             studioNative: nativePage.studioNative,
+            screenshotBase64: () =>
+              nativePage.studioNative!.captureScreenshot(),
+            // Let UIObserver sample the full-size source directly. A separate
+            // CDP screencast must not change its render surface or coordinates.
+            openFrameSource: async () => undefined,
           });
-          // Native zoom keeps CSS coordinates stable while the shell resizes.
           // Bypass BasePage's cached size after a recorded viewport change.
+          // In-flight requests still belong to this page while a replacement
+          // session launches; currentPage may already be null or another page.
           agent.interface.size = () =>
-            (currentPage as import('puppeteer').Page).evaluate(() => ({
+            nativePage.evaluate(() => ({
               width: window.innerWidth,
               height: window.innerHeight,
             }));

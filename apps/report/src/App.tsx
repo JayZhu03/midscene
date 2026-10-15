@@ -1,3 +1,4 @@
+import { reportText } from '@/i18n';
 import './App.less';
 
 import { InfoCircleOutlined } from '@ant-design/icons';
@@ -335,6 +336,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
       return (
         <div className="replay-all-mode-wrapper">
           <Player
+            hideVideoExport
             key={`${executionDumpLoadId}`}
             replayScripts={replayAllScripts!}
             imageWidth={insightWidth!}
@@ -386,7 +388,9 @@ function Visualizer(props: VisualizerProps): JSX.Element {
       <div className="main-right">
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="All test cases were skipped. No report data to display."
+          description={reportText(
+            'All test cases were skipped. No report data to display.',
+          )}
         />
       </div>
     );
@@ -403,7 +407,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
             alignItems: 'center',
           }}
         >
-          <Empty description="Loading report content..." />
+          <Empty description={reportText('Loading report content...')} />
         </div>
       </div>
     );
@@ -426,7 +430,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
               setMobilePane('steps');
             }}
           >
-            Steps
+            {reportText('Steps')}
           </button>
           <button
             type="button"
@@ -437,7 +441,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
               setMobilePane('player');
             }}
           >
-            Player
+            {reportText('Player')}
           </button>
         </nav>
         <div
@@ -554,7 +558,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
                       aria-hidden="true"
                       className="main-right-header-icon"
                     />
-                    <span>Record</span>
+                    <span>{reportText('Record')}</span>
                   </button>
                   {!replayAllMode && (
                     <button
@@ -565,7 +569,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
                       onClick={() => setMobileDetailOpen(true)}
                     >
                       <InfoCircleOutlined aria-hidden="true" />
-                      <span>Information</span>
+                      <span>{reportText('Information')}</span>
                     </button>
                   )}
                 </div>
@@ -621,7 +625,9 @@ function Visualizer(props: VisualizerProps): JSX.Element {
     (replayAllMode ? replayAllScripts : activeExecutionAnimation) || [];
   let playerOnlyContent: JSX.Element;
   if (!executionDump) {
-    playerOnlyContent = <Empty description="Loading report content..." />;
+    playerOnlyContent = (
+      <Empty description={reportText('Loading report content...')} />
+    );
   } else if (playerOnlyScripts.length === 0) {
     // Player renders nothing for empty scripts; show feedback instead of a blank
     // page (e.g. the active task is not a Planning step with a replay animation).
@@ -631,6 +637,7 @@ function Visualizer(props: VisualizerProps): JSX.Element {
   } else {
     playerOnlyContent = (
       <Player
+        hideVideoExport
         key={`${executionDumpLoadId}`}
         replayScripts={playerOnlyScripts}
         imageWidth={insightWidth || 0}
@@ -664,11 +671,13 @@ function Visualizer(props: VisualizerProps): JSX.Element {
                 <div className="page-nav">
                   <div className="page-nav-left">
                     <Logo />
-                    <div className="page-nav-title">Report</div>
+                    <div className="page-nav-title">{reportText('Report')}</div>
                   </div>
                   <div className="page-nav-right">
                     <div className="page-nav-version">
-                      {sdkVersion ? `v${sdkVersion}` : 'unknown version'}
+                      {sdkVersion
+                        ? `v${sdkVersion}`
+                        : reportText('unknown version')}
                       {modelBriefText ? ` | ${modelBriefText}` : ''}
                     </div>
                     <div className="theme-divider" />

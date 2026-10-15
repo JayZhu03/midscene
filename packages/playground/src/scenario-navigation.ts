@@ -6,6 +6,37 @@ export interface ScenarioNavigationEffect {
   observationStepId: string;
 }
 
+/** A recorded URL notification does not dispatch a new browser action. */
+export function isScenarioNavigationObservation(
+  step: ScenarioRunStep,
+): boolean {
+  const event = step.event;
+  return (
+    step.type === 'playwright-operation' &&
+    event?.type === 'navigation' &&
+    !['GoBack', 'GoForward', 'Reload'].includes(event.actionType || '') &&
+    (event.actionType === 'NavigationChanged' ||
+      Boolean(event.rawPayload?.implicitNavigationState))
+  );
+}
+
+/** Keep passive route notifications inside the triggering action's window. */
+export function scenarioOperationPrecedesAssertion(
+  steps: ScenarioRunStep[],
+  index: number,
+): boolean {
+  const step = steps[index];
+  if (
+    !step ||
+    step.type === 'agent-assertion' ||
+    isScenarioNavigationObservation(step)
+  )
+    return false;
+  let next = index + 1;
+  while (steps[next] && isScenarioNavigationObservation(steps[next])) next++;
+  return steps[next]?.type === 'agent-assertion';
+}
+
 /** Compare routes, not recorded query values (IDs, tokens and run parameters). */
 export function scenarioRoute(value: string): string {
   try {

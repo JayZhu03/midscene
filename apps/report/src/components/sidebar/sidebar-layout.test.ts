@@ -74,7 +74,7 @@ describe('sidebar layout', () => {
 
   it('exposes replay-all as a labeled keyboard-accessible button', () => {
     expect(source).toMatch(
-      /<button\s+type="button"\s+className="icon-button"\s+aria-label="Replay all tasks"/,
+      /<button\s+type="button"\s+className="icon-button"\s+aria-label=\{reportText\('Replay all tasks'\)\}/,
     );
     expect(source).not.toMatch(/<div\s+className="icon-button"/);
     expect(styles).toMatch(
@@ -153,7 +153,7 @@ describe('sidebar layout', () => {
     expect(detailPanelStyles).toMatch(
       /\.copy-json-link\s*{[\s\S]*?width: 48px;[\s\S]*?height: 48px;/,
     );
-    expect(detailPanelSource).toContain('aria-label="Copy JSON"');
+    expect(detailPanelSource).toContain("aria-label={reportText('Copy JSON')}");
     expect(detailPanelSource).toContain('className="copy-json-label"');
     expect(playgroundSource.match(/open-in-playground-trigger/g)).toHaveLength(
       2,

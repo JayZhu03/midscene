@@ -83,8 +83,7 @@
   height: 100%;
 }
 
-/* Fit the DOM frame to the native surface. Leave a gutter so Electron's
- * sibling WebContentsView cannot cover the shell's animated outer border. */
+/* Fit the preview to the page's aspect ratio, leaving room for its animated border. */
 .studio-native-preview-frame {
   position: relative;
   flex: none;

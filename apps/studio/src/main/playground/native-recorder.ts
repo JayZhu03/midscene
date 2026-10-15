@@ -71,6 +71,10 @@ export function nativeRecorderScript(
     on('focusout', e => {if(e.isTrusted)flushInput();});
     on('keydown', e => {
       if(!e.isTrusted || e.isComposing || e.keyCode===229 || ['Process','Unidentified','Dead','Shift','Control','Alt','Meta','Backspace','Delete'].includes(e.key)) return;
+      // Input already retains the typed case. A Caps Lock toggle inside the
+      // field changes keyboard mode, not the recorded value or input boundary.
+      const el=e.composedPath?.()[0] || e.target;
+      if(e.key==='CapsLock' && (el?.matches?.('input,textarea') || el?.isContentEditable)) return;
       if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;
       if((e.ctrlKey||e.metaKey)&&['a','c','v','x','z'].includes(e.key.toLowerCase())) return;
       flush();emit(packet({actionType:'KeyboardPress',keyName:[e.ctrlKey?'Control':null,e.metaKey?'Meta':null,e.altKey?'Alt':null,e.shiftKey?'Shift':null,e.key].filter(Boolean).join('+')}));

@@ -72,7 +72,7 @@ function plan(): ScenarioRunInput {
   };
 }
 async function until(check: () => boolean) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 300; i++) {
     if (check()) return;
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
@@ -80,7 +80,11 @@ async function until(check: () => boolean) {
 }
 async function setup() {
   const agent = {
-    interface: { actionSpace: () => [], interfaceType: 'puppeteer' },
+    interface: {
+      actionSpace: () => [],
+      interfaceType: 'puppeteer',
+      screenshotBase64: rs.fn(async () => 'data:image/png;base64,current'),
+    },
     aiAssert: rs.fn(async () => ({ pass: true, thought: '' })),
     aiQuery: rs.fn(async () => ({
       allowed: false,
@@ -90,6 +94,16 @@ async function setup() {
     destroy: rs.fn(async () => {}),
     resetDump: rs.fn(),
   };
+  Object.assign(agent, {
+    startObserving: rs.fn(async () => ({
+      stop: async () => ({
+        aiAssert: (...args: any[]) => (agent.aiAssert as any)(...args),
+        startedAt: Date.now(),
+        endedAt: Date.now(),
+      }),
+      dispose: async () => {},
+    })),
+  });
   const server = new PlaygroundServer(agent as any);
   await server.launch(6198);
   const status = () => {
@@ -100,6 +114,158 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('skip rejects stale requests, never runs the skipped assertion and saves its result', async () => {
+    const { server, agent, status } = await setup();
+    try {
+      const start = response();
+      handler(server, 'post', '/scenario-runs')({ body: plan() }, start);
+      await until(() => status().run.status === 'waiting');
+      const command = handler(server, 'post', '/scenario-runs/:id/:action');
+      const stale = response();
+      command(
+        {
+          params: { id: status().run.id, action: 'skip' },
+          body: { scriptIndex: 0 },
+        },
+        stale,
+      );
+      expect(stale.statusCode).toBe(409);
+      const skipped = response();
+      command(
+        {
+          params: { id: status().run.id, action: 'skip' },
+          body: { scriptIndex: 1 },
+        },
+        skipped,
+      );
+      expect(skipped.statusCode).toBe(200);
+      await until(() => !status().busy);
+      expect(agent.aiAssert).toHaveBeenCalledTimes(1);
+      expect(status().run.status).toBe('completed');
+      expect(status().run.scripts[1].status).toBe('skipped');
+      expect(status().run.scripts[1].steps[0].status).toBe('skipped');
+      await until(() => status().run.summary?.status === 'completed');
+      expect(saveScenarioReport).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          scripts: expect.arrayContaining([
+            expect.objectContaining({ status: 'skipped' }),
+          ]),
+        }),
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('captures logout before its click and keeps the same observation across recorded redirects', async () => {
+    const { server, agent, status } = await setup();
+    const order: string[] = [];
+    const observedAssert = rs.fn(async () => {
+      order.push('assert');
+      return { pass: true, thought: '退出登录成功' };
+    });
+    const dispose = rs.fn(async () => {
+      order.push('dispose');
+    });
+    const start = rs.fn(async () => {
+      order.push('baseline');
+      const startedAt = Date.now();
+      return {
+        stop: async () => {
+          order.push('stop');
+          return { startedAt, endedAt: Date.now(), aiAssert: observedAssert };
+        },
+        dispose,
+      };
+    });
+    Object.assign(agent, { startObserving: start });
+    const events = [
+      {
+        hashId: 'logout',
+        type: 'click' as const,
+        actionType: 'Tap',
+        url: 'https://example.test/home',
+        nativeTarget: { locator: { selector: '#logout' } },
+      },
+      {
+        hashId: 'redirect',
+        type: 'navigation' as const,
+        actionType: 'Navigate',
+        url: 'https://example.test/login',
+        rawPayload: { implicitNavigationState: true },
+      },
+      {
+        hashId: 'route',
+        type: 'navigation' as const,
+        actionType: 'NavigationChanged',
+        url: 'https://example.test/login',
+      },
+    ].map((event) => ({
+      ...event,
+      timestamp: 1,
+      pageInfo: { width: 900, height: 600 },
+    }));
+    const input = plan();
+    input.scripts = [input.scripts[0]];
+    input.scripts[0].steps = [
+      ...events.map((event, operationIndex) => ({
+        id: event.hashId,
+        type: 'playwright-operation' as const,
+        description: event.hashId,
+        event,
+        operationIndex,
+        code: compileRecorderNativePlaywright({
+          events: [event],
+          platformId: 'web',
+          format: 'operation',
+          stepOffset: operationIndex,
+          sensitiveInputs: 'recorded',
+          navigationMode: 'scenario',
+        }),
+      })),
+      {
+        id: 'toast',
+        type: 'agent-assertion',
+        description: '退出登录成功',
+        instruction: '右上角弹出退出登录成功',
+      },
+      {
+        id: 'toast-again',
+        type: 'agent-assertion',
+        description: '登录页',
+        instruction: '当前显示登录页',
+      },
+    ];
+    for (const event of events)
+      rs.mocked(executeScenarioNative).mockImplementationOnce(async () => {
+        order.push(event.hashId);
+        return undefined;
+      });
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(status().run.status).toBe('completed');
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(order).toEqual([
+        'baseline',
+        'logout',
+        'redirect',
+        'route',
+        'stop',
+        'assert',
+        'assert',
+        'dispose',
+      ]);
+      expect(observedAssert).toHaveBeenCalledTimes(2);
+      expect((observedAssert.mock.calls[0] as any)[2].context).toContain(
+        'operation "logout"',
+      );
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
   test('runs Android operations and visual assertions without attaching Playwright or resetting app data', async () => {
     const { server, agent, status } = await setup();
     const screenshots = rs.fn(async () => 'data:image/png;base64,live');
@@ -132,7 +298,7 @@ describe('scenario routes', () => {
       expect(status().run.platformId).toBe('android');
       expect(terminate).toHaveBeenCalledWith('com.example.mom');
       expect(launch).toHaveBeenCalledWith('com.example.mom');
-      expect(screenshots).toHaveBeenCalledTimes(1);
+      expect(screenshots).toHaveBeenCalledTimes(2);
       expect(agent.aiAct).toHaveBeenCalledTimes(1);
       expect(agent.aiAssert).toHaveBeenCalledTimes(1);
       expect(rs.mocked(connectScenarioPage).mock.calls.length).toBe(before);

@@ -18,6 +18,25 @@ export function useTaskHashAnchor(
   const replayAllMode = useExecutionDump((store) => store.replayAllMode);
   const setActiveTask = useExecutionDump((store) => store.setActiveTask);
 
+  // The enclosing Studio report links its step list to this isolated viewer.
+  useEffect(() => {
+    if (!dump) return;
+    const select = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.data?.type !== 'midscene-select-task' ||
+        typeof event.data.taskId !== 'string'
+      )
+        return;
+      const task = findTaskByAnchor(dump, `task-${event.data.taskId}`);
+      if (task) setActiveTask(task);
+    };
+    window.addEventListener('message', select);
+    if (window.parent !== window)
+      window.parent.postMessage({ type: 'midscene-report-ready' }, '*');
+    return () => window.removeEventListener('message', select);
+  }, [dump, setActiveTask]);
+
   // Hash -> active task (initial deep-link + manual hash navigation).
   useEffect(() => {
     if (!dump) return;
@@ -47,6 +66,14 @@ export function useTaskHashAnchor(
   // whatever anchor was last shared.
   useEffect(() => {
     if (!dump || replayAllMode || !activeTask) return;
+    // srcdoc inherits the host's base URL but has an opaque origin. Replacing
+    // its history with that URL throws and unmounts the viewer. Selection is
+    // driven by parent messages here; standalone reports still keep anchors.
+    if (
+      window.location.pathname === 'srcdoc' &&
+      window.location.protocol === 'about:'
+    )
+      return;
     const anchor = anchorIdForTask(activeTask);
     const target = `#${anchor}`;
     if (namespaced) {

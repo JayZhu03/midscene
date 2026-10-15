@@ -221,6 +221,11 @@ export default function ShellLayout() {
     ),
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [webExecutionActive, setWebExecutionActive] = useState(false);
+  const handleWebExecutionChange = useCallback((active: boolean) => {
+    setWebExecutionActive(active);
+    if (active) setSidebarCollapsed(true);
+  }, []);
   const settingsAnchorRef = useRef<HTMLDivElement | null>(null);
   const studioRightPanelCloseTimerRef = useRef<number | null>(null);
   const previousStudioPanelContextRef = useRef({ activeView, studioMode });
@@ -422,6 +427,9 @@ export default function ShellLayout() {
       studioMode === StudioModeTab.Replay);
   const mainAreaStyle: CSSProperties = {
     left: (sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth) + 4,
+    // Do not resize the native preview over multiple animation frames while
+    // the first execution screenshot or click is being prepared.
+    transitionDuration: webExecutionActive ? '0ms' : undefined,
   };
 
   useEffect(() => {
@@ -448,6 +456,7 @@ export default function ShellLayout() {
       ? `translateX(-${sidebarWidth}px)`
       : 'translateX(0)',
     width: sidebarWidth,
+    transitionDuration: webExecutionActive ? '0ms' : undefined,
   };
   return (
     <div
@@ -464,7 +473,6 @@ export default function ShellLayout() {
         <div className="absolute bottom-[88px] left-[4px] right-[4px] top-[52px] overflow-y-auto overflow-x-hidden">
           <Sidebar
             activeView={activeView}
-            onPendingCreatePlatform={setPendingCreatePlatform}
             onSelectDevice={() => setActiveView('device')}
             onSelectOverview={selectOverview}
           />
@@ -503,6 +511,7 @@ export default function ShellLayout() {
       >
         <MainContent
           activeView={activeView}
+          onWebExecutionChange={handleWebExecutionChange}
           workspaceMode={workspacePreferences.mode}
           workbenchMenu={workspacePreferences.menu}
           onWorkspaceModeChange={changeWorkspaceMode}
@@ -564,6 +573,7 @@ export default function ShellLayout() {
             sidebarCollapsed ? t('Expand sidebar') : t('Collapse sidebar')
           }
           aria-pressed={sidebarCollapsed}
+          disabled={webExecutionActive}
           className="app-no-drag flex h-[22px] w-[22px] cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-text-secondary transition-transform duration-150 ease-out active:scale-90"
           onClick={(event) => {
             event.preventDefault();

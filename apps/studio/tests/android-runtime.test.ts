@@ -264,7 +264,6 @@ describe('playground runtime bootstrap', () => {
       'url',
       'viewportWidth',
       'viewportHeight',
-      'headed',
     ]);
     expect(setup?.fields.find((field) => field.key === 'url')).toMatchObject({
       defaultValue: 'https://todomvc.com/examples/react/dist/',

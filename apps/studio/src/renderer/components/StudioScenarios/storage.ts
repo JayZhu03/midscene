@@ -1,5 +1,9 @@
 import { getDebug } from '@midscene/shared/logger';
-import { saveStudioPreference } from '../../studio-preferences-backup';
+import {
+  removeStudioPreference,
+  saveStudioPreference,
+} from '../../studio-preferences-backup';
+import { deleteScenarioScripts } from './script-storage';
 
 export interface StudioScenario {
   platformId?: 'web' | 'android';
@@ -79,5 +83,37 @@ export function saveStudioScenarios(scenarios: StudioScenario[]): void {
           ? 'Local storage is unavailable. Unable to save.'
           : 'Unable to save scenarios locally. Please retry.',
     );
+  }
+}
+
+export async function deleteStudioScenario(
+  id: string,
+): Promise<StudioScenario[]> {
+  const previous = loadStudioScenarios();
+  const next = previous.filter((scenario) => scenario.id !== id);
+  const keys = [
+    `studio.scenario-sequence.v1.${id}`,
+    `studio.scenario-session.v1.${id}`,
+  ];
+  const settings = keys.map((key) => [key, localStorage.getItem(key)] as const);
+  let metadataChanged = false;
+  try {
+    await deleteScenarioScripts(id, () => {
+      saveStudioScenarios(next);
+      metadataChanged = true;
+      for (const key of keys) removeStudioPreference(key);
+    });
+    return next;
+  } catch (error) {
+    // IndexedDB and localStorage cannot share a transaction. Restore metadata
+    // if the script/asset transaction aborts after the list was written.
+    if (metadataChanged) {
+      saveStudioScenarios(previous);
+      for (const [key, value] of settings) {
+        if (value === null) removeStudioPreference(key);
+        else saveStudioPreference(key, value);
+      }
+    }
+    throw error;
   }
 }

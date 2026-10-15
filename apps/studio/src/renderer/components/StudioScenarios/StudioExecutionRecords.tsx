@@ -83,6 +83,7 @@ export function StudioExecutionRecords() {
         backLabel="Back to execution records"
         onBack={() => setSelected(null)}
         onNext={() => {}}
+        onSkip={() => {}}
         onStop={() => {}}
       />
     );

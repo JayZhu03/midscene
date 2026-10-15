@@ -78,12 +78,18 @@ import {
   type PlaygroundRuntimeInfo,
   buildRuntimeInfo,
 } from './runtime-metadata';
+import { ScenarioEvidence, endsNativeEvidenceBlock } from './scenario-evidence';
 import {
   connectScenarioPage,
   executeScenarioNative,
   waitForScenarioNavigation,
 } from './scenario-native';
-import { scenarioNavigationEffect } from './scenario-navigation';
+import {
+  isScenarioNavigationObservation,
+  scenarioNavigationEffect,
+  scenarioOperationPrecedesAssertion,
+} from './scenario-navigation';
+import { ScenarioObservation } from './scenario-observation';
 import { SCENARIO_PAGE_NOT_READY } from './scenario-readiness';
 import {
   assessScenarioContinuation,
@@ -91,6 +97,7 @@ import {
 } from './scenario-recovery';
 import {
   listScenarioReports,
+  readScenarioHtml,
   readScenarioReport,
   saveScenarioReport,
 } from './scenario-report-storage';
@@ -3632,6 +3639,24 @@ class PlaygroundServer {
           'fresh',
       });
     });
+    this._app.get(
+      '/scenario-reports/:id/html',
+      async (req: Request, res: Response) => {
+        try {
+          res.setHeader('Cache-Control', 'no-store');
+          res
+            .type('html')
+            .send(
+              await readScenarioHtml(
+                join(getMidsceneRunSubDir('report'), 'scenario-reports'),
+                req.params.id,
+              ),
+            );
+        } catch {
+          res.status(404).json({ error: 'Unable to read execution report.' });
+        }
+      },
+    );
     this._app.get('/scenario-reports', async (_req: Request, res: Response) => {
       try {
         res.json({
@@ -3754,6 +3779,21 @@ class PlaygroundServer {
           } else await connection!.waitForAssertionReady(signal);
           currentAgent();
         };
+        const evidence = new ScenarioEvidence(
+          join(getMidsceneRunSubDir('report'), 'scenario-reports'),
+          runner.state,
+          () => connection?.captureScreenshot?.(),
+        );
+        const observation = new ScenarioObservation(currentAgent, async () => {
+          await evidence.flush();
+          if (prepared)
+            await currentAgent()
+              .flushReport?.()
+              .catch(() => {
+                runner.state.evidenceError = '部分原始过程报告未能保存。';
+              });
+        });
+        let observationScript = -1;
         try {
           await runner.run(
             async (step, signal, scriptIndex) => {
@@ -3800,6 +3840,9 @@ class PlaygroundServer {
                   sourcePage = (agent.interface as { underlyingPage?: unknown })
                     .underlyingPage;
                   agent.resetDump?.();
+                  await evidence.attach(agent).catch(() => {
+                    runner.state.evidenceError = '执行过程记录初始化失败。';
+                  });
                   await this._activeConnection.executionHooks?.beforeExecute?.();
                   prepared = true;
                 } catch (error) {
@@ -3808,64 +3851,129 @@ class PlaygroundServer {
               }
               signal.throwIfAborted();
               currentAgent();
-              if (step.type === 'playwright-operation') {
-                try {
-                  return await executeScenarioNative(
-                    connection!.page,
-                    step,
-                    signal,
-                    scriptIndex,
-                    {
-                      navigationEffect: scenarioNavigationEffect(
-                        runner.plan.scripts[scriptIndex].steps,
-                        runner.state.stepIndex,
-                      ),
-                      waitReady,
-                    },
-                  );
-                } catch (error) {
-                  if (step.event?.nativeTarget?.sensitive)
-                    throw new Error(
-                      'Sensitive input failed. Check the field and retry.',
-                    );
-                  throw error;
-                }
-              } else {
-                const agent = this.getActiveAgentOrThrow();
-                if (step.type === 'agent-assertion') {
+              const passiveNavigation = isScenarioNavigationObservation(step);
+              if (
+                observationScript !== scriptIndex ||
+                (step.type !== 'agent-assertion' && !passiveNavigation)
+              ) {
+                await observation.clear();
+                observationScript = scriptIndex;
+              }
+              evidence.setStep(step, scriptIndex, runner.state.stepIndex);
+              if (
+                scenarioOperationPrecedesAssertion(
+                  runner.plan.scripts[scriptIndex].steps,
+                  runner.state.stepIndex,
+                )
+              ) {
+                await observation.begin(step, signal);
+              }
+              signal.throwIfAborted();
+              let operationFailed = false;
+              try {
+                if (step.type === 'playwright-operation') {
                   try {
-                    await waitReady(signal);
-                  } catch (error) {
-                    signal.throwIfAborted();
-                    throw new ScenarioBlockedError(
-                      formatErrorMessage(error) || SCENARIO_PAGE_NOT_READY,
+                    return await executeScenarioNative(
+                      connection!.page,
+                      step,
+                      signal,
+                      scriptIndex,
+                      {
+                        navigationEffect: scenarioNavigationEffect(
+                          runner.plan.scripts[scriptIndex].steps,
+                          runner.state.stepIndex,
+                        ),
+                        waitReady,
+                        beforeAction: (target) =>
+                          evidence.beforeNativeAction(
+                            connection!.page,
+                            target,
+                            step,
+                          ),
+                      },
                     );
+                  } catch (error) {
+                    if (step.event?.nativeTarget?.sensitive)
+                      throw new Error(
+                        'Sensitive input failed. Check the field and retry.',
+                      );
+                    throw error;
                   }
-                  signal.throwIfAborted();
+                } else {
+                  const agent = this.getActiveAgentOrThrow();
+                  if (step.type === 'agent-assertion') {
+                    try {
+                      await waitReady(signal);
+                    } catch (error) {
+                      signal.throwIfAborted();
+                      throw new ScenarioBlockedError(
+                        formatErrorMessage(error) || SCENARIO_PAGE_NOT_READY,
+                      );
+                    }
+                    signal.throwIfAborted();
+                  }
+                  return await executeScenarioAgentStep(
+                    step,
+                    async (type, instruction) =>
+                      type === 'aiAssert'
+                        ? observation.assert(step, signal)
+                        : executeAction(
+                            agent,
+                            type,
+                            agent.interface.actionSpace(),
+                            { type, prompt: instruction },
+                            { abortSignal: signal },
+                          ),
+                  );
                 }
-                return await executeScenarioAgentStep(
-                  step,
-                  async (type, instruction) =>
-                    executeAction(
-                      agent,
-                      type,
-                      agent.interface.actionSpace(),
-                      { type, prompt: instruction },
-                      { abortSignal: signal },
-                    ),
-                );
+              } catch (error) {
+                operationFailed = true;
+                if (!signal.aborted)
+                  await evidence.record(
+                    currentAgent(),
+                    step,
+                    '失败现场',
+                    error,
+                  );
+                throw error;
+              } finally {
+                if (step.type !== 'agent-assertion' && !passiveNavigation)
+                  observation.operationCompleted();
+                if (
+                  !signal.aborted &&
+                  !operationFailed &&
+                  endsNativeEvidenceBlock(
+                    runner.plan.scripts[scriptIndex].steps,
+                    runner.state.stepIndex,
+                  )
+                ) {
+                  await evidence.recordNativeOutcome(
+                    currentAgent(),
+                    step,
+                    scriptIndex,
+                    connection?.page,
+                  );
+                }
               }
             },
             {
-              recover: async (context, evidence, signal) => {
+              recover: async (context, recoveryEvidence, signal) => {
                 const recovered = await recoverScenarioStep(
                   currentAgent(),
                   context,
-                  evidence,
+                  recoveryEvidence,
                   waitReady,
                   signal,
                 );
                 if (!recovered) return false;
+                observation.operationCompleted();
+                await evidence.record(
+                  currentAgent(),
+                  runner.plan.scripts[context.scriptIndex].steps[
+                    context.stepIndex
+                  ],
+                  '接管后',
+                );
                 const effect = scenarioNavigationEffect(
                   context.plan.scripts[context.scriptIndex].steps,
                   context.stepIndex,
@@ -3885,6 +3993,10 @@ class PlaygroundServer {
           );
         } finally {
           try {
+            await observation.clear().catch(() => {
+              runner.state.evidenceError = '观察资源清理异常。';
+            });
+            await evidence.finish();
             await connection?.close().catch(() => {});
             if (prepared)
               await this._activeConnection.executionHooks?.afterExecute?.();
@@ -3908,6 +4020,8 @@ class PlaygroundServer {
           return res.status(404).json({ error: 'Scenario run not found.' });
         try {
           if (req.params.action === 'next') runner.next(req.body?.scriptIndex);
+          else if (req.params.action === 'skip')
+            runner.skip(req.body?.scriptIndex);
           else if (req.params.action === 'stop') runner.stop();
           else
             return res.status(404).json({ error: 'Unknown scenario action.' });

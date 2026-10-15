@@ -21,10 +21,8 @@ interface RevealableStudioApp {
 export function acquireStudioSingleInstanceLock(
   application: StudioSingleInstanceApp,
 ): boolean {
-  if (!application.isPackaged) {
-    return true;
-  }
-
+  // Source checkouts use the same persistent profile as shortcut launches.
+  // They need the same lock as packaged builds to avoid competing LevelDB owners.
   const acquired = application.requestSingleInstanceLock();
   if (!acquired) {
     application.quit();

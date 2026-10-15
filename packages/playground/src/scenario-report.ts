@@ -38,7 +38,7 @@ export function scenarioExecutionLabel(run: ScenarioRunState): string {
   if (
     run.status === 'failed' &&
     run.scripts.length &&
-    run.scripts.every((s) => ['passed', 'failed'].includes(s.status))
+    run.scripts.every((s) => ['passed', 'failed', 'skipped'].includes(s.status))
   )
     return zh ? '执行完成 · 存在失败项' : 'Execution completed · Some failures';
   return zh ? '执行中断' : 'Execution interrupted';
@@ -63,10 +63,18 @@ export function renderScenarioReport(
     blocked: tr('阻塞', 'Blocked'),
     pending: tr('未执行', 'Not executed'),
     stopped: tr('已停止', 'Stopped'),
+    skipped: tr('已跳过', 'Skipped'),
     running: tr('未完成', 'Unfinished'),
     waiting: tr('未执行', 'Not executed'),
   };
-  const states = ['passed', 'failed', 'blocked', 'pending', 'stopped'] as const;
+  const states = [
+    'passed',
+    'failed',
+    'blocked',
+    'pending',
+    'stopped',
+    'skipped',
+  ] as const;
   const steps = run.scripts.flatMap((s) => s.steps || []);
   const checks = steps.filter((s) => s.type === 'agent-assertion');
   const stats = (items: Array<{ status: string }>) =>
@@ -118,7 +126,9 @@ export function renderScenarioReport(
         ...states.map((s) => statusNames[s]),
       ],
     ]),
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    `| ${Array(states.length + 2)
+      .fill('---')
+      .join(' | ')} |`,
     rows([
       [tr('脚本', 'Scripts'), run.scripts.length, ...stats(run.scripts)],
       [tr('步骤', 'Steps'), steps.length, ...stats(steps)],

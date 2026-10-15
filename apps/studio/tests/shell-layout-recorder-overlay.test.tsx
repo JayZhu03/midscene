@@ -64,6 +64,7 @@ vi.mock('../src/renderer/components/MainContent', () => ({
     onSelectDeviceView,
     studioMode,
     onWorkspaceModeChange,
+    onWebExecutionChange,
   }: {
     activeView: 'overview' | 'device';
     floatingStudioModePanel?: boolean;
@@ -72,6 +73,7 @@ vi.mock('../src/renderer/components/MainContent', () => ({
     onSelectDeviceView: () => void;
     studioMode: 'playground' | 'record' | 'replay';
     onWorkspaceModeChange: (mode: 'original' | 'workbench') => void;
+    onWebExecutionChange?: (active: boolean) => void;
   }) =>
     createElement(
       'div',
@@ -79,6 +81,16 @@ vi.mock('../src/renderer/components/MainContent', () => ({
         'data-testid': 'main-content',
         'data-floating-studio-mode-panel': String(floatingStudioModePanel),
       },
+      createElement('button', {
+        'data-testid': 'start-web-execution',
+        type: 'button',
+        onClick: () => onWebExecutionChange?.(true),
+      }),
+      createElement('button', {
+        'data-testid': 'finish-web-execution',
+        type: 'button',
+        onClick: () => onWebExecutionChange?.(false),
+      }),
       createElement(
         'button',
         {
@@ -234,6 +246,44 @@ async function renderShellLayout() {
 }
 
 describe('ShellLayout right panel tabs', () => {
+  it('collapses navigation during web execution and allows reopening after completion', async () => {
+    const { container, root } = await renderShellLayout();
+    const click = async (selector: string) => {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(selector)!.click();
+      });
+    };
+    expect(
+      container.querySelector('[aria-label="Collapse sidebar"]'),
+    ).not.toBeNull();
+    await click('[data-testid="start-web-execution"]');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Expand sidebar"]',
+    )!;
+    expect(toggle.disabled).toBe(true);
+    expect(
+      container.querySelector('[data-testid="main-content"]')?.parentElement
+        ?.style.left,
+    ).toBe('4px');
+    expect(
+      container.querySelector('[data-testid="main-content"]')?.parentElement
+        ?.style.transitionDuration,
+    ).toBe('0ms');
+    await click('[aria-label="Expand sidebar"]');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await click('[data-testid="finish-web-execution"]');
+    expect(toggle.disabled).toBe(false);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await click('[aria-label="Expand sidebar"]');
+    expect(
+      container.querySelector('[aria-label="Collapse sidebar"]'),
+    ).not.toBeNull();
+    await click('[data-testid="start-web-execution"]');
+    expect(
+      container.querySelector('[aria-label="Expand sidebar"]'),
+    ).not.toBeNull();
+    await act(async () => root.unmount());
+  });
   afterEach(() => {
     document.body.replaceChildren();
     vi.clearAllMocks();

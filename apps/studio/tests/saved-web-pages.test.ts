@@ -39,7 +39,7 @@ describe('saved Web pages', () => {
       'https://second.test/',
     ]);
   });
-  it('restores page-specific dimensions, URL and browser mode from storage', () => {
+  it('restores page-specific dimensions and URL from storage', () => {
     const first = {
       url: 'http://mom.test/orders',
       viewportWidth: 1440,
@@ -60,6 +60,21 @@ describe('saved Web pages', () => {
       'web.url': 'http://mom.test/jobs',
       'web.viewportWidth': 1440,
       platformId: 'web',
+    });
+  });
+  it('reopens saved Chrome configurations in the embedded browser without changing their URL or size', () => {
+    const page = {
+      url: 'https://mom.test/ant-web/#/orders',
+      viewportWidth: 1440,
+      viewportHeight: 900,
+      headed: true,
+    };
+    saveWebPage(page);
+    expect(webPageFormValues(loadSavedWebPages()[0])).toMatchObject({
+      'web.url': page.url,
+      'web.viewportWidth': 1440,
+      'web.viewportHeight': 900,
+      'web.headed': false,
     });
   });
   it('keeps hash routes and query routes independent through rename, reopen and delete', () => {

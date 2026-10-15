@@ -1,4 +1,7 @@
 export const UI_MESSAGES: Record<string, string> = {
+  'Unable to enter fullscreen': '无法进入全屏',
+  'Exit fullscreen': '退出全屏',
+  'View fullscreen': '放大观看',
   'Export Playwright': '导出 Playwright',
   'This script has no locators. Record it again.':
     '此脚本缺少定位，请重新录制。',
@@ -316,6 +319,13 @@ export const UI_MESSAGES: Record<string, string> = {
   'Pinch gesture': '双指缩放',
   'Navigate to URL': '打开网址',
   Click: '点击',
+  Tap: '点击',
+  DoubleClick: '双击',
+  RightClick: '右键点击',
+  LongPress: '长按',
+  KeyboardPress: '键盘按键',
+  Navigate: '页面跳转',
+  SetViewport: '调整窗口大小',
   'Double click': '双击',
   Hover: '悬停',
   Input: '输入',

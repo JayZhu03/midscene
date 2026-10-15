@@ -15,6 +15,108 @@ class TestAgent {
 }
 const PuppeteerAgent = TestAgent as unknown as new (page: unknown) => Agent;
 
+it('uses screenshot observation for native views without reopening the CDP preview stream', async () => {
+  const native = {
+    activate: vi.fn(),
+    setViewport: vi.fn(),
+    captureScreenshot: vi.fn(
+      async () => 'data:image/png;base64,full-resolution',
+    ),
+  };
+  const page = {
+    studioNative: native,
+    viewport: () => ({ width: 1920, height: 1080 }),
+  };
+  const platform = await prepareStudioWebPlatform({
+    getAgentOptions: () => ({}),
+    loadWebModule: async () => ({
+      PuppeteerAgent,
+      nativePreview: true,
+      launchPuppeteerPage: vi.fn().mockResolvedValue({ page, freeFn: [] }),
+    }),
+  });
+  const manager = platform.sessionManager!;
+  try {
+    const session = await manager.createSession({
+      url: 'https://example.test',
+    });
+    const agent = await session.agentFactory!();
+    expect(native.activate).toHaveBeenCalled();
+    expect(await agent.interface.openFrameSource?.()).toBeUndefined();
+    expect(agent.interface.openFrameSource).toBeTypeOf('function');
+    expect(await agent.interface.screenshotBase64()).toBe(
+      'data:image/png;base64,full-resolution',
+    );
+    expect(native.captureScreenshot).toHaveBeenCalledTimes(1);
+  } finally {
+    await manager.destroySession!();
+  }
+});
+
+it('keeps native image dimensions tied to the owning page during execution session switches', async () => {
+  const makePage = (width: number, height: number) => ({
+    studioNative: {
+      activate: vi.fn(),
+      setViewport: vi.fn(),
+      captureScreenshot: vi.fn(async () => `image-${width}`),
+    },
+    viewport: () => ({ width, height }),
+    evaluate: vi.fn(async () => ({ width, height })),
+  });
+  const originalPage = makePage(1920, 1080);
+  const freshPage = makePage(1200, 800);
+  let finishLaunch!: (value: { page: typeof freshPage; freeFn: [] }) => void;
+  let launchStarted!: () => void;
+  const launching = new Promise<void>((resolve) => {
+    launchStarted = resolve;
+  });
+  const launch = vi
+    .fn()
+    .mockResolvedValueOnce({ page: originalPage, freeFn: [] })
+    .mockImplementationOnce(() => {
+      launchStarted();
+      return new Promise((resolve) => {
+        finishLaunch = resolve;
+      });
+    });
+  const platform = await prepareStudioWebPlatform({
+    getAgentOptions: () => ({}),
+    loadWebModule: async () => ({
+      PuppeteerAgent,
+      nativePreview: true,
+      launchPuppeteerPage: launch,
+    }),
+  });
+  const manager = platform.sessionManager!;
+  try {
+    const session = await manager.createSession({
+      url: 'https://example.test',
+    });
+    const original = await session.agentFactory!();
+    const switching = manager.switchExecutionSession!('fresh');
+    await launching;
+    // A previous screenshot request can finish while the replacement is launching.
+    const retainedSize = Promise.resolve()
+      .then(() => original.interface.size())
+      .catch((error) => ({ error: error.message }));
+    finishLaunch({ page: freshPage, freeFn: [] });
+    const fresh = await switching;
+    expect(await retainedSize).toEqual({ width: 1920, height: 1080 });
+    expect(await original.interface.size()).toEqual({
+      width: 1920,
+      height: 1080,
+    });
+    expect(await fresh.agent!.interface.size()).toEqual({
+      width: 1200,
+      height: 800,
+    });
+    expect(await original.interface.screenshotBase64()).toBe('image-1920');
+    expect(await fresh.agent!.interface.screenshotBase64()).toBe('image-1200');
+  } finally {
+    await manager.destroySession!();
+  }
+});
+
 it('isolates browser storage, keeps preview capture available and restores the original page', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'studio-isolation-test-'));
   const fixture = createServer((_req, res) => {

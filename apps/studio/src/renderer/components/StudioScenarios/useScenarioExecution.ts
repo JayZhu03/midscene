@@ -180,6 +180,10 @@ export function useScenarioExecution() {
       run
         ? command(`/${run.id}/next`, { scriptIndex: run.scriptIndex })
         : Promise.resolve(),
+    skip: () =>
+      run
+        ? command(`/${run.id}/skip`, { scriptIndex: run.scriptIndex })
+        : Promise.resolve(),
     stop: () => (run ? command(`/${run.id}/stop`, {}) : Promise.resolve()),
   };
 }

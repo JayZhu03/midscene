@@ -23,6 +23,7 @@ const execution = vi.hoisted(() => ({
   restoreSession: vi.fn(),
   start: vi.fn(),
   next: vi.fn(),
+  skip: vi.fn(),
   stop: vi.fn(),
 }));
 const persistence = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn() }));
@@ -140,6 +141,48 @@ async function typeInstruction(value: string) {
     field.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+
+it('shows skip beside next only while waiting and labels skipped coverage honestly', async () => {
+  await render();
+  await click('Scenario actions');
+  await click('Run scenario');
+  expect(container.textContent).not.toContain('Skip');
+  const run = execution.run!;
+  run.status = 'waiting';
+  run.scriptIndex = 1;
+  run.scripts[0].status = 'passed';
+  run.scripts[0].steps!.forEach((step) => {
+    step.status = 'passed';
+  });
+  run.scripts[1].status = 'waiting';
+  await render();
+  const buttons = Array.from(
+    container.querySelectorAll('.studio-execution-progress button'),
+  );
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    'Next step',
+    'Skip',
+    'Stop',
+  ]);
+  await click('Skip');
+  expect(execution.skip).toHaveBeenCalledTimes(1);
+  run.status = 'completed';
+  run.scripts[1].status = 'skipped';
+  run.scripts[1].steps!.forEach((step) => {
+    step.status = 'skipped';
+  });
+  execution.locked = false;
+  await render();
+  const header = container.querySelector('.studio-execution-progress')!;
+  expect(header.textContent).toContain('Completed · Some skipped');
+  expect(header.textContent).not.toContain('All passed');
+  expect(header.textContent).toContain('Skipped 1');
+  expect(
+    header.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow'),
+  ).toBe(
+    header.querySelector('[role="progressbar"]')?.getAttribute('aria-valuemax'),
+  );
+});
 
 it.each([
   ['running', 'running', 'Running'],
@@ -452,7 +495,9 @@ it('shows checkpoint evidence and summary independently of execution status', as
   await render();
   expect(container.textContent).not.toContain(run.summary.text);
   await click('View report');
-  expect(document.body.textContent).toContain(run.summary.text);
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
+    run.summary.text,
+  );
   expect(container.textContent).toContain('Completed');
 });
 

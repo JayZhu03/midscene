@@ -16,6 +16,9 @@ import type { StudioAgentOptions } from './agent-options';
  */
 export const IPC_CHANNELS = {
   nativeBrowserLayout: 'studio:native-browser-layout',
+  nativeBrowserInput: 'studio:native-browser-input',
+  nativeBrowserFrame: 'studio:native-browser-frame',
+  nativeBrowserFramePresented: 'studio:native-browser-frame-presented',
   closeWindow: 'shell:close-window',
   minimizeWindow: 'shell:minimize-window',
   openExternalUrl: 'shell:open-external-url',
@@ -282,6 +285,9 @@ export interface ElectronShellApi {
 export type NativeThemeMode = 'light' | 'dark' | 'system';
 
 export interface StudioRuntimeApi {
+  nativeBrowserInput?: (
+    input: import('./native-browser').NativeBrowserInput,
+  ) => Promise<void>;
   nativeBrowserLayout?: (
     layout: import('./native-browser').NativeBrowserLayout,
   ) => Promise<import('./native-browser').NativeBrowserState>;

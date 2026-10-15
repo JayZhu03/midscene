@@ -77,7 +77,10 @@ function OptionList<T extends string>({
   onSelect,
 }: OptionListProps<T>) {
   return (
-    <div className="flex w-[160px] flex-col rounded-[10px] border border-border-subtle bg-surface-elevated p-[4px] shadow-lg">
+    <div
+      data-studio-overlay
+      className="flex w-[160px] flex-col rounded-[10px] border border-border-subtle bg-surface-elevated p-[4px] shadow-lg"
+    >
       {options.map((option) => {
         const isSelected = option.value === selected;
         return (
@@ -164,7 +167,10 @@ export default function SettingsPanel({
 
   return (
     <div className={wrapperClassName} ref={popoverWrapperRef}>
-      <div className="flex w-[244px] flex-col rounded-[12px] border border-border-subtle bg-surface-elevated p-[6px] shadow-lg">
+      <div
+        data-studio-overlay
+        className="flex w-[244px] flex-col rounded-[12px] border border-border-subtle bg-surface-elevated p-[6px] shadow-lg"
+      >
         <div className="flex flex-col">
           <SettingItem
             label={t('Theme')}

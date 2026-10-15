@@ -12,7 +12,6 @@ import {
   buildStudioSidebarDeviceBuckets,
   mergeSidebarDeviceBucketsWithDiscovery,
 } from '../../playground/selectors';
-import type { StudioSidebarPlatformKey } from '../../playground/types';
 import { useStudioPlayground } from '../../playground/useStudioPlayground';
 import { MaskedIcon } from '../MaskedIcon';
 import SettingsDock from '../SettingsDock';
@@ -23,14 +22,12 @@ export interface SidebarProps {
   activeView: ShellActiveView;
   onSelectOverview: () => void;
   onSelectDevice: () => void;
-  onPendingCreatePlatform?: (platform: StudioSidebarPlatformKey) => void;
 }
 
 export default function Sidebar({
   activeView,
   onSelectOverview,
   onSelectDevice,
-  onPendingCreatePlatform,
 }: SidebarProps) {
   useStudioLanguage();
   const pages = useSavedWebPages();
@@ -149,16 +146,9 @@ export default function Sidebar({
         {t('Android devices')}
       </div>
       {androidDevices.length === 0 ? (
-        <button
-          type="button"
-          className={`${rowClass} bg-transparent`}
-          onClick={() => {
-            onPendingCreatePlatform?.('android');
-            onSelectOverview();
-          }}
-        >
-          {t('Connect Android Device')}
-        </button>
+        <span className="px-3 text-[12px] text-text-tertiary">
+          {t('No devices')}
+        </span>
       ) : (
         androidDevices.map((device) => (
           <button
