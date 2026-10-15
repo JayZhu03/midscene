@@ -339,6 +339,30 @@ export function StudioScenarioExecution({
                         {step.detail || step.error ? (
                           <p>{t(step.error || step.detail || '')}</p>
                         ) : null}
+                        {step.continuedAfterFailure ? (
+                          <p>
+                            {t(
+                              'Failure recorded; execution continued as requested.',
+                            )}
+                          </p>
+                        ) : null}
+                        {step.agentTask ? (
+                          <details className="studio-execution-recovery">
+                            <summary>{t('Action results')}</summary>
+                            {step.agentTask.actions.map(
+                              (result, actionIndex) => (
+                                <p key={actionIndex}>
+                                  {result.action.type === 'wait'
+                                    ? `${t('Wait')} ${result.action.milliseconds / 1000} s`
+                                    : result.action.instruction}
+                                  {' · '}
+                                  {resultLabel(result.status)}
+                                  {result.detail ? ` · ${result.detail}` : ''}
+                                </p>
+                              ),
+                            )}
+                          </details>
+                        ) : null}
                         {step.recovery ? (
                           <details className="studio-execution-recovery">
                             <summary>{t('Recovery record')}</summary>

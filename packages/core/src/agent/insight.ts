@@ -76,7 +76,7 @@ export class Insight implements InsightAPI {
     options: QueryOptions = defaultQueryOptions,
   ): Promise<ReturnType> {
     const modelRuntime = this.resolveModelRuntime();
-    const executionOptions = this.executionOptions();
+    const executionOptions = this.executionOptions(options);
     const serviceOptions = this.withContext('aiQuery', options);
     const { output } = executionOptions
       ? await this.taskExecutor.createTypeQueryExecution(
@@ -138,7 +138,7 @@ export class Insight implements InsightAPI {
       this.resolveModelRuntime(),
       serviceOptions,
       multimodalPrompt,
-      this.executionOptions(),
+      this.executionOptions(options),
     );
     return output as ReturnType;
   }

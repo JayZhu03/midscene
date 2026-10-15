@@ -6,7 +6,10 @@ import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StudioScenarioScripts } from '../src/renderer/components/StudioScenarios/StudioScenarioScripts';
 import {
+  agentStepInstruction,
+  agentTaskStep,
   compileScenarioScript,
+  createAgentStep,
   editScenarioScript,
 } from '../src/renderer/components/StudioScenarios/script-model';
 import { setStudioLanguage } from '../src/renderer/i18n';
@@ -27,6 +30,16 @@ const execution = vi.hoisted(() => ({
   stop: vi.fn(),
 }));
 const persistence = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn() }));
+const compiler = vi.hoisted(() => ({ compile: vi.fn() }));
+vi.mock(
+  '../src/renderer/components/StudioScenarios/agent-tasks',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('../src/renderer/components/StudioScenarios/agent-tasks')
+    >()),
+    compileStudioAgentPlan: compiler.compile,
+  }),
+);
 vi.mock(
   '../src/renderer/components/StudioScenarios/useScenarioExecution',
   () => ({ useScenarioExecution: () => execution }),
@@ -62,7 +75,8 @@ async function click(label: string) {
     document.querySelectorAll<HTMLElement>('button,[role="menuitem"]'),
   ).find(
     (item) =>
-      item.getAttribute('aria-label') === label || item.textContent === label,
+      !item.closest('.ant-dropdown-hidden') &&
+      (item.getAttribute('aria-label') === label || item.textContent === label),
   );
   expect(button, label).toBeTruthy();
   await act(async () => button!.click());
@@ -85,6 +99,20 @@ beforeEach(() => {
     .mockImplementation(async (script, steps) =>
       editScenarioScript(script, steps),
     );
+  compiler.compile
+    .mockReset()
+    .mockImplementation(async (instruction: string, readOnly: boolean) => ({
+      version: 1,
+      instruction,
+      readOnly,
+      actions: [
+        {
+          type: /打开|Open/.test(instruction) ? 'operation' : 'assertion',
+          instruction,
+          onFailure: 'stop',
+        },
+      ],
+    }));
   execution.start
     .mockReset()
     .mockImplementation(async (plan: ScenarioRunInput) => {
@@ -279,7 +307,11 @@ it('edits the original step timeline and keeps execution results read-only', asy
   expect(container.querySelector('textarea')).toBeNull();
   expect(container.querySelector('[aria-label="Step actions 1"]')).toBeNull();
   await click('Insert step 2');
-  await click('Add assertion');
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(
+    container.querySelectorAll('.record-timeline-event-card'),
+  ).toHaveLength(1);
+  await click('Add operation or assertion');
   expect(
     container.querySelector<HTMLButtonElement>(
       '.studio-script-editor-footer .ant-btn-primary',
@@ -315,6 +347,29 @@ it('edits the original step timeline and keeps execution results read-only', asy
   );
 });
 
+it.each([1, 2])(
+  'does not insert a step when the add menu at position %s is dismissed',
+  async (position) => {
+    await render();
+    await click('Script a');
+    await click(`Insert step ${position}`);
+    expect(
+      document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')
+        ?.textContent,
+    ).toBe('Add operation or assertion');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(
+      container.querySelectorAll('.record-timeline-event-card'),
+    ).toHaveLength(1);
+    await click(`Insert step ${position}`);
+    expect(container.querySelector('.studio-script-editor-footer')).toBeNull();
+    await click('Back to scenario');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(persistence.update).not.toHaveBeenCalled();
+    expect(compiler.compile).not.toHaveBeenCalled();
+  },
+);
+
 it('opens the same editable timeline from a row and leaves unchanged details without a discard prompt', async () => {
   await render();
   await act(async () =>
@@ -327,7 +382,7 @@ it('opens the same editable timeline from a row and leaves unchanged details wit
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await click('Script a');
   await click('Insert step 1');
-  await click('Add assertion');
+  await click('Add operation or assertion');
   await typeInstruction('Ready');
   await click('Back to scenario');
   await click('Keep editing');
@@ -337,6 +392,84 @@ it('opens the same editable timeline from a row and leaves unchanged details wit
   expect(container.querySelector('.studio-sequence-row')).toBeTruthy();
   expect(persistence.update).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['agent-assertion', 'Backspace'],
+  ['agent-assertion', 'Delete'],
+  ['agent-operation', 'Backspace'],
+  ['agent-operation', 'Delete'],
+  ['agent-task', 'Backspace'],
+  ['agent-task', 'Delete'],
+] as const)(
+  'keeps the %s editor open when %s restores saved text or clears the field',
+  async (type, key) => {
+    const instruction =
+      type === 'agent-assertion' ? '订单数量为 20' : '打开生产订单页面';
+    const original = compileScenarioScript({
+      id: 'a',
+      scenarioId: 'scene',
+      name: 'Script a',
+      session: scenarioSession(),
+    });
+    const saved = editScenarioScript(original, [
+      ...original.steps,
+      type === 'agent-task'
+        ? agentTaskStep(createAgentStep(type), instruction, {
+            version: 1,
+            instruction,
+            readOnly: false,
+            actions: [{ type: 'operation', instruction }],
+          })
+        : agentStepInstruction(createAgentStep(type), instruction),
+    ]);
+    persistence.list.mockResolvedValueOnce([saved]);
+    await render();
+    await click('Script a');
+    await click('Step actions 2');
+    await click('Edit step');
+    const field = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(document.activeElement).toBe(field);
+    await typeInstruction(`${instruction}错`);
+    await act(async () => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    });
+    // jsdom does not apply keyboard edits, so dispatch the resulting input too.
+    await typeInstruction(instruction);
+    expect(container.querySelector('textarea')).toBe(field);
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toBe(instruction);
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '.studio-script-editor-footer .ant-btn-primary',
+      )!.disabled,
+    ).toBe(true);
+    await click('Cancel');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(persistence.update).not.toHaveBeenCalled();
+    expect(compiler.compile).not.toHaveBeenCalled();
+
+    await click('Step actions 2');
+    await click('Edit step');
+    const reopened = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    await typeInstruction('');
+    expect(container.querySelector('textarea')).toBe(reopened);
+    expect(document.activeElement).toBe(reopened);
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '.studio-script-editor-footer .ant-btn-primary',
+      )!.disabled,
+    ).toBe(true);
+    await typeInstruction(`${instruction}，保持当前页面`);
+    await click('Save changes');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(persistence.update).toHaveBeenCalledTimes(1);
+    expect(persistence.update.mock.calls[0][1][0]).toEqual(original.steps[0]);
+    expect(persistence.update.mock.calls[0][1][1].instruction).toBe(
+      `${instruction}，保持当前页面`,
+    );
+  },
+);
 
 it('inserts between recorded steps without moving expanded details or losing screenshots', async () => {
   persistence.list.mockResolvedValueOnce([
@@ -365,7 +498,7 @@ it('inserts between recorded steps without moving expanded details or losing scr
   );
   expect(second.querySelector('pre')).toBeTruthy();
   await click('Insert step 2');
-  await click('Add Agent operation');
+  await click('Add operation or assertion');
   await typeInstruction('Open order details');
   expect(
     container.querySelectorAll('.record-timeline-event-card'),
@@ -380,11 +513,52 @@ it('inserts between recorded steps without moving expanded details or losing scr
     persistence.update.mock.calls[0][1].map(
       (step: { type: string }) => step.type,
     ),
-  ).toEqual([
-    'playwright-operation',
-    'agent-operation',
-    'playwright-operation',
-  ]);
+  ).toEqual(['playwright-operation', 'agent-task', 'playwright-operation']);
+});
+
+it('retains the instruction when planning fails and saves its rules only after a successful retry', async () => {
+  await render();
+  await click('Script a');
+  await click('Insert step 2');
+  await click('Add operation or assertion');
+  expect(container.querySelector('textarea')?.placeholder).toBe(
+    'Describe an operation, expected result or wait',
+  );
+  await typeInstruction('数量不对也记录并继续');
+  compiler.compile.mockRejectedValueOnce(new Error('模型连接失败'));
+  await click('Save changes');
+  expect(container.textContent).toContain('模型连接失败');
+  expect(container.querySelector('textarea')?.value).toBe(
+    '数量不对也记录并继续',
+  );
+  expect(persistence.update).not.toHaveBeenCalled();
+  await click('Save changes');
+  expect(persistence.update).toHaveBeenCalledTimes(1);
+  expect(persistence.update.mock.calls[0][1][1]).toMatchObject({
+    type: 'agent-task',
+    agentPlan: { instruction: '数量不对也记录并继续' },
+  });
+  expect(container.querySelector('textarea')).toBeNull();
+});
+
+it('reuses prepared rules when saving is retried after a storage error', async () => {
+  await render();
+  await click('Script a');
+  await click('Insert step 2');
+  await click('Add operation or assertion');
+  await typeInstruction('Order quantity is 20');
+  persistence.update.mockRejectedValueOnce(
+    new Error('Unable to update script.'),
+  );
+  await click('Save changes');
+  expect(compiler.compile).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('textarea')?.value).toBe(
+    'Order quantity is 20',
+  );
+  await click('Save changes');
+  expect(compiler.compile).toHaveBeenCalledTimes(1);
+  expect(persistence.update).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('textarea')).toBeNull();
 });
 
 it('keeps unsaved edits on storage failure, allows deletion and confirms discarding changes', async () => {
@@ -392,7 +566,7 @@ it('keeps unsaved edits on storage failure, allows deletion and confirms discard
   await click('Script actions');
   await click('Edit script');
   await click('Insert step 1');
-  await click('Add Agent operation');
+  await click('Add operation or assertion');
   await typeInstruction('Open orders');
   persistence.update.mockRejectedValueOnce(
     new Error('Unable to update script.'),
@@ -406,7 +580,7 @@ it('keeps unsaved edits on storage failure, allows deletion and confirms discard
     container.querySelectorAll('.record-timeline-event-card'),
   ).toHaveLength(1);
   await click('Insert step 2');
-  await click('Add assertion');
+  await click('Add operation or assertion');
   await typeInstruction('Ready');
   await click('Cancel');
   await click('Keep editing');

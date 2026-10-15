@@ -129,11 +129,15 @@ export interface MidsceneRecorderGeneratedCode {
 export interface MidsceneRecorderNativeLocator {
   selector: string;
   text?: string;
+  /** Compound key with one regenerated numeric serial between literal parts. */
+  generatedText?: { prefix: string; suffix: string };
   visible?: boolean;
   /** Locate inside a semantic container, such as a labelled field or keyed row. */
   scope?: MidsceneRecorderNativeLocator;
   /** Require a descendant label; evaluated relative to each candidate. */
   has?: MidsceneRecorderNativeLocator;
+  /** All descendant identities must match, e.g. production order and operation. */
+  hasAll?: MidsceneRecorderNativeLocator[];
 }
 
 export interface MidsceneRecorderNativeTarget {

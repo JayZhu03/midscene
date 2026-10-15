@@ -9,6 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { getReportTpl } from '@midscene/core/utils';
 import { getDebug } from '@midscene/shared/logger';
 import type {
   ScenarioReportEntry,
@@ -45,14 +46,17 @@ function reportPath(directory: string, id: string) {
 }
 
 export async function readScenarioHtml(directory: string, id: string) {
-  const path = reportPath(directory, id).replace(/\.json$/, '.html');
+  const path = reportPath(directory, id).replace(/\.json$/, '.evidence.html');
+  const run = await readScenarioReport(directory, id);
+  let official: string | undefined;
   try {
-    return await readFile(path, 'utf8');
+    official = await readFile(path, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    // Existing Markdown records remain readable, but all downloads are HTML.
-    return composeScenarioHtml(await readScenarioReport(directory, id));
   }
+  // Render history with the current viewer, preserving the saved JSON and
+  // evidence verbatim. Preview and download receive the same standalone file.
+  return composeScenarioHtml(run, official, getReportTpl());
 }
 
 export async function saveScenarioReport(
@@ -81,7 +85,7 @@ export async function saveScenarioReport(
       }
       await writeFile(
         htmlTemporary,
-        composeScenarioHtml(run, official),
+        composeScenarioHtml(run, official, getReportTpl()),
         'utf8',
       );
       await rename(htmlTemporary, htmlPath);

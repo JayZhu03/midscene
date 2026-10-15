@@ -202,7 +202,8 @@ describe('execution evidence', () => {
     expect(text.format).toBe('html');
     expect(text.text).toContain('<h2>');
     expect(text.text).toContain('订单检查未通过');
-    expect(loadScenarioReportSkill()).toContain('Version: 2');
+    expect(loadScenarioReportSkill()).toContain('Version: 3');
+    expect(text.analysis).toEqual(analysis);
     expect((call.mock.calls as any)[0][0][0].content).toContain(
       'Execution report analysis',
     );

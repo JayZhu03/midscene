@@ -17,6 +17,44 @@ function fixture() {
 }
 
 describe('scenario assertion readiness', () => {
+  test('report capture waits for asynchronous results without waiting for an expected value', async () => {
+    const { page, state, readiness } = fixture();
+    const request = { resourceType: () => 'xhr' };
+    page.emit('request', request);
+    const settled = rs.fn();
+    const capture = readiness
+      .waitForEvidence(new AbortController().signal)
+      .then(settled);
+    await delay(180);
+    expect(settled).not.toHaveBeenCalled();
+    state.content = '选择工序';
+    page.emit('requestfinished', request);
+    await capture;
+    expect(settled).toHaveBeenCalledWith(true);
+    readiness.dispose();
+  });
+
+  test('report capture has a bounded wait and does not certify an unsettled page', async () => {
+    const { state, readiness } = fixture();
+    state.loading = true;
+    expect(
+      await readiness.waitForEvidence(new AbortController().signal, 60),
+    ).toBe(false);
+    readiness.dispose();
+  });
+
+  test('stopping report capture still propagates cancellation', async () => {
+    const { evaluate, readiness } = fixture();
+    evaluate.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const capture = expect(
+      readiness.waitForEvidence(controller.signal),
+    ).rejects.toThrow('Stopped');
+    controller.abort(new Error('Stopped'));
+    await capture;
+    readiness.dispose();
+  });
+
   test('waits for a query started before the assertion and its final rendered data', async () => {
     const { page, state, readiness } = fixture();
     const request = { resourceType: () => 'xhr' };

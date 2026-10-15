@@ -25,7 +25,12 @@ export function observeScenarioReadiness(page: Page) {
   page.on('requestfailed', finished);
 
   return {
-    async wait(signal: AbortSignal, timeoutMs = 20000, quietMs = 800) {
+    async wait(
+      signal: AbortSignal,
+      timeoutMs = 20000,
+      quietMs = 800,
+      evidence = false,
+    ) {
       signal.throwIfAborted();
       const controller = new AbortController();
       const abort = () => controller.abort(signal.reason);
@@ -48,7 +53,18 @@ export function observeScenarioReadiness(page: Page) {
         while (true) {
           controller.signal.throwIfAborted();
           const state = await page
-            .evaluate(() => {
+            .evaluate((checkRendering) => {
+              const inViewport = (element: Element) => {
+                const rect = element.getBoundingClientRect();
+                return (
+                  rect.width > 0 &&
+                  rect.height > 0 &&
+                  rect.bottom > 0 &&
+                  rect.right > 0 &&
+                  rect.top < innerHeight &&
+                  rect.left < innerWidth
+                );
+              };
               const loading = Array.from(
                 document.querySelectorAll(
                   '[aria-busy="true"], [role="progressbar"], ' +
@@ -70,13 +86,71 @@ export function observeScenarioReadiness(page: Page) {
                   })
                 );
               });
+              // DOM text can be stable while a page-sized fade still covers it.
+              // Ignore perpetual spinners, cursors and small decorative effects.
+              const transitioning =
+                checkRendering &&
+                document.getAnimations().some((animation) => {
+                  if (animation.playState !== 'running' && !animation.pending)
+                    return false;
+                  const effect = animation.effect;
+                  if (
+                    !(effect instanceof KeyframeEffect) ||
+                    !Number.isFinite(Number(effect.getTiming().iterations)) ||
+                    !Number.isFinite(Number(effect.getComputedTiming().endTime))
+                  )
+                    return false;
+                  const target = effect.target;
+                  if (
+                    !(target instanceof Element) ||
+                    !inViewport(target) ||
+                    !target.checkVisibility({ checkVisibilityCSS: true })
+                  )
+                    return false;
+                  const rect = target.getBoundingClientRect();
+                  if (
+                    rect.width * rect.height <
+                    innerWidth * innerHeight * 0.25
+                  )
+                    return false;
+                  return effect
+                    .getKeyframes()
+                    .some((frame) =>
+                      [
+                        'opacity',
+                        'visibility',
+                        'filter',
+                        'transform',
+                        'backgroundColor',
+                      ].some((key) => key in frame),
+                    );
+                });
+              const empty =
+                checkRendering &&
+                !document.body?.innerText.trim() &&
+                !Array.from(
+                  document.querySelectorAll(
+                    'input, textarea, select, button, img, svg, canvas, video, iframe',
+                  ),
+                ).some(
+                  (element) =>
+                    inViewport(element) &&
+                    element.checkVisibility({
+                      checkOpacity: true,
+                      checkVisibilityCSS: true,
+                    }),
+                );
               return {
                 readyState: document.readyState,
-                loading: loading || document.readyState === 'loading',
+                loading:
+                  loading ||
+                  transitioning ||
+                  empty ||
+                  document.readyState === 'loading',
                 // Check readiness only; business expectations remain visual assertions.
                 content: `${location.href}\n${document.body?.innerText ?? ''}`,
               };
-            })
+            }, evidence)
             .catch((error: unknown) => {
               // A real navigation destroys the old document's execution context.
               // Keep observing the replacement document within the same budget.
@@ -92,7 +166,9 @@ export function observeScenarioReadiness(page: Page) {
           if (!state) {
             stableSince = Date.now();
             previous = '';
-            await delay(100, undefined, { signal: controller.signal });
+            await delay(Math.min(100, quietMs / 2), undefined, {
+              signal: controller.signal,
+            });
             continue;
           }
           diagnostics = {
@@ -105,7 +181,9 @@ export function observeScenarioReadiness(page: Page) {
           }
           previous = state.content;
           if (now - Math.max(stableSince, lastNetworkChange) >= quietMs) return;
-          await delay(100, undefined, { signal: controller.signal });
+          await delay(Math.min(100, quietMs / 2), undefined, {
+            signal: controller.signal,
+          });
         }
       };
       let diagnostics: { readyState?: string; loading: boolean } | undefined;
@@ -122,6 +200,18 @@ export function observeScenarioReadiness(page: Page) {
         clearTimeout(timeout);
         signal.removeEventListener('abort', abort);
         controller.abort();
+      }
+    },
+    /** Report evidence gets a short, bounded render wait, not the assertion's
+     * full readiness timeout. An unsettled capture is evidence, not a failed
+     * operation or a verified business result. */
+    async waitForEvidence(signal: AbortSignal, timeoutMs = 1500) {
+      try {
+        await this.wait(signal, timeoutMs, 120, true);
+        return true;
+      } catch {
+        signal.throwIfAborted();
+        return false;
       }
     },
     dispose() {

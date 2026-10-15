@@ -6,6 +6,7 @@ import {
   callAIWithStringResponse,
 } from '@midscene/core/ai-model';
 import Ajv from 'ajv';
+import { scenarioAssertionResults } from './scenario-agent-plan';
 import type {
   ScenarioReportPhase,
   ScenarioRunState,
@@ -27,7 +28,7 @@ export const scenarioReportSchema = {
   additionalProperties: false,
   required: ['overview', 'findings', 'limitations'],
   properties: {
-    overview: { ...prose, maxLength: 240 },
+    overview: { ...prose, maxLength: 180 },
     findings: {
       type: 'array',
       maxItems: 100,
@@ -57,9 +58,9 @@ export const scenarioReportSchema = {
             ],
           },
           certainty: { type: 'string', enum: ['confirmed', 'needs-review'] },
-          evidence: prose,
-          impact: { ...prose, maxLength: 240 },
-          recommendation: { ...prose, maxLength: 240 },
+          evidence: { ...prose, maxLength: 240 },
+          impact: { type: 'string', maxLength: 160 },
+          recommendation: { type: 'string', maxLength: 160 },
         },
       },
     },
@@ -93,7 +94,7 @@ export function loadScenarioReportSkill() {
 
 export function scenarioSummaryEvidence(run: ScenarioRunState) {
   const steps = run.scripts.flatMap((script) => script.steps || []);
-  const checkpoints = steps.filter((step) => step.type === 'agent-assertion');
+  const checkpoints = steps.flatMap(scenarioAssertionResults);
   let remaining = 24000;
   let omittedSteps = 0;
   const scripts = run.scripts.map((script, scriptIndex) => ({
@@ -117,9 +118,36 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
       type: step.type,
       description: step.description.slice(0, 500),
       instruction: step.instruction?.slice(0, 1000),
+      operation: step.presentation
+        ? {
+            action: step.presentation.action,
+            target: step.presentation.target,
+            page: step.presentation.page,
+            contextOnly: step.presentation.contextOnly,
+          }
+        : undefined,
       status: step.status,
       detail: step.detail?.slice(0, 1500),
       error: step.error?.slice(0, 1500),
+      continuedAfterFailure: step.continuedAfterFailure,
+      checks: scenarioAssertionResults(step).map((check) => ({
+        ...check,
+        instruction: check.instruction.slice(0, 1000),
+        detail: check.detail?.slice(0, 1000),
+      })),
+      actions: step.agentTask?.actions.slice(0, 24).map((result) => ({
+        type: result.action.type,
+        instruction:
+          result.action.type === 'wait'
+            ? undefined
+            : result.action.instruction.slice(0, 1000),
+        milliseconds:
+          result.action.type === 'wait'
+            ? result.action.milliseconds
+            : undefined,
+        status: result.status,
+        detail: result.detail?.slice(0, 1000),
+      })),
       recovery: step.recovery
         ? {
             status: step.recovery.status,
@@ -139,7 +167,11 @@ export function scenarioSummaryEvidence(run: ScenarioRunState) {
     };
   }
   const priority = (step: (typeof steps)[number]) =>
-    reportStepIsAbnormal(step) ? 0 : step.type === 'agent-assertion' ? 1 : 2;
+    reportStepIsAbnormal(step)
+      ? 0
+      : scenarioAssertionResults(step).length
+        ? 1
+        : 2;
   // Prioritize across the whole run, so early successful scripts cannot crowd out later failures.
   run.scripts
     .flatMap((script, scriptIndex) =>
@@ -218,7 +250,7 @@ export function parseScenarioReportAnalysis(
       throw new Error('Finding references a normal step.');
     if (
       finding.category === 'assertion' &&
-      (!step || step.type !== 'agent-assertion' || step.status !== 'failed')
+      (!step || !step.checks.some((check) => check.status === 'failed'))
     )
       throw new Error('Assertion mismatch must reference a failed checkpoint.');
     const key = `${finding.scriptIndex}/${finding.stepIndex}`;
@@ -257,7 +289,7 @@ export function basicScenarioSummary(
   return {
     status: 'failed',
     format: 'html',
-    skillVersion: '2',
+    skillVersion: '3',
     text: renderScenarioHtmlConclusion(run),
   };
 }
@@ -294,7 +326,9 @@ export async function generateScenarioSummary(
       return {
         status: 'completed',
         format: 'html',
-        skillVersion: '2',
+        skillVersion: '3',
+        analysis,
+        omittedSteps: evidence.omittedSteps,
         text: renderScenarioHtmlConclusion(
           run,
           analysis,

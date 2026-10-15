@@ -153,6 +153,13 @@
   }
 }
 
+/* Native caption buttons sit above renderer overlays. Keep the entire image
+ * preview close target below the titlebar, including when the window resizes. */
+body .ant-image-preview-close {
+  top: calc(max(56px, env(titlebar-area-height, 0px)) + 12px);
+  -webkit-app-region: no-drag;
+}
+
 /* Studio keeps the design's fixed dialog height and scrolls only its body. */
 .studio-model-env-config-modal .ant-modal-content {
   display: flex;

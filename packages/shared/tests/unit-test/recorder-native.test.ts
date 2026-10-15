@@ -3,6 +3,7 @@ import type { MidsceneRecorderEvent } from '../../src/recorder';
 import {
   buildRecorderNativeCaptureScript,
   compileRecorderNativePlaywright,
+  recorderNativeGeneratedTextPattern,
   recorderNativeLocatorExpression,
 } from '../../src/recorder-native';
 
@@ -354,5 +355,39 @@ describe('native Playwright compiler', () => {
       '.locator("input[role=\\"combobox\\"]").filter({ visible: true })',
     );
     expect(expression).not.toContain('.first()');
+  });
+
+  it('exports compound row identities with a bounded generated serial and literal text', () => {
+    const template = { prefix: 'MO-M04-(017)+-', suffix: ':20' };
+    const pattern = new RegExp(recorderNativeGeneratedTextPattern(template));
+    expect(pattern.test('MO-M04-(017)+-0277:20')).toBe(true);
+    for (const value of [
+      'MO-M04-(017)+-0277:120',
+      'OTHER-0277:20',
+      'MO-M04-(017)+-letters:20',
+      'MO-M04-(017)+-0277:20-copy',
+    ])
+      expect(pattern.test(value)).toBe(false);
+    const expression = recorderNativeLocatorExpression({
+      selector: '.ant-checkbox-wrapper',
+      scope: {
+        selector: 'div[data-row-key]',
+        hasAll: [
+          { selector: '[role="cell"]', text: 'MO-M04-(017)+' },
+          {
+            selector: '[role="cell"]',
+            has: { selector: 'a', generatedText: template },
+          },
+        ],
+      },
+    });
+    expect(expression).toContain(
+      '.filter({ has: page.locator("[role=\\"cell\\"]")',
+    );
+    expect(expression).not.toContain('0277');
+    expect(expression).not.toMatch(/first\(|nth\(/);
+    expect(expression).toContain(
+      JSON.stringify(recorderNativeGeneratedTextPattern(template)),
+    );
   });
 });

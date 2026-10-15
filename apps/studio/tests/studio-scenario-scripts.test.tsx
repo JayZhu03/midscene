@@ -425,6 +425,9 @@ describe('scenario recording workflow', () => {
     session = { ...session, events: [scenarioEvent()] };
     await render();
     await click('Add assertion');
+    expect(document.body.textContent).toContain(
+      'Describe the expected result, a wait, or whether to continue on failure.',
+    );
     const expectation = '  Confirmation is visible\nThe title stays exact.  ';
     await fill('Expected result', expectation);
     await click('Insert');

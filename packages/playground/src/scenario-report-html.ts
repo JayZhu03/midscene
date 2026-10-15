@@ -1,3 +1,4 @@
+import { scenarioAssertionResults } from './scenario-agent-plan';
 import type { ScenarioRunState } from './scenario-contract';
 import {
   type ScenarioReportAnalysis,
@@ -40,6 +41,7 @@ export function renderScenarioHtmlConclusion(
     waiting: tr('等待', 'Waiting'),
   };
   const steps = run.scripts.flatMap((s) => s.steps || []);
+  const checks = steps.flatMap(scenarioAssertionResults);
   const counts = [
     'passed',
     'failed',
@@ -73,6 +75,8 @@ export function renderScenarioHtmlConclusion(
         )
         .join('')}
       ${step.type === 'agent-assertion' ? `<p>${tr('断言', 'Assertion')}: ${e(step.instruction || step.description)}</p>` : ''}
+      ${step.continuedAfterFailure ? `<p>${tr('已按要求记录失败并继续执行。', 'Failure recorded; execution continued as requested.')}</p>` : ''}
+      ${step.agentTask ? `<ol>${step.agentTask.actions.map((result) => `<li>${e(result.action.type === 'wait' ? tr(`等待 ${result.action.milliseconds / 1000} 秒`, `Wait ${result.action.milliseconds / 1000} s`) : `${result.action.type === 'assertion' ? tr('断言', 'Assertion') : tr('操作', 'Operation')}: ${result.action.instruction}`)} <span class="status ${e(result.status)}">${e(statuses[result.status])}</span>${result.detail ? `<p>${e(result.detail)}</p>` : ''}</li>`).join('')}</ol>` : ''}
       ${step.error || step.detail ? `<p>${e(scenarioReportDetail(step.error || step.detail || '', run.language))}</p>` : ''}
       ${step.recovery ? `<p>Agent · ${e(step.recovery.status === 'recovered' ? tr('接管后通过', 'Recovered') : tr('接管未成功', 'Recovery did not succeed'))}</p><p>${e(step.recovery.originalError)}</p><p>${e(step.recovery.reason)}</p>` : ''}
       ${
@@ -94,15 +98,12 @@ export function renderScenarioHtmlConclusion(
     run.scenarioId;
   return `<h1>${e(title)}</h1><h2>${e(scenarioExecutionLabel(run))}</h2>
     <p>${e(analysis?.overview || tr('AI 分析未生成，以下为实际执行记录。', 'AI analysis unavailable. Actual execution records follow.'))}</p>
-    ${!steps.some((s) => s.type === 'agent-assertion') ? `<p class="notice">${tr('未设置检查点，业务正确性未验证。', 'No checkpoints were defined; business correctness was not verified.')}</p>` : ''}
+    ${!checks.length ? `<p class="notice">${tr('未设置检查点，业务正确性未验证。', 'No checkpoints were defined; business correctness was not verified.')}</p>` : ''}
     <p class="muted">${run.startedAt ? e(new Date(run.startedAt).toISOString()) : ''} · ${tr('耗时', 'Duration')} ${run.startedAt && run.finishedAt ? ((run.finishedAt - run.startedAt) / 1000).toFixed(1) : '—'} s</p>
     <table><thead><tr><th>${tr('统计对象', 'Group')}</th><th>${tr('总数', 'Total')}</th>${counts.map((s) => `<th>${e(statuses[s])}</th>`).join('')}</tr></thead><tbody>${[
       [tr('脚本', 'Scripts'), run.scripts],
       [tr('步骤', 'Steps'), steps],
-      [
-        tr('检查点', 'Checkpoints'),
-        steps.filter((s) => s.type === 'agent-assertion'),
-      ],
+      [tr('检查点', 'Checkpoints'), checks],
     ]
       .map(([label, items]) => {
         const list = items as Array<{ status: string }>;
@@ -123,17 +124,57 @@ export function renderScenarioHtmlConclusion(
     <p class="muted">${tr('执行编号', 'Run ID')}: ${e(run.id)} · ${tr('结论待人工确认。', 'Subject to human review.')}</p>`;
 }
 
-/** Standalone HTML with the official evidence viewer in an isolated frame. */
+/** One viewer owns the conclusion, steps and original replay. Only inert dump
+ * attachments are copied from an older evidence file; its UI bundle is replaced
+ * by the current template without changing any execution evidence. */
 export function composeScenarioHtml(
   run: ScenarioRunState,
   officialHtml?: string,
+  reportTemplate?: string,
 ) {
   const e = escapeReportHtml;
   const tr = (cn: string, en: string) => (run.language === 'en' ? en : cn);
-  const conclusion =
-    run.summary?.format === 'html'
-      ? run.summary.text || renderScenarioHtmlConclusion(run)
-      : `<pre>${e(run.summary?.text || '')}</pre>`;
+  if (reportTemplate || officialHtml?.includes('midscene_scenario_dump')) {
+    const attachments = reportTemplate
+      ? Array.from(
+          (officialHtml || '').matchAll(
+            /<script\b([^>]*)>[\s\S]*?<\/script>/gi,
+          ),
+        )
+          .filter((match) =>
+            /(?:^|\s)type=["'](?:midscene_web_dump|midscene-image|midscene-animated-webp(?:-manifest)?)["']/i.test(
+              match[1],
+            ),
+          )
+          .map((match) => match[0])
+          .join('\n')
+      : '';
+    const payload = JSON.stringify(run).replace(/</g, '\\u003c');
+    const source = reportTemplate || officialHtml!;
+    return source
+      .replace(
+        /<html([^>]*)>/i,
+        `<html$1 lang="${run.language === 'en' ? 'en' : 'zh-CN'}">`,
+      )
+      .replace(
+        /<title>[\s\S]*?<\/title>/i,
+        `<title>${e(run.scenarioName || tr('测试报告', 'Test report'))}</title>`,
+      )
+      .replace(/<head([^>]*)>/i, `<head$1>${reportStorageBootstrap}`)
+      .replace(
+        /<\/body>/i,
+        `${attachments}<script type="midscene_scenario_dump">${payload}</script></body>`,
+      );
+  }
+  const conclusion = run.summary?.text
+    ? run.summary.format === 'html'
+      ? run.summary.text
+      : `<pre>${e(run.summary.text)}</pre>`
+    : renderScenarioHtmlConclusion(
+        run,
+        run.summary?.analysis,
+        run.summary?.omittedSteps,
+      );
   // The upstream viewer persists display preferences in localStorage. An
   // opaque sandbox deliberately cannot access Studio storage. Give this
   // isolated viewer an ephemeral Storage implementation, never same-origin
@@ -164,3 +205,18 @@ export function composeScenarioHtml(
     window.addEventListener('message', event => { if(event.source === document.querySelector('iframe')?.contentWindow && event.data?.type === 'midscene-report-ready') sendSelection(); });
     </script></body></html>`;
 }
+
+// Studio opens the downloaded viewer in an opaque sandbox. Give its existing
+// preferences an ephemeral Storage implementation; never grant same-origin.
+const reportStorageBootstrap = `<script>
+for (const name of ['localStorage','sessionStorage']) {
+  try { window[name].getItem('__report_storage_probe__'); }
+  catch { const entries = new Map(); Object.defineProperty(window, name, { value: {
+    getItem: key => entries.get(String(key)) ?? null,
+    setItem: (key,value) => entries.set(String(key),String(value)),
+    removeItem: key => entries.delete(String(key)), clear: () => entries.clear(),
+    key: index => Array.from(entries.keys())[index] ?? null,
+    get length() { return entries.size; }
+  }}); }
+}
+</script>`;

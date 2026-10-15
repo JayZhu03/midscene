@@ -14,6 +14,7 @@ import type { Locator, Page } from 'playwright-core';
 import type { ScenarioRunState, ScenarioRunStep } from './scenario-contract';
 import { isScenarioNavigationObservation } from './scenario-navigation';
 import { scenarioReportDescription } from './scenario-report-language';
+import { describeScenarioTarget } from './scenario-step-presentation';
 
 function isInputModeChange(step: ScenarioRunStep) {
   const event = step.event;
@@ -94,7 +95,12 @@ export class ScenarioEvidence {
   private removeListener?: () => void;
   private generator?: ReportGenerator;
   private pending = Promise.resolve();
-  private context?: { scriptIndex: number; stepIds: string[]; label: string };
+  private context?: {
+    scriptIndex: number;
+    stepIds: string[];
+    label: string;
+    pageSettled?: boolean;
+  };
   private nativeSteps: ScenarioRunStep[] = [];
   private nativeScript = -1;
   private nativeStartedAt = 0;
@@ -111,11 +117,34 @@ export class ScenarioEvidence {
     private readonly directory: string,
     private readonly run: ScenarioRunState,
     private readonly captureNative?: () => Promise<string> | undefined,
+    private readonly settleNative?: (
+      signal: AbortSignal,
+      step: ScenarioRunStep,
+    ) => Promise<boolean> | undefined,
   ) {}
 
   /** Observe actual dispatched pointer coordinates; never reuse recording coordinates. */
   async beforeNativeAction(page: Page, target: Locator, step: ScenarioRunStep) {
     this.nativeTarget = target;
+    try {
+      const presentation = await target.evaluate(
+        describeScenarioTarget,
+        undefined,
+        { timeout: 500 },
+      );
+      const result = this.run.scripts[this.nativeScript]?.steps?.find(
+        (item) => item.id === step.id,
+      );
+      if (result?.presentation) {
+        if (presentation.target)
+          result.presentation.target = presentation.target;
+        result.presentation.editable = presentation.editable;
+        if (presentation.action)
+          result.presentation.action = presentation.action;
+      }
+    } catch {
+      // Missing descriptive context cannot change an operation's outcome.
+    }
     if (step.event?.type !== 'click') return;
     this.nativeBefore = undefined;
     this.nativeClick = undefined;
@@ -226,6 +255,7 @@ export class ScenarioEvidence {
     step: ScenarioRunStep,
     scriptIndex: number,
     page?: Page,
+    signal?: AbortSignal,
   ) {
     if (!this.nativeSteps.length) return;
     const steps = this.nativeSteps;
@@ -246,7 +276,15 @@ export class ScenarioEvidence {
     };
     if (page && this.generator) {
       try {
+        signal?.throwIfAborted();
+        if (this.settleNative && signal)
+          this.context.pageSettled = await this.settleNative(
+            signal,
+            reportStep,
+          );
+        signal?.throwIfAborted();
         const after = await this.nativeScreenshot(page);
+        signal?.throwIfAborted();
         const before = this.nativeBefore;
         const dimensions = await imageInfoOfBase64((before || after).base64);
         const inputValue =
@@ -308,6 +346,7 @@ export class ScenarioEvidence {
         );
         await this.flush();
       } catch {
+        signal?.throwIfAborted();
         this.error = '部分执行过程证据未能保存。';
       }
       return;

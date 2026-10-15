@@ -1,6 +1,8 @@
+import type { ScenarioAgentPlan } from '@midscene/playground';
 import { Button, Dropdown, Form, Input, Modal } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { readStoredLanguage, t } from '../../i18n';
+import { StudioPlaygroundContext } from '../../playground/useStudioPlayground';
 import type { StudioRecordingSession } from '../../recorder/types';
 import { useOptionalStudioRecorder } from '../../recorder/useStudioRecorder';
 import {
@@ -14,6 +16,10 @@ import { StudioScenarioExecution } from './StudioScenarioExecution';
 import { StudioScenarioTimeline } from './StudioScenarioTimeline';
 import { StudioScriptSequence, runStatusLabel } from './StudioScriptSequence';
 import {
+  compileStudioAgentPlan,
+  prepareScenarioAgentSteps,
+} from './agent-tasks';
+import {
   SCENARIO_NAVIGATION_EVENT,
   type ScenarioNavigationRequest,
 } from './navigation';
@@ -21,6 +27,7 @@ import {
   SCENARIO_SCRIPT_NAME_MAX_LENGTH,
   type ScenarioScript,
   compileScenarioScript,
+  editScenarioScript,
 } from './script-model';
 import {
   deleteScenarioScript,
@@ -59,6 +66,36 @@ export function StudioScenarioScripts({
 }) {
   const recorder = useOptionalStudioRecorder();
   const execution = useScenarioExecution();
+  const playground = useContext(StudioPlaygroundContext);
+  const compileAbort = useRef<AbortController>();
+  const preparedPlans = useRef(new Map<string, ScenarioAgentPlan>());
+  useEffect(() => () => compileAbort.current?.abort(), []);
+  const prepareSteps = (
+    steps: ScenarioScript['steps'],
+    original?: ScenarioScript['steps'],
+  ) => {
+    compileAbort.current?.abort();
+    const abort = new AbortController();
+    compileAbort.current = abort;
+    return prepareScenarioAgentSteps(
+      steps,
+      original,
+      async (instruction, readOnly) => {
+        const key = JSON.stringify([instruction, readOnly]);
+        const cached = preparedPlans.current.get(key);
+        if (cached) return cached;
+        const plan = await compileStudioAgentPlan(
+          instruction,
+          readOnly,
+          playground?.phase === 'ready' ? playground.serverUrl : null,
+          abort.signal,
+        );
+        abort.signal.throwIfAborted();
+        preparedPlans.current.set(key, plan);
+        return plan;
+      },
+    );
+  };
   const [sessionMode, setSessionMode] = useState<SessionMode>(() =>
     loadSessionMode(scenario.id),
   );
@@ -112,6 +149,7 @@ export function StudioScenarioScripts({
     null,
   );
   const [editingSteps, setEditingSteps] = useState<ScenarioScript['steps']>([]);
+  const [editingStepId, setEditingStepId] = useState<string>();
   const [editBusy, setEditBusy] = useState(false);
   const editDirty = Boolean(
     editingScript &&
@@ -272,6 +310,7 @@ export function StudioScenarioScripts({
   }, []);
 
   const closeEditor = () => {
+    setEditingStepId(undefined);
     setEditingScript(null);
     setEditingSteps([]);
     setError(null);
@@ -449,7 +488,11 @@ export function StudioScenarioScripts({
         name: scriptName.trim(),
         session: stoppedSession,
       });
-      const saved = await saveScenarioScript(draft, async (assetId) => {
+      const steps = await prepareSteps(draft.steps);
+      const prepared = steps.some((step, i) => step !== draft.steps[i])
+        ? editScenarioScript(draft, steps)
+        : draft;
+      const saved = await saveScenarioScript(prepared, async (assetId) => {
         const url = recorder?.getRecorderScreenshotAssetUrl(assetId);
         if (!url) return null;
         const response = await fetch(url);
@@ -492,11 +535,14 @@ export function StudioScenarioScripts({
     setStartingReplay(true);
     setError(null);
     try {
-      const draft = compileScenarioScript({
+      let draft = compileScenarioScript({
         scenarioId: scenario.id,
         name: t('Recorded script'),
         session: stoppedSession,
       });
+      const steps = await prepareSteps(draft.steps);
+      if (steps.some((step, i) => step !== draft.steps[i]))
+        draft = editScenarioScript(draft, steps);
       draftReplayIds.current.add(draft.id);
       setReplayScript(draft);
       await execution.start({
@@ -589,7 +635,7 @@ export function StudioScenarioScripts({
     try {
       const saved = await updateScenarioScriptSteps(
         editingScript,
-        editingSteps,
+        await prepareSteps(editingSteps, editingScript.steps),
       );
       setScripts((current) =>
         current.map((item) => (item.id === saved.id ? saved : item)),
@@ -951,12 +997,26 @@ export function StudioScenarioScripts({
                 ? (steps) => {
                     if (executionRef.current || mutationRef.current) return;
                     if (!editingScript) setEditingScript(viewedScript);
-                    setEditingSteps(steps);
+                    const saved = new Map(
+                      viewedScript.steps.map((step) => [step.id, step]),
+                    );
+                    setEditingSteps(
+                      steps.map((step) => {
+                        const original = saved.get(step.id);
+                        return step.type === 'agent-task' &&
+                          original?.type === 'agent-task' &&
+                          step.instruction === original.instruction
+                          ? original
+                          : step;
+                      }),
+                    );
                   }
                 : undefined
             }
             onSave={() => void saveEditedScript()}
             onCancel={() => cancelEditor()}
+            editingStepId={editingStepId}
+            onEditStep={setEditingStepId}
             dirty={editDirty}
             busy={editBusy || execution.locked || execution.pending}
             getScreenshotAssetUrl={recorder?.getRecorderScreenshotAssetUrl}
@@ -1058,6 +1118,9 @@ export function StudioScenarioScripts({
             label={t('Expected result')}
             htmlFor="studio-script-expectation"
             required
+            extra={t(
+              'Describe the expected result, a wait, or whether to continue on failure.',
+            )}
           >
             <Input.TextArea
               id="studio-script-expectation"

@@ -1,16 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import { compileRecorderNativePlaywright } from '@midscene/shared/recorder-native';
 import {
+  type ScenarioAgentTools,
+  executeScenarioAgentTask,
+} from './scenario-agent-execution';
+import { validateScenarioAgentPlan } from './scenario-agent-plan';
+import {
   type ScenarioRecovery,
   type ScenarioRunInput,
   type ScenarioRunState,
   type ScenarioRunStep,
   scenarioRunActive,
 } from './scenario-contract';
+import {
+  ScenarioAssertionError,
+  ScenarioBlockedError,
+  ScenarioFatalError,
+} from './scenario-errors';
+import { scenarioStepPresentation } from './scenario-step-presentation';
 
-export class ScenarioBlockedError extends Error {}
-export class ScenarioAssertionError extends Error {}
-export class ScenarioFatalError extends Error {}
+export {
+  ScenarioAssertionError,
+  ScenarioBlockedError,
+  ScenarioFatalError,
+} from './scenario-errors';
 
 export interface ScenarioFailureContext {
   plan: ScenarioRunInput;
@@ -36,7 +49,25 @@ export async function executeScenarioAgentStep(
     type: 'aiAct' | 'aiAssert',
     instruction: string,
   ) => Promise<unknown>,
+  options: {
+    signal?: AbortSignal;
+    beforeOperation?: ScenarioAgentTools['beforeOperation'];
+    operationCompleted?: ScenarioAgentTools['operationCompleted'];
+    onProgress?: ScenarioAgentTools['onProgress'];
+  } = {},
 ) {
+  if (step.type === 'agent-task')
+    return executeScenarioAgentTask(
+      validateScenarioAgentPlan(step.agentPlan, step.instruction!),
+      {
+        operate: (instruction) => execute('aiAct', instruction),
+        assert: (instruction) => execute('aiAssert', instruction),
+        beforeOperation: options.beforeOperation,
+        operationCompleted: options.operationCompleted,
+        onProgress: options.onProgress,
+      },
+      options.signal || new AbortController().signal,
+    );
   const assertion = step.type === 'agent-assertion';
   const result = await execute(
     assertion ? 'aiAssert' : 'aiAct',
@@ -158,6 +189,11 @@ export function validateScenarioRun(value: ScenarioRunInput): ScenarioRunInput {
           !/^https?:\/\//i.test(step.event.url)
         )
           throw new Error('Only HTTP and HTTPS pages can be replayed.');
+      } else if (step.type === 'agent-task') {
+        step.agentPlan = validateScenarioAgentPlan(
+          step.agentPlan,
+          step.instruction!,
+        );
       } else if (
         !['agent-operation', 'agent-assertion'].includes(step.type) ||
         typeof step.instruction !== 'string' ||
@@ -201,6 +237,17 @@ export class ScenarioRunner {
           type: step.type,
           description: step.description,
           instruction: step.instruction,
+          presentation: scenarioStepPresentation(step),
+          ...(step.type === 'agent-task'
+            ? {
+                agentTask: {
+                  actions: step.agentPlan!.actions.map((action) => ({
+                    action,
+                    status: 'pending' as const,
+                  })),
+                },
+              }
+            : {}),
           status: 'pending',
         })),
       })),
@@ -227,6 +274,8 @@ export class ScenarioRunner {
     for (const step of result.steps || []) {
       step.status = 'skipped';
       step.finishedAt = Date.now();
+      for (const action of step.agentTask?.actions || [])
+        action.status = 'skipped';
     }
     this.state.status = 'running';
     this.resume?.('skip');
@@ -320,6 +369,12 @@ export class ScenarioRunner {
             evidence = await execute(script.steps[j], this.abort.signal, i);
           } catch (error) {
             this.abort.signal.throwIfAborted();
+            if (
+              (error instanceof ScenarioAssertionError ||
+                error instanceof ScenarioBlockedError) &&
+              error.agentTask
+            )
+              stepResult.agentTask = error.agentTask;
             if (!hooks || error instanceof ScenarioFatalError) throw error;
             const message =
               error instanceof Error
@@ -378,6 +433,29 @@ export class ScenarioRunner {
             }
           }
           this.abort.signal.throwIfAborted();
+          if (
+            evidence &&
+            typeof evidence === 'object' &&
+            'agentTask' in evidence
+          ) {
+            const task = evidence as Awaited<
+              ReturnType<typeof executeScenarioAgentTask>
+            >;
+            stepResult.agentTask = task.agentTask;
+            if (task.continuedAfterFailure) {
+              stepResult.status = 'failed';
+              stepResult.continuedAfterFailure = true;
+              stepResult.error = task.agentTask.actions.find(
+                (a) => a.status === 'failed',
+              )?.detail;
+              stepResult.detail = task.detail;
+              stepResult.finishedAt = Date.now();
+              result.status = 'failed';
+              result.error ||= stepResult.error;
+              result.completedSteps++;
+              continue;
+            }
+          }
           stepResult.status = 'passed';
           stepResult.finishedAt = Date.now();
           if (
@@ -426,6 +504,12 @@ export class ScenarioRunner {
         step.status = stopped ? 'stopped' : this.state.status;
         step.finishedAt = Date.now();
         step.error = this.state.error;
+        if (
+          (error instanceof ScenarioAssertionError ||
+            error instanceof ScenarioBlockedError) &&
+          error.agentTask
+        )
+          step.agentTask = error.agentTask;
       }
     } finally {
       this.state.phase = undefined;

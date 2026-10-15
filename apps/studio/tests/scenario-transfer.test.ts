@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   agentStepInstruction,
+  agentTaskStep,
   compileScenarioScript,
   createAgentStep,
   editScenarioScript,
@@ -104,6 +105,86 @@ async function rewrite(
 }
 
 describe('Studio transfer', () => {
+  it('preserves combined execution rules, native screenshots and failure policy through a package round trip', async () => {
+    const original = await saved();
+    const instruction = '点击查询，等三秒，数量为2165，不对记录并继续';
+    const task = agentTaskStep(original.steps[2], instruction, {
+      version: 1,
+      instruction,
+      readOnly: false,
+      actions: [
+        { type: 'operation', instruction: '点击查询' },
+        { type: 'wait', milliseconds: 3000 },
+        { type: 'assertion', instruction: '数量为2165', onFailure: 'continue' },
+      ],
+    });
+    const updated = await saveScenarioScript(
+      editScenarioScript(original, [
+        original.steps[0],
+        original.steps[1],
+        task,
+      ]),
+    );
+    const bytes = await createStudioPackage(scenario, updated);
+    const zip = await JSZip.loadAsync(bytes);
+    const readme = await zip.file('README.md')!.async('string');
+    expect(readme).toContain('agentPlan.actions');
+    expect(readme).toContain('onFailure=continue');
+    const bundle = await readStudioPackage(bytes, 'script');
+    expect(bundle.manifest.scripts[0].steps[2]).toEqual(task);
+    await importStudioPackage(bundle, scenario);
+    const copies = await listScenarioScripts(scenario.id);
+    const copy = copies.find((script) => script.id !== updated.id)!;
+    expect(copy.steps[2]).toMatchObject({
+      agentPlan: task.type === 'agent-task' ? task.agentPlan : undefined,
+      sourceCheckpoint: copy.sourceSession.checkpoints![0],
+    });
+    expect(copy.sourceSession.checkpoints![0].id).not.toBe(
+      updated.sourceSession.checkpoints![0].id,
+    );
+    expect(copy.assets).toHaveLength(1);
+    expect(await getScenarioScriptAsset(copy.assets[0].id)).toBeTruthy();
+    const tampered = await rewrite(bytes, (_zip, manifest) => {
+      manifest.scripts[0].steps[2].agentPlan.instruction = 'different';
+    });
+    await expect(readStudioPackage(tampered, 'script')).rejects.toThrow();
+    expect(await listScenarioScripts(scenario.id)).toHaveLength(2);
+  });
+  it('keeps regenerated task-row identities in exported and imported scripts', async () => {
+    const locator = {
+      selector: '.ant-checkbox-wrapper',
+      scope: {
+        selector: 'div[data-row-key]',
+        hasAll: [
+          { selector: 'a', text: 'MO-M04-017' },
+          {
+            selector: 'a',
+            generatedText: { prefix: 'MO-MO-M04-017-', suffix: ':20' },
+          },
+        ],
+      },
+    };
+    const original = await saveScenarioScript(
+      compileScenarioScript({
+        scenarioId: scenario.id,
+        name: '工序选择',
+        session: scenarioSession({
+          events: [scenarioEvent({ nativeTarget: { locator } })],
+        }),
+      }),
+    );
+    const bundle = await readStudioPackage(
+      await createStudioPackage(scenario, original),
+      'script',
+    );
+    await importStudioPackage(bundle, scenario);
+    const copy = (await listScenarioScripts(scenario.id)).find(
+      (script) => script.id !== original.id,
+    )!;
+    expect(copy.sourceSession.events[0].nativeTarget?.locator).toEqual(locator);
+    expect(copy.steps[0].code).toBe(original.steps[0].code);
+  });
+
   it('round-trips Android Agent scripts and app targets without allowing a mixed-platform scenario', async () => {
     const android = {
       ...scenario,

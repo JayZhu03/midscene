@@ -1,4 +1,9 @@
 import {
+  type ScenarioAgentPlan,
+  scenarioAgentTaskCode,
+  validateScenarioAgentPlan,
+} from '@midscene/playground';
+import {
   buildMidsceneRecorderReplayInstruction,
   getMidsceneRecorderEventDescription,
 } from '@midscene/shared/recorder';
@@ -43,6 +48,13 @@ export type ScenarioScriptStep =
   | (ScenarioStepBase & {
       type: 'agent-assertion';
       instruction: string;
+      sourceCheckpoint?: ScenarioCheckpoint;
+    })
+  | (ScenarioStepBase & {
+      type: 'agent-task';
+      instruction: string;
+      agentPlan?: ScenarioAgentPlan;
+      sourceEvent?: StudioRecordedEvent;
       sourceCheckpoint?: ScenarioCheckpoint;
     });
 
@@ -153,11 +165,24 @@ function locatorSnapshot(value: unknown, depth = 0): unknown {
   const result = pick(locator, ['selector', 'text', 'visible']);
   text(locator.selector, 10000);
   if (locator.text !== undefined) text(locator.text);
+  if (locator.generatedText !== undefined) {
+    const template = record(locator.generatedText);
+    result.generatedText = {
+      prefix: text(template.prefix),
+      suffix: text(template.suffix),
+    };
+  }
   if (locator.visible !== undefined && typeof locator.visible !== 'boolean')
     invalid();
   for (const key of ['scope', 'has']) {
     if (locator[key] !== undefined)
       result[key] = locatorSnapshot(locator[key], depth + 1);
+  }
+  if (locator.hasAll !== undefined) {
+    if (!Array.isArray(locator.hasAll) || locator.hasAll.length > 16) invalid();
+    result.hasAll = locator.hasAll.map((child) =>
+      locatorSnapshot(child, depth + 1),
+    );
   }
   return result;
 }
@@ -738,6 +763,12 @@ export function agentStepInstruction(
 ): ScenarioScriptStep {
   if (step.type === 'playwright-operation')
     throw new Error('Playwright steps cannot be edited.');
+  if (step.type === 'agent-task')
+    return agentTaskStep(
+      step,
+      instruction,
+      step.instruction === instruction ? step.agentPlan : undefined,
+    );
   return {
     ...step,
     instruction,
@@ -747,7 +778,7 @@ export function agentStepInstruction(
 }
 
 export function createAgentStep(
-  type: 'agent-operation' | 'agent-assertion',
+  type: 'agent-operation' | 'agent-assertion' | 'agent-task',
 ): ScenarioScriptStep {
   return agentStepInstruction(
     {
@@ -760,6 +791,30 @@ export function createAgentStep(
     },
     '',
   );
+}
+
+export function agentTaskStep(
+  source: ScenarioScriptStep,
+  instruction: string,
+  agentPlan?: ScenarioAgentPlan,
+): ScenarioScriptStep {
+  if (source.type === 'playwright-operation')
+    throw new Error('Playwright steps cannot be edited.');
+  return {
+    id: source.id,
+    type: 'agent-task',
+    ...(source.manual ? { manual: true } : {}),
+    instruction,
+    description: instruction,
+    code: agentPlan ? scenarioAgentTaskCode(agentPlan) : '',
+    ...(agentPlan ? { agentPlan } : {}),
+    ...('sourceEvent' in source && source.sourceEvent
+      ? { sourceEvent: source.sourceEvent }
+      : {}),
+    ...('sourceCheckpoint' in source && source.sourceCheckpoint
+      ? { sourceCheckpoint: source.sourceCheckpoint }
+      : {}),
+  };
 }
 
 function validateEditedSteps(
@@ -787,14 +842,34 @@ function validateEditedSteps(
         throw new Error('Playwright steps cannot be edited.');
       return source;
     }
-    if (!['agent-operation', 'agent-assertion'].includes(String(step.type)))
+    if (
+      !['agent-operation', 'agent-assertion', 'agent-task'].includes(
+        String(step.type),
+      )
+    )
       invalid();
-    if (source && source.type !== step.type) invalid();
+    if (source && source.type !== step.type && step.type !== 'agent-task')
+      invalid();
     if (!source && (step.manual !== true || !id.startsWith('manual:')))
       invalid();
     const instruction = text(step.instruction, Number.MAX_SAFE_INTEGER);
     if (!instruction.trim())
       throw new Error('Please enter a step instruction.');
+    if (step.type === 'agent-task') {
+      const plan = validateScenarioAgentPlan(step.agentPlan, instruction);
+      return agentTaskStep(
+        source || {
+          id,
+          type: 'agent-task',
+          manual: true,
+          instruction: '',
+          description: '',
+          code: '',
+        },
+        instruction,
+        plan,
+      );
+    }
     return agentStepInstruction(
       source || {
         id,

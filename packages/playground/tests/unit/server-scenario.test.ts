@@ -114,6 +114,109 @@ async function setup() {
   return { server, agent, status };
 }
 describe('scenario routes', () => {
+  test('prepares a pure wait without executing page actions and rejects malformed planning options', async () => {
+    const { server, agent } = await setup();
+    try {
+      const compile = handler(server, 'post', '/scenario-agent-tasks/compile');
+      const res = response();
+      await compile(
+        { body: { instruction: '三秒后再执行下一步脚本', readOnly: false } },
+        res,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body.plan.actions).toEqual([
+        { type: 'wait', milliseconds: 3000 },
+      ]);
+      expect(agent.aiAct).not.toHaveBeenCalled();
+      expect(agent.aiAssert).not.toHaveBeenCalled();
+      expect(agent.interface.screenshotBase64).not.toHaveBeenCalled();
+      const invalid = response();
+      await compile(
+        { body: { instruction: 'wait 3 seconds', readOnly: 'false' } },
+        invalid,
+      );
+      expect(invalid.statusCode).toBe(400);
+    } finally {
+      await server.close();
+    }
+  });
+  test('executes a combined task with observation before interaction, records mismatch and continues the same script', async () => {
+    const { server, agent, status } = await setup();
+    const order: string[] = [];
+    const observedQuery = rs.fn(async () => {
+      order.push('assert');
+      return JSON.stringify({ verdict: 'failed', reason: '实际为2155' });
+    });
+    Object.assign(agent, {
+      startObserving: rs.fn(async () => {
+        order.push('baseline');
+        const startedAt = Date.now();
+        return {
+          stop: async () => ({
+            startedAt,
+            endedAt: Date.now(),
+            aiAsk: observedQuery,
+          }),
+          dispose: async () => {},
+        };
+      }),
+    });
+    agent.aiAct.mockImplementation(async () => {
+      order.push('operation');
+    });
+    const input = plan();
+    input.scripts = [input.scripts[0]];
+    input.scripts[0].steps = [
+      {
+        id: 'combined',
+        type: 'agent-task',
+        description: '点击查询，检查数量，不对也继续',
+        instruction: '点击查询，检查数量，不对也继续',
+        agentPlan: {
+          version: 1,
+          instruction: '点击查询，检查数量，不对也继续',
+          readOnly: false,
+          actions: [
+            { type: 'operation', instruction: '点击查询' },
+            { type: 'wait', milliseconds: 1 },
+            {
+              type: 'assertion',
+              instruction: '数量为2165',
+              onFailure: 'continue',
+            },
+          ],
+        },
+      },
+      {
+        id: 'following',
+        type: 'agent-operation',
+        description: '打开制造订单',
+        instruction: '打开制造订单',
+      },
+    ];
+    try {
+      const res = response();
+      handler(server, 'post', '/scenario-runs')({ body: input }, res);
+      expect(res.statusCode).toBe(202);
+      await until(() => !status().busy);
+      expect(order).toEqual(['baseline', 'operation', 'assert', 'operation']);
+      const run = status().run;
+      expect(run.status).toBe('failed');
+      expect(run.scripts[0].steps[0]).toMatchObject({
+        status: 'failed',
+        continuedAfterFailure: true,
+      });
+      expect(
+        run.scripts[0].steps[0].agentTask.actions.map(
+          (a: { status: string }) => a.status,
+        ),
+      ).toEqual(['passed', 'passed', 'failed']);
+      expect(run.scripts[0].steps[1].status).toBe('passed');
+      expect(agent.aiQuery).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
   test('skip rejects stale requests, never runs the skipped assertion and saves its result', async () => {
     const { server, agent, status } = await setup();
     try {

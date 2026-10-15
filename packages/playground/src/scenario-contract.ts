@@ -1,14 +1,24 @@
 import type { MidsceneRecorderEvent } from '@midscene/shared/recorder';
+import type {
+  ScenarioAgentPlan,
+  ScenarioAgentTaskResult,
+} from './scenario-agent-plan';
+import type { ScenarioReportAnalysis } from './scenario-report';
 
 export type ScenarioStartMode = 'automatic' | 'manual';
 export interface ScenarioRunStep {
   id: string;
-  type: 'playwright-operation' | 'agent-operation' | 'agent-assertion';
+  type:
+    | 'playwright-operation'
+    | 'agent-operation'
+    | 'agent-assertion'
+    | 'agent-task';
   description: string;
   instruction?: string;
   event?: MidsceneRecorderEvent;
   code?: string;
   operationIndex?: number;
+  agentPlan?: ScenarioAgentPlan;
 }
 export interface ScenarioRunScript {
   id: string;
@@ -32,6 +42,8 @@ export interface ScenarioStepResult {
   type: ScenarioRunStep['type'];
   description: string;
   instruction?: string;
+  /** Report-only context. Does not change recorded code or execution order. */
+  presentation?: ScenarioStepPresentation;
   status:
     | 'pending'
     | 'running'
@@ -45,6 +57,16 @@ export interface ScenarioStepResult {
   detail?: string;
   error?: string;
   recovery?: ScenarioRecovery;
+  agentTask?: ScenarioAgentTaskResult;
+  continuedAfterFailure?: boolean;
+}
+export interface ScenarioStepPresentation {
+  action: string;
+  target?: string;
+  page?: string;
+  url?: string;
+  editable?: boolean;
+  contextOnly?: boolean;
 }
 export interface ScenarioRecovery {
   status: 'running' | 'recovered' | 'failed' | 'stopped';
@@ -120,6 +142,8 @@ export interface ScenarioRunState {
     format?: 'markdown' | 'html';
     skillVersion?: string;
     storageError?: string;
+    analysis?: ScenarioReportAnalysis;
+    omittedSteps?: number;
   };
   status: ScenarioRunStatus;
   scriptIndex: number;
@@ -133,6 +157,7 @@ export interface ScenarioRunState {
     stepIds: string[];
     taskId: string;
     label: string;
+    pageSettled?: boolean;
   }>;
   scripts: Array<{
     id: string;

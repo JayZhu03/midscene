@@ -15,6 +15,7 @@ export function StudioScenarioReport({
   autoOpen = false,
 }: { run: ScenarioRunState; autoOpen?: boolean }) {
   const [open, setOpen] = useState(autoOpen);
+  const [opening, setOpening] = useState(0);
   const [coverReady, setCoverReady] = useState(false);
   const releaseCover = useRef<() => void>();
   const [downloading, setDownloading] = useState(false);
@@ -28,9 +29,20 @@ export function StudioScenarioReport({
     () => composeScenarioHtml(run),
     [run, summary?.text],
   );
-  const [loaded, setLoaded] = useState<{ id: string; html: string }>();
-  const [loading, setLoading] = useState(false);
-  const html = loaded?.id === run.id ? loaded.html : fallback;
+  const request = useMemo(
+    () => ({ id: run.id, serverUrl, fallback, opening }),
+    [run.id, serverUrl, fallback, opening],
+  );
+  const [loaded, setLoaded] = useState<{
+    request: typeof request;
+    html: string;
+    error?: string;
+  }>();
+  // A previous response or the basic fallback must never briefly mount while
+  // the current, complete report is being fetched.
+  const current = loaded?.request === request ? loaded : undefined;
+  const html = serverUrl ? current?.html : fallback;
+  const loading = html === undefined;
   const generating =
     !summary || summary.status === 'generating' || summary.phase === 'saving';
   const available = !generating && Boolean(summary?.text);
@@ -54,35 +66,36 @@ export function StudioScenarioReport({
   }, [open, available, messageApi]);
   useEffect(() => () => releaseCover.current?.(), []);
   useEffect(() => {
-    if (!open || !available || !serverUrl) return;
+    if (!open || !available || !request.serverUrl) return;
     const abort = new AbortController();
-    setLoading(true);
     setError(undefined);
     void fetch(
-      `${serverUrl.replace(/\/$/, '')}/scenario-reports/${encodeURIComponent(run.id)}/html`,
-      { signal: abort.signal },
+      `${request.serverUrl.replace(/\/$/, '')}/scenario-reports/${encodeURIComponent(request.id)}/html`,
+      { signal: abort.signal, cache: 'no-store' },
     )
       .then(async (response) => {
         if (!response.ok) throw new Error('Report unavailable');
         const content = await response.text();
-        if (!abort.signal.aborted) setLoaded({ id: run.id, html: content });
+        if (!content.trim()) throw new Error('Report is empty');
+        if (!abort.signal.aborted) setLoaded({ request, html: content });
       })
       .catch(() => {
         if (!abort.signal.aborted)
-          setError(
-            t(
+          setLoaded({
+            request,
+            html: request.fallback,
+            error: t(
               'Unable to load process evidence. Showing the test conclusion only.',
             ),
-          );
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) setLoading(false);
+          });
       });
     return () => abort.abort();
-  }, [open, available, serverUrl, run.id]);
+  }, [open, available, request]);
   const viewReport = () => {
     if (available) {
       messageApi.destroy('report-status');
+      setOpening((value) => value + 1);
+      setError(undefined);
       setOpen(true);
     } else {
       void messageApi.open({
@@ -97,7 +110,7 @@ export function StudioScenarioReport({
     }
   };
   const download = async () => {
-    if (!available || downloading || loading) return;
+    if (!available || downloading || html === undefined) return;
     setDownloading(true);
     setError(undefined);
     const name =
@@ -176,20 +189,23 @@ export function StudioScenarioReport({
             {t(summary.storageError)}
           </p>
         ) : null}
-        {error ? (
+        {error || current?.error ? (
           <p className="studio-scenario-error" role="alert">
-            {error}
+            {error || current?.error}
           </p>
         ) : null}
-        {loading ? <output>{t('Loading report...')}</output> : null}
-        <iframe
-          className="studio-report-html"
-          title={t('Test report')}
-          sandbox="allow-scripts"
-          allow="fullscreen *"
-          allowFullScreen
-          srcDoc={html}
-        />
+        {open && loading ? <output>{t('Loading report...')}</output> : null}
+        {open && html !== undefined ? (
+          <iframe
+            key={run.id}
+            className="studio-report-html"
+            title={t('Test report')}
+            sandbox="allow-scripts"
+            allow="fullscreen *"
+            allowFullScreen
+            srcDoc={html}
+          />
+        ) : null}
       </Drawer>
     </section>
   );

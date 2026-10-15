@@ -78,6 +78,7 @@ import {
   type PlaygroundRuntimeInfo,
   buildRuntimeInfo,
 } from './runtime-metadata';
+import { compileScenarioAgentPlan } from './scenario-agent-compiler';
 import { ScenarioEvidence, endsNativeEvidenceBlock } from './scenario-evidence';
 import {
   connectScenarioPage,
@@ -85,7 +86,9 @@ import {
   waitForScenarioNavigation,
 } from './scenario-native';
 import {
+  isScenarioCheckEntry,
   isScenarioNavigationObservation,
+  isScenarioWaitOnly,
   scenarioNavigationEffect,
   scenarioOperationPrecedesAssertion,
 } from './scenario-navigation';
@@ -1347,6 +1350,8 @@ class PlaygroundServer {
   private scenarioCompletion?: Promise<void>;
   private scenarioSummaryAbort?: AbortController;
   private scenarioSummaryCompletion?: Promise<void>;
+  private closing = false;
+  private closePromise?: Promise<void>;
   private recorderStarting = false;
   private taskAbortControllers: Record<string, AbortController> = {};
 
@@ -3711,6 +3716,37 @@ class PlaygroundServer {
         }
       },
     );
+    this._app.post(
+      '/scenario-agent-tasks/compile',
+      async (req: Request, res: Response) => {
+        const abort = new AbortController();
+        const cancel = () =>
+          abort.abort(new Error('Instruction compilation cancelled.'));
+        res.on?.('close', cancel);
+        try {
+          if (typeof req.body?.readOnly !== 'boolean')
+            throw new Error('Invalid Agent execution rules.');
+          const plan = await compileScenarioAgentPlan(
+            req.body?.instruction,
+            req.body.readOnly,
+            () => {
+              const agent = this.getActiveAgentOrThrow();
+              return getModelRuntime(
+                (
+                  agent.modelConfigManager || globalModelConfigManager
+                ).getModelConfig('insight'),
+              );
+            },
+            AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]),
+          );
+          return res.json({ plan });
+        } catch (error) {
+          return res.status(400).json({ error: formatErrorMessage(error) });
+        } finally {
+          res.off?.('close', cancel);
+        }
+      },
+    );
     this._app.post('/scenario-runs', (req: Request, res: Response) => {
       if (
         this.currentTaskId ||
@@ -3783,6 +3819,7 @@ class PlaygroundServer {
           join(getMidsceneRunSubDir('report'), 'scenario-reports'),
           runner.state,
           () => connection?.captureScreenshot?.(),
+          (signal, step) => connection?.waitForEvidenceReady?.(signal, step),
         );
         const observation = new ScenarioObservation(currentAgent, async () => {
           await evidence.flush();
@@ -3854,13 +3891,16 @@ class PlaygroundServer {
               const passiveNavigation = isScenarioNavigationObservation(step);
               if (
                 observationScript !== scriptIndex ||
-                (step.type !== 'agent-assertion' && !passiveNavigation)
+                (!isScenarioCheckEntry(step) &&
+                  !isScenarioWaitOnly(step) &&
+                  !passiveNavigation)
               ) {
                 await observation.clear();
                 observationScript = scriptIndex;
               }
               evidence.setStep(step, scriptIndex, runner.state.stepIndex);
               if (
+                step.type !== 'agent-task' &&
                 scenarioOperationPrecedesAssertion(
                   runner.plan.scripts[scriptIndex].steps,
                   runner.state.stepIndex,
@@ -3901,29 +3941,56 @@ class PlaygroundServer {
                   }
                 } else {
                   const agent = this.getActiveAgentOrThrow();
-                  if (step.type === 'agent-assertion') {
-                    try {
-                      await waitReady(signal);
-                    } catch (error) {
-                      signal.throwIfAborted();
-                      throw new ScenarioBlockedError(
-                        formatErrorMessage(error) || SCENARIO_PAGE_NOT_READY,
-                      );
-                    }
-                    signal.throwIfAborted();
-                  }
                   return await executeScenarioAgentStep(
                     step,
-                    async (type, instruction) =>
-                      type === 'aiAssert'
-                        ? observation.assert(step, signal)
-                        : executeAction(
-                            agent,
-                            type,
-                            agent.interface.actionSpace(),
-                            { type, prompt: instruction },
-                            { abortSignal: signal },
-                          ),
+                    async (type, instruction) => {
+                      if (type === 'aiAssert') {
+                        try {
+                          await waitReady(signal);
+                        } catch (error) {
+                          signal.throwIfAborted();
+                          throw new ScenarioBlockedError(
+                            formatErrorMessage(error) ||
+                              SCENARIO_PAGE_NOT_READY,
+                          );
+                        }
+                        signal.throwIfAborted();
+                        return observation.assert(
+                          { ...step, instruction },
+                          signal,
+                        );
+                      }
+                      return executeAction(
+                        agent,
+                        type,
+                        agent.interface.actionSpace(),
+                        { type, prompt: instruction },
+                        { abortSignal: signal },
+                      );
+                    },
+                    {
+                      signal,
+                      beforeOperation: async (instruction, observesResult) => {
+                        if (
+                          observesResult ||
+                          scenarioOperationPrecedesAssertion(
+                            runner.plan.scripts[scriptIndex].steps,
+                            runner.state.stepIndex,
+                          )
+                        )
+                          await observation.begin(
+                            { ...step, description: instruction },
+                            signal,
+                          );
+                      },
+                      operationCompleted: () =>
+                        observation.operationCompleted(),
+                      onProgress: (result) => {
+                        runner.state.scripts[scriptIndex].steps![
+                          runner.state.stepIndex
+                        ].agentTask = result;
+                      },
+                    },
                   );
                 }
               } catch (error) {
@@ -3937,7 +4004,11 @@ class PlaygroundServer {
                   );
                 throw error;
               } finally {
-                if (step.type !== 'agent-assertion' && !passiveNavigation)
+                if (
+                  step.type !== 'agent-assertion' &&
+                  step.type !== 'agent-task' &&
+                  !passiveNavigation
+                )
                   observation.operationCompleted();
                 if (
                   !signal.aborted &&
@@ -3952,6 +4023,7 @@ class PlaygroundServer {
                     step,
                     scriptIndex,
                     connection?.page,
+                    signal,
                   );
                 }
               }
@@ -4008,7 +4080,9 @@ class PlaygroundServer {
               this.currentTaskId = null;
           }
         }
-        this.scenarioSummaryCompletion = this.summarizeScenario(runner);
+        // Quitting must not start another model request after cancellation.
+        if (!this.closing)
+          this.scenarioSummaryCompletion = this.summarizeScenario(runner);
       })();
       res.status(202).json({ run: runner.state, busy: true });
     });
@@ -5025,34 +5099,51 @@ class PlaygroundServer {
     runner.state.summary!.phase = 'ready';
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    this._agentReady = false;
     this.scenarioRunner?.stop();
-    await this.scenarioCompletion;
+    for (const controller of Object.values(this.taskAbortControllers)) {
+      controller.abort(new Error('Playground is shutting down.'));
+    }
     this.scenarioSummaryAbort?.abort();
-    await this.scenarioSummaryCompletion;
-    await this.destroyCurrentSession().catch((error) => {
-      console.warn('Failed to destroy current session during shutdown:', error);
-    });
+    // Disconnect preview/HTTP clients before awaiting device teardown. Polling
+    // streams and in-flight requests otherwise keep server.close() open forever.
     this._mjpegHandler.shutdown();
-    this.reportFiles.clear();
-
-    return new Promise((resolve, reject) => {
-      if (this.server) {
-        this.taskExecutionDumps = {};
-
-        // Close the server
-        this.server.close((error) => {
+    const httpServer = this.server;
+    const closeHttp = new Promise<void>((resolve, reject) => {
+      if (httpServer) {
+        httpServer.close((error) => {
           if (error) {
             reject(error);
           } else {
-            this.server = undefined;
+            if (this.server === httpServer) this.server = undefined;
             resolve();
           }
         });
+        httpServer.closeAllConnections?.();
       } else {
         resolve();
       }
     });
+
+    this.closePromise = Promise.all([
+      closeHttp,
+      (async () => {
+        await this.scenarioCompletion;
+        await this.scenarioSummaryCompletion;
+        await this.destroyCurrentSession().catch((error) => {
+          debugInteract(
+            'Failed to destroy current session during shutdown:',
+            error,
+          );
+        });
+        this.reportFiles.clear();
+        this.taskExecutionDumps = {};
+      })(),
+    ]).then(() => undefined);
+    return this.closePromise;
   }
 }
 

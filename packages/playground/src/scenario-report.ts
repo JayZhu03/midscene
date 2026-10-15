@@ -1,3 +1,4 @@
+import { scenarioAssertionResults } from './scenario-agent-plan';
 import type { ScenarioRunState, ScenarioStepResult } from './scenario-contract';
 
 export interface ScenarioReportAnalysis {
@@ -76,7 +77,7 @@ export function renderScenarioReport(
     'skipped',
   ] as const;
   const steps = run.scripts.flatMap((s) => s.steps || []);
-  const checks = steps.filter((s) => s.type === 'agent-assertion');
+  const checks = steps.flatMap(scenarioAssertionResults);
   const stats = (items: Array<{ status: string }>) =>
     states.map((status) => items.filter((s) => s.status === status).length);
   const rows = (items: unknown[][]) =>
@@ -181,6 +182,16 @@ export function renderScenarioReport(
         lines.push(`- ${tr('预期', 'Expected')}: ${brief(step.instruction)}`);
       const raw = step.error || step.detail || step.recovery?.originalError;
       if (raw) lines.push(`- ${tr('实际', 'Observed')}: ${brief(raw)}`);
+      if (step.continuedAfterFailure)
+        lines.push(
+          `- ${tr('已按要求记录失败并继续执行。', 'Failure recorded; execution continued as requested.')}`,
+        );
+      if (step.type === 'agent-task')
+        scenarioAssertionResults(step).forEach((check) =>
+          lines.push(
+            `- ${tr('断言', 'Assertion')}: ${brief(check.instruction)} · ${statusNames[check.status as keyof typeof statusNames] || clean(check.status)}${check.detail ? ` · ${brief(check.detail)}` : ''}`,
+          ),
+        );
       if (step.recovery) {
         const recovered = step.recovery.status === 'recovered';
         lines.push(

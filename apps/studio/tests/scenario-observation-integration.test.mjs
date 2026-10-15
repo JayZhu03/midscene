@@ -479,6 +479,249 @@ it('keeps one final input frame across case switches and selection, separate fie
   }
 }, 60000);
 
+it('aligns native result screenshots with delayed rendering and never captures the next action', async () => {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 800, height: 600 });
+  const agent = new PuppeteerAgent(page, {
+    autoPrintReportMsg: false,
+    reportFileName: 'delayed-evidence-test',
+  });
+  const signal = new AbortController().signal;
+  const connection = await connectScenarioPage(
+    { underlyingPage: page },
+    signal,
+  );
+  const steps = ['open', 'next', 'busy'].map((id) => ({
+    id,
+    type: 'playwright-operation',
+    description: id,
+    event: {
+      hashId: id,
+      type: 'click',
+      timestamp: Date.now(),
+      source: 'studio-preview',
+      pageInfo: { width: 800, height: 600 },
+      nativeTarget: { locator: { selector: `#${id}` } },
+    },
+  }));
+  const run = {
+    id: 'delayed-evidence',
+    scenarioId: 's',
+    status: 'completed',
+    scriptIndex: 0,
+    stepIndex: 0,
+    scripts: [{ id: 's', name: '异步页面', status: 'passed', steps }],
+  };
+  const evidence = new ScenarioEvidence(
+    directory,
+    run,
+    undefined,
+    connection.waitForEvidenceReady,
+  );
+  try {
+    await connection.page.route('https://evidence.test/**', async (route) => {
+      if (route.request().url().endsWith('/query')) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        await route.fulfill({ body: 'ready' });
+      } else {
+        await route.fulfill({
+          contentType: 'text/html',
+          body: `<style>body{margin:0;background:white}button{margin:20px}</style>
+            <div id="loading" aria-busy="true" hidden>Loading</div>
+            <button id="open" onclick="loading.hidden=false;fetch('/query').then(()=>{loading.hidden=true;document.body.style.background='rgb(0,255,0)';document.getElementById('next').hidden=false})">Open</button>
+            <button id="next" hidden onclick="document.body.style.background='rgb(0,0,255)'">Next</button>
+            <button id="busy" onclick="loading.hidden=false">Keep loading</button>`,
+        });
+      }
+    });
+    await connection.page.goto('https://evidence.test/');
+    await evidence.attach(agent);
+    for (const [index, step] of steps.entries()) {
+      evidence.setStep(step, 0, index);
+      await executeScenarioNative(connection.page, step, signal, 0, {
+        beforeAction: (target) =>
+          evidence.beforeNativeAction(connection.page, target, step),
+      });
+      await evidence.recordNativeOutcome(
+        agent,
+        step,
+        0,
+        connection.page,
+        signal,
+      );
+    }
+    await evidence.finish();
+    expect(evidence.error).toBeUndefined();
+    expect(run.evidenceLinks.map((link) => link.pageSettled)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    const html = await readFile(
+      join(directory, `${run.id}.evidence.html`),
+      'utf8',
+    );
+    const tags = [...html.matchAll(/<script\b[^<>\r\n]{0,200}>/g)];
+    const dumpTag = tags.findLast((match) =>
+      match[0].includes('midscene_web_dump'),
+    );
+    const start = dumpTag.index + dumpTag[0].length;
+    const dump = JSON.parse(
+      html.slice(start, html.indexOf('</script>', start)),
+    );
+    const colors = [];
+    for (const execution of dump.executions) {
+      const reference = execution.tasks[0].recorder[0].screenshot;
+      const tag = tags.find((match) =>
+        match[0].includes(`data-id="${reference.id}"`),
+      );
+      const offset = tag.index + tag[0].length;
+      const data = html.slice(offset, html.indexOf('</script>', offset)).trim();
+      colors.push(
+        Array.from(
+          await sharp(Buffer.from(data.split(',')[1], 'base64'))
+            .extract({ left: 700, top: 500, width: 1, height: 1 })
+            .removeAlpha()
+            .raw()
+            .toBuffer(),
+        ),
+      );
+    }
+    expect(colors).toEqual([
+      [0, 255, 0],
+      [0, 0, 255],
+      [0, 0, 255],
+    ]);
+    expect(run.evidenceLinks.map((link) => link.stepIds)).toEqual([
+      ['open'],
+      ['next'],
+      ['busy'],
+    ]);
+  } finally {
+    await evidence.finish();
+    await connection.close();
+    await agent.destroy();
+    await page.close();
+  }
+}, 20000);
+
+it('captures initial navigation after a page fade or an empty SPA has actually rendered', async () => {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 800, height: 600 });
+  const agent = new PuppeteerAgent(page, { autoPrintReportMsg: false });
+  const signal = new AbortController().signal;
+  const connection = await connectScenarioPage(
+    { underlyingPage: page },
+    signal,
+  );
+  const steps = ['fade', 'empty'].map((id) => ({
+    id,
+    type: 'playwright-operation',
+    description: `Navigate to https://navigation.test/${id}`,
+    event: {
+      hashId: id,
+      type: 'navigation',
+      actionType: 'InitialNavigation',
+      url: `https://navigation.test/${id}`,
+      timestamp: Date.now(),
+      source: 'studio-preview',
+      pageInfo: { width: 800, height: 600 },
+    },
+  }));
+  const run = {
+    id: 'navigation-render',
+    scenarioId: 's',
+    status: 'completed',
+    scriptIndex: 0,
+    stepIndex: 0,
+    scripts: [{ id: 's', name: '首次打开', status: 'passed', steps }],
+  };
+  const evidence = new ScenarioEvidence(
+    directory,
+    run,
+    undefined,
+    connection.waitForEvidenceReady,
+  );
+  try {
+    await connection.page.route('https://navigation.test/**', async (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: route.request().url().endsWith('/fade')
+          ? `<style>body{margin:0;background:rgb(0,255,0)}
+          #cover{position:fixed;inset:0;background:white;animation:reveal 1.9s linear forwards}
+          #decoration{position:fixed;inset:0;animation:pulse 0.2s infinite}
+          @keyframes reveal{from{opacity:1}to{opacity:0}}
+          @keyframes pulse{from{opacity:.1}to{opacity:.2}}</style>
+          <h1>Login</h1><input aria-label="Username"><div id="decoration"></div><div id="cover"></div>`
+          : `<style>body{margin:0;background:white}</style><script>
+          setTimeout(()=>{document.body.style.background='rgb(0,0,255)';document.body.insertAdjacentHTML('beforeend','<h1>Login</h1><input aria-label="Username">')},650)
+          </script>`,
+      }),
+    );
+    await evidence.attach(agent);
+    for (const [index, step] of steps.entries()) {
+      evidence.setStep(step, 0, index);
+      await executeScenarioNative(connection.page, step, signal, 0);
+      await evidence.recordNativeOutcome(
+        agent,
+        step,
+        0,
+        connection.page,
+        signal,
+      );
+    }
+    await evidence.finish();
+    expect(evidence.error).toBeUndefined();
+    expect(run.evidenceLinks.map((link) => link.pageSettled)).toEqual([
+      true,
+      true,
+    ]);
+    const html = await readFile(
+      join(directory, `${run.id}.evidence.html`),
+      'utf8',
+    );
+    const tags = [...html.matchAll(/<script\b[^<>\r\n]{0,200}>/g)];
+    const dumpTag = tags.findLast((match) =>
+      match[0].includes('midscene_web_dump'),
+    );
+    const start = dumpTag.index + dumpTag[0].length;
+    const dump = JSON.parse(
+      html.slice(start, html.indexOf('</script>', start)),
+    );
+    const colors = [];
+    for (const execution of dump.executions) {
+      const reference = execution.tasks[0].recorder[0].screenshot;
+      const tag = tags.find((match) =>
+        match[0].includes(`data-id="${reference.id}"`),
+      );
+      const offset = tag.index + tag[0].length;
+      const data = html.slice(offset, html.indexOf('</script>', offset)).trim();
+      colors.push(
+        Array.from(
+          await sharp(Buffer.from(data.split(',')[1], 'base64'))
+            .extract({ left: 700, top: 500, width: 1, height: 1 })
+            .removeAlpha()
+            .raw()
+            .toBuffer(),
+        ),
+      );
+    }
+    expect(colors).toEqual([
+      [0, 255, 0],
+      [0, 0, 255],
+    ]);
+    expect(run.evidenceLinks.map((link) => link.stepIds)).toEqual([
+      ['fade'],
+      ['empty'],
+    ]);
+  } finally {
+    await evidence.finish();
+    await connection.close();
+    await agent.destroy();
+    await page.close();
+  }
+}, 20000);
+
 it.skipIf(!process.env.STUDIO_OBSERVATION_AI_CDP)(
   'live model distinguishes a transient success, a wrong toast and current state from historical evidence',
   async () => {

@@ -232,12 +232,27 @@ const webMessages: Record<string, string> = {
     '脚本已更新，请重新打开后编辑',
   'Add assertion': '添加断言',
   'Add Agent operation': '添加 Agent 操作',
+  'Add operation or assertion': '添加操作或断言',
+  'Operation or assertion': '操作或断言',
+  'Action results': '执行明细',
+  Wait: '等待',
+  'Failure recorded; execution continued as requested.':
+    '已按要求记录失败并继续执行',
+  'Describe an operation, expected result or wait':
+    '描述操作、检查条件或等待要求',
+  'Connect a page before preparing Agent steps.':
+    '请先连接网页或设备，再保存 Agent 步骤',
+  'Invalid Agent execution rules.': '执行规则无效，请修改步骤要求后重试',
+  'Unable to interpret Agent instructions. Please rephrase and retry.':
+    '无法理解步骤要求，请调整描述后重试',
   'Playwright step is read-only': 'Playwright 步骤只读',
   'Save changes': '保存修改',
   'No changes to save.': '没有需要保存的修改',
   'Unable to update script.': '脚本更新失败，请重试',
   Insert: '插入',
   'Expected result': '预期结果',
+  'Describe the expected result, a wait, or whether to continue on failure.':
+    '用自然语言描述预期结果，也可以补充执行要求。',
   'Please enter an expectation.': '请输入预期结果',
   'Stop recording': '停止录制',
   'Starting recording': '正在开始录制',

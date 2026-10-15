@@ -22,11 +22,22 @@ export function buildRecorderNativeCaptureScript(
   return `(${captureRecorderNativeTarget.toString()})(${JSON.stringify(point)})`;
 }
 
-function textPattern(text: string) {
-  return `^\\s*${text
+function textPatternPart(text: string) {
+  return text
     .split(/\s+/)
     .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('\\s+')}\\s*$`;
+    .join('\\s+');
+}
+
+export function recorderNativeTextPattern(text: string) {
+  return `^\\s*${textPatternPart(text)}\\s*$`;
+}
+
+export function recorderNativeGeneratedTextPattern(template: {
+  prefix: string;
+  suffix: string;
+}) {
+  return `^\\s*${textPatternPart(template.prefix)}\\d+${textPatternPart(template.suffix)}\\s*$`;
 }
 
 export function recorderNativeLocatorExpression(
@@ -39,9 +50,13 @@ export function recorderNativeLocatorExpression(
   let expression = `${scopedRoot}.locator(${JSON.stringify(locator.selector)})`;
   if (locator.visible) expression += '.filter({ visible: true })';
   if (locator.text)
-    expression += `.filter({ hasText: new RegExp(${JSON.stringify(textPattern(locator.text))}) })`;
+    expression += `.filter({ hasText: new RegExp(${JSON.stringify(recorderNativeTextPattern(locator.text))}) })`;
+  if (locator.generatedText)
+    expression += `.filter({ hasText: new RegExp(${JSON.stringify(recorderNativeGeneratedTextPattern(locator.generatedText))}) })`;
   if (locator.has)
     expression += `.filter({ has: ${recorderNativeLocatorExpression(locator.has)} })`;
+  for (const child of locator.hasAll || [])
+    expression += `.filter({ has: ${recorderNativeLocatorExpression(child)} })`;
   return expression;
 }
 

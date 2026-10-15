@@ -6,6 +6,23 @@ export interface ScenarioNavigationEffect {
   observationStepId: string;
 }
 
+export function isScenarioWaitOnly(step: ScenarioRunStep) {
+  return (
+    step.type === 'agent-task' &&
+    Boolean(step.agentPlan?.actions.length) &&
+    step.agentPlan!.actions.every((action) => action.type === 'wait')
+  );
+}
+
+export function isScenarioCheckEntry(step: ScenarioRunStep | undefined) {
+  return (
+    step?.type === 'agent-assertion' ||
+    (step?.type === 'agent-task' &&
+      step.agentPlan?.actions.find((action) => action.type !== 'wait')?.type ===
+        'assertion')
+  );
+}
+
 /** A recorded URL notification does not dispatch a new browser action. */
 export function isScenarioNavigationObservation(
   step: ScenarioRunStep,
@@ -29,12 +46,18 @@ export function scenarioOperationPrecedesAssertion(
   if (
     !step ||
     step.type === 'agent-assertion' ||
+    isScenarioWaitOnly(step) ||
     isScenarioNavigationObservation(step)
   )
     return false;
   let next = index + 1;
-  while (steps[next] && isScenarioNavigationObservation(steps[next])) next++;
-  return steps[next]?.type === 'agent-assertion';
+  while (
+    steps[next] &&
+    (isScenarioNavigationObservation(steps[next]) ||
+      isScenarioWaitOnly(steps[next]))
+  )
+    next++;
+  return isScenarioCheckEntry(steps[next]);
 }
 
 /** Compare routes, not recorded query values (IDs, tokens and run parameters). */

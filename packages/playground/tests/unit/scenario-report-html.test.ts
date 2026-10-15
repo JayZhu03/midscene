@@ -46,14 +46,16 @@ function run(id = 'run'): ScenarioRunState {
 }
 test('escapes model and page text, keeps failure authoritative, and isolates the official viewer', () => {
   const state = run();
+  const analysis = {
+    overview: '<img onerror=bad()>',
+    findings: [],
+    limitations: [],
+  };
   state.summary = {
     status: 'completed',
     format: 'html',
-    text: renderScenarioHtmlConclusion(state, {
-      overview: '<img onerror=bad()>',
-      findings: [],
-      limitations: [],
-    }),
+    analysis,
+    text: renderScenarioHtmlConclusion(state, analysis),
   };
   const html = composeScenarioHtml(
     state,
@@ -79,7 +81,7 @@ test('persists self-contained evidence across report updates and prunes it with 
       };
       await writeFile(
         join(dir, `${state.id}.evidence.html`),
-        '<html><head></head><body>official evidence</body></html>',
+        '<html><head></head><body><script type="midscene_web_dump">{"source":"official evidence"}</script></body></html>',
       );
       await saveScenarioReport(dir, state);
       await saveScenarioReport(dir, state);
@@ -98,6 +100,55 @@ test('persists self-contained evidence across report updates and prunes it with 
     await expect(readFile(join(dir, 'run-11.html'), 'utf8')).resolves.toContain(
       '<!doctype html>',
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('unified viewer copies real evidence attachments and treats model text only as data', () => {
+  const state = run();
+  state.scripts[0].steps![0].instruction = '</script><script>bad()</script>';
+  const template =
+    '<!doctype html><html><head><title>Report</title></head><body><div id="root"></div><script>loadCurrentViewer()</script></body></html>';
+  const evidence =
+    '<html><body><script>oldViewer()</script><script type="midscene_web_dump">{"executions":[]}</script><script type="midscene-image" data-id="real">data:image/png;base64,real</script><script type="midscene-animated-webp-manifest">{"version":1}</script></body></html>';
+  const html = composeScenarioHtml(state, evidence, template);
+  expect(html).toContain('loadCurrentViewer()');
+  expect(html).not.toContain('oldViewer()');
+  expect(html).not.toContain('<iframe');
+  expect(html).not.toContain('</script><script>bad()');
+  expect(html).toContain('data:image/png;base64,real');
+  expect(html).toContain('type="midscene-animated-webp-manifest"');
+  const payload = html.match(
+    /<script type="midscene_scenario_dump">([\s\S]*?)<\/script>/,
+  )![1];
+  expect(JSON.parse(payload)).toEqual(state);
+  expect(html).not.toContain('allow-same-origin');
+  expect(html).toContain('__report_storage_probe__');
+});
+
+test('history is rendered using current viewer and real evidence without changing saved records', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'scenario-current-viewer-'));
+  const state = run('old-record');
+  state.summary = {
+    status: 'completed',
+    text: 'Saved old analysis',
+    format: 'markdown',
+  };
+  const saved = JSON.stringify(state);
+  try {
+    await writeFile(join(dir, `${state.id}.json`), saved);
+    await writeFile(join(dir, `${state.id}.html`), 'obsolete view');
+    await writeFile(
+      join(dir, `${state.id}.evidence.html`),
+      '<script type="midscene-image" data-id="real">data:image/png;base64,history</script>',
+    );
+    const html = await readScenarioHtml(dir, state.id);
+    expect(html).not.toBe('obsolete view');
+    expect(html).toContain('midscene_scenario_dump');
+    expect(html).toContain('data:image/png;base64,history');
+    expect(html).toContain('Saved old analysis');
+    expect(await readFile(join(dir, `${state.id}.json`), 'utf8')).toBe(saved);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -10,6 +10,15 @@ export function captureRecorderNativeTarget(
 ): MidsceneRecorderNativeTarget {
   type Locator = MidsceneRecorderNativeLocator;
   const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const matchesGeneratedText = (
+    text: string,
+    template: NonNullable<Locator['generatedText']>,
+  ) =>
+    text.startsWith(template.prefix) &&
+    text.endsWith(template.suffix) &&
+    /^\d+$/.test(
+      text.slice(template.prefix.length, text.length - template.suffix.length),
+    );
   const attr = (name: string, value: string) =>
     `[${name}=${JSON.stringify(value)}]`;
   const visible = (node: Element) =>
@@ -33,7 +42,15 @@ export function captureRecorderNativeTarget(
       (node) =>
         (!locator.visible || visible(node)) &&
         (!locator.text || normalize(node.textContent || '') === locator.text) &&
-        (!locator.has || resolve(locator.has, node).length > 0),
+        (!locator.generatedText ||
+          matchesGeneratedText(
+            normalize(node.textContent || ''),
+            locator.generatedText,
+          )) &&
+        (!locator.has || resolve(locator.has, node).length > 0) &&
+        (locator.hasAll || []).every(
+          (child) => resolve(child, node).length > 0,
+        ),
     );
     if (key) cache.set(key, matches);
     return matches;
@@ -284,6 +301,8 @@ export function captureRecorderNativeTarget(
     candidates.push({ selector: tag, visible: true });
     return candidates;
   };
+  const rowSelector = 'tr, [role="row"], [data-row-key]';
+  const cellSelector = 'td, [role="cell"], .ant-table-cell';
   const leaf = simple(element, true);
   const pick = (
     candidate: Locator,
@@ -295,7 +314,103 @@ export function captureRecorderNativeTarget(
       ? { ...result, locator: candidate, strategy }
       : undefined;
   };
+  const businessKey = (value: string) =>
+    value.length >= 4 &&
+    value.length < 160 &&
+    /[a-z]/i.test(value) &&
+    /\d/.test(value) &&
+    !/\s/.test(value);
+  const rowRecipes = (row: Element): Locator[] => {
+    const selector = row.matches('[data-row-key]')
+      ? `${row.tagName.toLowerCase()}[data-row-key]`
+      : row.matches('[role="row"]')
+        ? '[role="row"]'
+        : 'tr';
+    const cells = Array.from(row.querySelectorAll(cellSelector)).filter(
+      (cell) => cell.closest(rowSelector) === row && visible(cell),
+    );
+    const identities = cells.flatMap((cell) => {
+      // Links often contain the business code beside a separate copy icon.
+      // Preserve that label, not the mutable status or action text of the row.
+      const links = Array.from(cell.querySelectorAll('a')).filter(visible);
+      const nodes = links.length ? links : [cell];
+      return nodes.flatMap((node) => {
+        const text = normalize(node.textContent || '');
+        if (!businessKey(text)) return [];
+        const identity = (template?: Locator['generatedText']): Locator => ({
+          selector: cellSelector,
+          visible: true,
+          ...(node === cell
+            ? template
+              ? { generatedText: template }
+              : { text }
+            : {
+                has: {
+                  selector: 'a',
+                  visible: true,
+                  ...(template ? { generatedText: template } : { text }),
+                },
+              }),
+        });
+        return [{ text, identity }];
+      });
+    });
+    const recipes: Locator[] = [];
+    const key = row.getAttribute('data-row-key') || '';
+    const generatedKey =
+      /^\d{8,}$|^[a-f\d]{16,}$|^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(
+        key,
+      );
+    // A regenerated task can change both its database ID and manufacturing
+    // order number. Recognize a compound child key only when this same row
+    // corroborates its complete parent code AND a containing business key.
+    // Keep that ancestor and the child suffix together; a bare operation
+    // number, row index or common status is never sufficient identification.
+    for (const child of identities) {
+      const compound = /^(.+):(\d{1,6})$/.exec(child.text);
+      const serial = compound && /^(.+[-_/])(\d{2,})$/.exec(compound[1]);
+      if (
+        !generatedKey ||
+        !compound ||
+        !serial ||
+        !identities.some((item) => item.text === compound[1])
+      )
+        continue;
+      const ancestors = identities.filter(
+        (item) =>
+          item.text !== compound[1] &&
+          serial[1].endsWith(`${item.text}${serial[1].slice(-1)}`) &&
+          !item.text.includes(':'),
+      );
+      for (const ancestor of ancestors)
+        recipes.push({
+          selector,
+          visible: true,
+          hasAll: [
+            ancestor.identity(),
+            child.identity({ prefix: serial[1], suffix: `:${compound[2]}` }),
+          ],
+        });
+    }
+    for (const item of identities)
+      recipes.push({ selector, visible: true, has: item.identity() });
+    return recipes;
+  };
+  const row = element.closest(rowSelector);
+  const requireRowContext =
+    row &&
+    !row.querySelector('th, [role="columnheader"]') &&
+    (row.hasAttribute('data-row-key') || rowRecipes(row).length > 0);
   for (const candidate of leaf) {
+    // Even a currently unique checkbox must retain its business-row context.
+    // Headers and layout tables keep their existing attribute-based locators.
+    if (
+      requireRowContext &&
+      !/\[(?:data-testid|data-test-id|data-test|data-cy|data-qa|id)=/.test(
+        candidate.selector,
+      )
+    )
+      continue;
     if (
       candidate.text ||
       candidate.has ||
@@ -327,7 +442,13 @@ export function captureRecorderNativeTarget(
           has: { selector: '.ant-form-item-label label', text },
         });
     }
-    if (parent.matches('tr, [role="row"]') && !parent.querySelector('th')) {
+    if (
+      parent.matches(rowSelector) &&
+      !parent.querySelector('th, [role="columnheader"]')
+    ) {
+      // Virtual tables use div[data-row-key] with td/role=cell descendants.
+      // Prefer rendered business identity to their opaque database row key.
+      recipes.unshift(...rowRecipes(parent));
       for (const cell of Array.from(
         parent.querySelectorAll('td, [role="cell"]'),
       ).slice(0, 4)) {

@@ -90,7 +90,13 @@ export function buildScenarioRun(
             description: step.description,
           };
           if (step.type !== 'playwright-operation')
-            return { ...base, instruction: step.instruction };
+            return {
+              ...base,
+              instruction: step.instruction,
+              ...(step.type === 'agent-task'
+                ? { agentPlan: step.agentPlan }
+                : {}),
+            };
           // Screenshot assets and recording history remain in storage, not in the execution request.
           const source = step.sourceEvent;
           return {
@@ -106,6 +112,20 @@ export function buildScenarioRun(
               timestamp: source.timestamp,
               pageInfo: source.pageInfo,
               url: source.url,
+              title: source.title,
+              elementDescription: source.elementDescription,
+              // Preserve the recording's visual names for report presentation.
+              // Screenshot bytes and model traces remain in recording storage.
+              semantic: source.semantic
+                ? {
+                    source: source.semantic.source,
+                    status: source.semantic.status,
+                    elementDescription: source.semantic.elementDescription,
+                    actionSummary: source.semantic.actionSummary,
+                    replayInstruction: source.semantic.replayInstruction,
+                    confidence: source.semantic.confidence,
+                  }
+                : undefined,
               value: source.value,
               rawPayload: source.rawPayload,
               nativeTarget: source.nativeTarget,

@@ -1,5 +1,9 @@
 import { createServer } from 'node:http';
-import { compileRecorderNativePlaywright } from '@midscene/shared/recorder-native';
+import {
+  buildRecorderNativeCaptureScript,
+  compileRecorderNativePlaywright,
+  recorderNativeLocatorExpression,
+} from '@midscene/shared/recorder-native';
 import puppeteer from 'puppeteer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -13,6 +17,7 @@ import {
   executeScenarioAgentStep,
   validateScenarioRun,
 } from '../../../packages/playground/src/scenario-runner';
+import { productionTaskTable } from './fixtures/production-task-table';
 
 let browser;
 let server;
@@ -69,6 +74,139 @@ function step(type, extra = {}, index = 0) {
 }
 
 describe('shared Studio browser execution', () => {
+  it.each(['link', 'nested'])(
+    'replays regenerated virtual-table task selections with %s codes using native Playwright and exported locators',
+    async (codeMarkup) => {
+      const table = (options = {}) =>
+        productionTaskTable({
+          codeMarkup,
+          extraCheckboxes: codeMarkup === 'nested',
+          ...options,
+        });
+      const page = await browser.newPage();
+      await page.goto(url);
+      await page.setContent(table());
+      const signal = new AbortController().signal;
+      const connection = await connectScenarioPage(
+        { underlyingPage: page },
+        signal,
+      );
+      try {
+        const steps = [];
+        for (const operation of [10, 20, 30, 40]) {
+          const point = await page.$eval(
+            `[data-operation="${operation}"]`,
+            (input) => {
+              const rect = input.getBoundingClientRect();
+              return {
+                x: rect.x + rect.width / 2,
+                y: rect.y + rect.height / 2,
+              };
+            },
+          );
+          const nativeTarget = await page.evaluate(
+            buildRecorderNativeCaptureScript({ actionType: 'Tap', ...point }),
+          );
+          steps.push(
+            step('click', { actionType: 'Tap', nativeTarget }, steps.length),
+          );
+        }
+        for (const generation of [277, 278]) {
+          await page.setContent(
+            table({
+              generation,
+              operations: [40, 10, 30, 20],
+              status: '已派工',
+            }),
+          );
+          for (const operation of steps)
+            await executeScenarioNative(connection.page, operation, signal, 0);
+          expect(
+            await page.$$eval('input:checked', (inputs) =>
+              inputs
+                .map((input) => Number(input.dataset.operation))
+                .sort((a, b) => a - b),
+            ),
+          ).toEqual([10, 20, 30, 40]);
+        }
+        await page.setContent(
+          table({ generation: 279, operations: [30, 20, 40, 10] }),
+        );
+        for (const operation of steps) {
+          const expression = recorderNativeLocatorExpression(
+            operation.event.nativeTarget.locator,
+          );
+          expect(operation.code).toContain(expression);
+          const target = new Function('page', `return ${expression}`)(
+            connection.page,
+          );
+          expect(await target.count()).toBe(1);
+          await target.click();
+        }
+        expect(
+          await page.$$eval('input:checked', (inputs) =>
+            inputs
+              .map((input) => Number(input.dataset.operation))
+              .sort((a, b) => a - b),
+          ),
+        ).toEqual([10, 20, 30, 40]);
+      } finally {
+        await connection.close();
+        await page.close();
+      }
+    },
+    30000,
+  );
+
+  it('does not click either task when a regenerated operation has two matching business rows', async () => {
+    const page = await browser.newPage();
+    await page.goto(url);
+    await page.setContent(productionTaskTable());
+    const point = await page.$eval('[data-operation="20"]', (input) => {
+      const rect = input.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    });
+    const nativeTarget = await page.evaluate(
+      buildRecorderNativeCaptureScript({ actionType: 'Tap', ...point }),
+    );
+    await page.setContent(
+      productionTaskTable({ generation: 277 }) +
+        productionTaskTable({ generation: 278 }),
+    );
+    const abort = new AbortController();
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      abort.signal,
+    );
+    let timer;
+    try {
+      const expression = recorderNativeLocatorExpression(nativeTarget.locator);
+      expect(
+        await new Function('page', `return ${expression}`)(
+          connection.page,
+        ).count(),
+      ).toBe(2);
+      const pending = executeScenarioNative(
+        connection.page,
+        step('click', { actionType: 'Tap', nativeTarget }),
+        abort.signal,
+        0,
+      );
+      timer = setTimeout(
+        () => abort.abort(new Error('ambiguous target test stopped')),
+        250,
+      );
+      await expect(pending).rejects.toThrow();
+      expect(
+        await page.$$eval('input:checked', (inputs) => inputs.length),
+      ).toBe(0);
+    } finally {
+      clearTimeout(timer);
+      await connection.close();
+      await page.close();
+    }
+  }, 30000);
+
   it('replays menu expansion followed by an early route observation and menu-item click', async () => {
     const page = await browser.newPage();
     await page.goto(`${url}spa#/workbench`);

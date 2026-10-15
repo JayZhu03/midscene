@@ -343,7 +343,7 @@ export interface AgentAssertResult {
   message?: string;
 }
 
-export type QueryOptions = ServiceExtractOption;
+export type QueryOptions = ServiceExtractOption & { abortSignal?: AbortSignal };
 export type AssertOptions = AgentAssertOpt & ServiceExtractOption;
 
 /** Options for fixed observations, which never read the live DOM. */

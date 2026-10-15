@@ -28,6 +28,8 @@ export function StudioScenarioTimeline({
   onChange,
   onSave,
   onCancel,
+  editingStepId,
+  onEditStep,
   dirty = false,
   busy = false,
   replay,
@@ -38,6 +40,8 @@ export function StudioScenarioTimeline({
   onChange?: (steps: ScenarioScriptStep[]) => void;
   onSave?: () => void;
   onCancel?: () => void;
+  editingStepId?: string;
+  onEditStep?: (id: string | undefined) => void;
   dirty?: boolean;
   busy?: boolean;
   replay?: { steps: ScenarioStepResult[]; active: boolean };
@@ -46,7 +50,6 @@ export function StudioScenarioTimeline({
   const checkpointTitle = t('Checkpoint');
   const [assetUrls, setAssetUrls] = useState<Record<string, string>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [editingId, setEditingId] = useState<string>();
   const replayResults = useMemo(
     () => new Map(replay?.steps.map((step) => [step.id, step])),
     [replay?.steps],
@@ -67,13 +70,10 @@ export function StudioScenarioTimeline({
     });
   }, [currentReplayStep, replay?.active]);
   useEffect(() => {
-    if (!dirty) setEditingId(undefined);
-  }, [dirty, script?.id]);
-  useEffect(() => {
     scrollContainerRef.current
       ?.querySelector<HTMLTextAreaElement>('textarea')
       ?.scrollIntoView?.({ block: 'nearest' });
-  }, [editingId]);
+  }, [editingStepId]);
   useEffect(() => {
     let disposed = false;
     const created: string[] = [];
@@ -110,9 +110,16 @@ export function StudioScenarioTimeline({
         ? assetUrls[value.slice('scenario-asset:'.length)]
         : value;
     return steps.map((step) => {
-      if (step.type === 'agent-operation' && !step.sourceEvent) {
+      if (
+        (step.type === 'agent-operation' || step.type === 'agent-task') &&
+        !step.sourceEvent
+      ) {
         const instruction = step.instruction;
-        const label = t('Agent operation');
+        const label = t(
+          step.type === 'agent-task'
+            ? 'Operation or assertion'
+            : 'Agent operation',
+        );
         return {
           id: step.id,
           description: (
@@ -157,7 +164,7 @@ export function StudioScenarioTimeline({
       return {
         event: {
           ...source,
-          ...(step.type === 'agent-operation'
+          ...(step.type === 'agent-operation' || step.type === 'agent-task'
             ? {
                 semantic: {
                   ...source.semantic,
@@ -177,7 +184,9 @@ export function StudioScenarioTimeline({
           screenshotBefore: imageUrl(source.screenshotBefore),
         },
         details:
-          step.type === 'agent-operation' ? step.instruction : step.description,
+          step.type !== 'playwright-operation'
+            ? step.instruction
+            : step.description,
       };
     });
   }, [steps, script, assetUrls, getScreenshotAssetUrl, checkpointTitle]);
@@ -193,23 +202,17 @@ export function StudioScenarioTimeline({
         menu={{
           items: [
             {
-              key: 'agent-assertion',
-              label: t('Add assertion'),
-              icon: <CheckIcon />,
-            },
-            {
-              key: 'agent-operation',
-              label: t('Add Agent operation'),
+              key: 'agent-task',
+              label: t('Add operation or assertion'),
               icon: <EditIcon />,
             },
           ],
-          onClick: ({ key }) => {
+          onClick: ({ domEvent }) => {
+            domEvent.stopPropagation();
             if (busy || !onChange) return;
-            const step = createAgentStep(
-              key as 'agent-assertion' | 'agent-operation',
-            );
+            const step = createAgentStep('agent-task');
             onChange([...steps.slice(0, index), step, ...steps.slice(index)]);
-            setEditingId(step.id);
+            onEditStep?.(step.id);
           },
         }}
       >
@@ -218,7 +221,7 @@ export function StudioScenarioTimeline({
           size="small"
           disabled={busy}
           aria-label={`${t('Insert step')} ${index + 1}`}
-          title={t('Insert step')}
+          title={t('Add operation or assertion')}
         >
           +
         </Button>
@@ -286,11 +289,14 @@ export function StudioScenarioTimeline({
                           onClick: ({ key, domEvent }) => {
                             domEvent.stopPropagation();
                             if (busy) return;
-                            if (key === 'edit') setEditingId(step.id);
-                            else
+                            if (key === 'edit') onEditStep?.(step.id);
+                            else {
                               onChange(
                                 steps.filter((item) => item.id !== step.id),
                               );
+                              if (editingStepId === step.id)
+                                onEditStep?.(undefined);
+                            }
                           },
                         }}
                       >
@@ -326,7 +332,7 @@ export function StudioScenarioTimeline({
                     const step = steps[index];
                     if (
                       step.type === 'playwright-operation' ||
-                      editingId !== step.id
+                      editingStepId !== step.id
                     )
                       return null;
                     return (
@@ -334,9 +340,7 @@ export function StudioScenarioTimeline({
                         autoFocus
                         aria-label={t('Step instruction')}
                         placeholder={t(
-                          step.type === 'agent-assertion'
-                            ? 'Describe the expected result'
-                            : 'Describe what Agent should do',
+                          'Describe an operation, expected result or wait',
                         )}
                         autoSize={{ minRows: 2, maxRows: 8 }}
                         maxLength={100000}
@@ -358,7 +362,7 @@ export function StudioScenarioTimeline({
           }
         />
       </div>
-      {dirty ? (
+      {dirty || editingStepId ? (
         <div className="studio-script-editor-footer">
           <Button disabled={busy} onClick={onCancel}>
             {t('Cancel')}
@@ -368,6 +372,7 @@ export function StudioScenarioTimeline({
             loading={busy}
             disabled={
               busy ||
+              !dirty ||
               !steps.length ||
               steps.some(
                 (step) =>

@@ -7,6 +7,46 @@ import {
 import { scenarioEvent, scenarioSession } from './fixtures/scenario-script';
 
 describe('scenario script compiler', () => {
+  it('preserves compound row identity through script saving and validation', () => {
+    const locator = {
+      selector: '.ant-checkbox-wrapper',
+      scope: {
+        selector: 'div[data-row-key]',
+        hasAll: [
+          { selector: 'a', text: 'MO-M04-017' },
+          {
+            selector: 'a',
+            generatedText: { prefix: 'MO-MO-M04-017-', suffix: ':20' },
+          },
+        ],
+      },
+    };
+    const script = compileScenarioScript({
+      scenarioId: 'scenario',
+      name: 'Task selection',
+      session: scenarioSession({
+        events: [scenarioEvent({ nativeTarget: { locator } })],
+      }),
+    });
+    const saved = validateScenarioScript(JSON.parse(JSON.stringify(script)));
+    if (saved.steps[0].type !== 'playwright-operation')
+      throw new Error('Expected native operation');
+    expect(saved.steps[0].sourceEvent.nativeTarget?.locator).toEqual(locator);
+    expect(saved.steps[0].code).toContain('\\\\d+');
+    for (const bad of [
+      { generatedText: { prefix: 2, suffix: ':20' } },
+      { hasAll: {} },
+      { hasAll: Array.from({ length: 17 }, () => ({ selector: 'a' })) },
+    ]) {
+      const invalid = structuredClone(script);
+      Object.assign(
+        invalid.sourceSession.events[0].nativeTarget!.locator!,
+        bad,
+      );
+      expect(() => validateScenarioScript(invalid)).toThrow();
+    }
+  });
+
   it('preserves exact native, Agent fallback and user checkpoint order', () => {
     const session = scenarioSession({
       events: [

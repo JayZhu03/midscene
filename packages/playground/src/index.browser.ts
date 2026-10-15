@@ -1,5 +1,6 @@
 // Browser-safe version of playground exports (excludes server)
 export * from './scenario-contract';
+export * from './scenario-agent-plan';
 export {
   dataExtractionAPIs,
   noReplayAPIs,
@@ -71,3 +72,9 @@ export type {
 } from './platform';
 export type { PlaygroundRuntimeInfo } from './runtime-metadata';
 export { composeScenarioHtml } from './scenario-report-html';
+export * from './scenario-report-model';
+export { scenarioExecutionLabel } from './scenario-report';
+export {
+  scenarioReportDescription,
+  scenarioReportDetail,
+} from './scenario-report-language';

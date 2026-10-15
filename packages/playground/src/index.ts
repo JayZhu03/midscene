@@ -90,3 +90,11 @@ export type {
 } from './multi-platform';
 export * from './scenario-contract';
 export { composeScenarioHtml } from './scenario-report-html';
+export * from './scenario-report-model';
+export { scenarioExecutionLabel } from './scenario-report';
+export {
+  scenarioReportDescription,
+  scenarioReportDetail,
+} from './scenario-report-language';
+export * from './scenario-agent-plan';
+export { executeScenarioAgentTask } from './scenario-agent-execution';

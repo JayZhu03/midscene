@@ -57,6 +57,37 @@ function setup(settleMs = 0) {
   };
 }
 describe('scenario observation', () => {
+  test('combined tasks use one live visual query and distinguish mismatches from inconclusive evidence', async () => {
+    for (const verdict of ['passed', 'failed', 'blocked', 'invalid']) {
+      const s = setup();
+      const query = rs.fn(
+        async (_prompt: { images: Array<{ url: string }> }) => ({
+          verdict,
+          reason:
+            verdict === 'blocked'
+              ? '分页区域被遮挡，无法判断'
+              : '当前分页总数为2165',
+        }),
+      );
+      const ask = rs.fn(async (...args: Parameters<typeof query>) =>
+        JSON.stringify(await query(...args)),
+      );
+      Object.assign(s.agent, { aiAsk: ask });
+      const task = { ...assertion, type: 'agent-task' as const };
+      const done = s.session.assert(task, new AbortController().signal);
+      if (verdict === 'passed' || verdict === 'failed') {
+        expect(await done).toMatchObject({ pass: verdict === 'passed' });
+      } else
+        await expect(done).rejects.toThrow(
+          verdict === 'blocked' ? '无法判断' : '模型未能完成断言',
+        );
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0][0].images[0].url).toBe(
+        'data:image/png;base64,current',
+      );
+      expect(s.agent.aiAssert).not.toHaveBeenCalled();
+    }
+  });
   test('captures before the operation and combines historical frames with a fresh current image', async () => {
     const s = setup();
     const signal = new AbortController().signal;

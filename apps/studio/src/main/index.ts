@@ -56,6 +56,7 @@ import {
   generateRecorderMetadataInMain,
 } from './recorder/codegen';
 import { configureStudioShellEnvHydration } from './shell-env';
+import { registerStudioShutdown } from './shutdown';
 import {
   acquireStudioSingleInstanceLock,
   restoreAndFocusStudioWindow,
@@ -849,20 +850,7 @@ if (shouldBootstrapStudio) {
     }
   });
 
-  // Wait until window close guards have accepted quitting; cancelling must
-  // leave the browser and active tasks alive. Finish shutdown so Chromium can flush the
-  // profile and release its lock. A second quit is allowed once cleanup ends.
-  let profilesClosed = false;
-  app.on('will-quit', (event) => {
-    if (profilesClosed) return;
-    event.preventDefault();
-    void closePlaygroundRuntime()
-      .catch((error) => {
-        console.error('Failed to close the Web browser:', error);
-      })
-      .finally(() => {
-        profilesClosed = true;
-        app.quit();
-      });
+  registerStudioShutdown(app, closePlaygroundRuntime, (error) => {
+    console.error('Failed to close the Web browser:', error);
   });
 }

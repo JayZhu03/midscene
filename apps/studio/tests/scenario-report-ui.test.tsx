@@ -253,3 +253,121 @@ it('shows the Chinese retention note without an execution-record search box', as
     '仅保留最近 10 次执行记录，请及时下载需要留存的报告。',
   );
 });
+
+function pendingReport() {
+  let resolve!: (response: Response) => void;
+  return {
+    response: new Promise<Response>((done) => {
+      resolve = done;
+    }),
+    finish: (html: string) =>
+      resolve({ ok: true, text: async () => html } as Response),
+  };
+}
+
+function connectedReport(value = run) {
+  return (
+    <StudioPlaygroundContext.Provider
+      value={
+        {
+          phase: 'ready',
+          serverUrl: 'http://localhost:1234',
+        } as any
+      }
+    >
+      <StudioScenarioReport run={value} />
+    </StudioPlaygroundContext.Provider>
+  );
+}
+
+it('never flashes a basic or previously loaded report while opening and reopening', async () => {
+  const first = pendingReport();
+  const second = pendingReport();
+  const fetchMock = vi
+    .fn()
+    .mockReturnValueOnce(first.response)
+    .mockReturnValueOnce(second.response);
+  vi.stubGlobal('fetch', fetchMock);
+  await act(async () => root.render(connectedReport()));
+  await click('View report');
+  expect(document.querySelector('iframe')).toBeNull();
+  expect(
+    document.querySelector('[role="dialog"] output')?.textContent,
+  ).toContain('Loading report');
+  expect(
+    document.querySelector<HTMLButtonElement>('.studio-report-download')
+      ?.disabled,
+  ).toBe(true);
+  await act(async () => first.finish('<html>Current full report</html>'));
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toBe(
+    '<html>Current full report</html>',
+  );
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click(),
+  );
+  expect(document.querySelector('iframe')).toBeNull();
+  await click('View report');
+  expect(document.querySelector('iframe')).toBeNull();
+  await act(async () => second.finish('<html>Updated full report</html>'));
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toBe(
+    '<html>Updated full report</html>',
+  );
+  await click('Download report');
+  expect(save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ content: '<html>Updated full report</html>' }),
+  );
+});
+
+it('ignores late responses after switching runs or updating the same run', async () => {
+  const old = pendingReport();
+  const current = pendingReport();
+  const updated = pendingReport();
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockReturnValueOnce(old.response)
+      .mockReturnValueOnce(current.response)
+      .mockReturnValueOnce(updated.response),
+  );
+  await act(async () => root.render(connectedReport()));
+  await click('View report');
+  const next = { ...run, id: 'next-run' };
+  await act(async () => root.render(connectedReport(next)));
+  expect(document.querySelector('iframe')).toBeNull();
+  await act(async () => current.finish('<html>Next run</html>'));
+  await act(async () => old.finish('<html>Stale run</html>'));
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toBe(
+    '<html>Next run</html>',
+  );
+  await act(async () =>
+    root.render(
+      connectedReport({
+        ...next,
+        summary: { ...next.summary!, text: 'Updated summary' },
+      }),
+    ),
+  );
+  expect(document.querySelector('iframe')).toBeNull();
+  await act(async () =>
+    updated.finish('<html>Updated summary and evidence</html>'),
+  );
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toBe(
+    '<html>Updated summary and evidence</html>',
+  );
+});
+
+it('shows the basic report only after the full report request actually fails', async () => {
+  const request = pendingReport();
+  vi.stubGlobal('fetch', vi.fn().mockReturnValue(request.response));
+  await act(async () => root.render(connectedReport()));
+  await click('View report');
+  expect(document.querySelector('iframe')).toBeNull();
+  await act(async () => request.finish(''));
+  expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
+    '&lt;script&gt;bad()&lt;/script&gt;',
+  );
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    'Unable to load process evidence',
+  );
+});

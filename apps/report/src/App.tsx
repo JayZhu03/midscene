@@ -21,6 +21,7 @@ import {
   reportToMarkdown,
   restoreImageReferences,
 } from '@midscene/core';
+import type { ScenarioRunState } from '@midscene/playground';
 import { antiEscapeScriptTag } from '@midscene/shared/utils';
 import {
   Player,
@@ -33,6 +34,8 @@ import DetailSide from './components/detail-side';
 import GlobalHoverPreview from './components/global-hover-preview';
 import { Logo } from './components/logo';
 import { useMarkdownScrollSync } from './components/markdown-scroll-sync';
+import ScenarioReport from './components/scenario-report';
+import { parseScenarioReportDump } from './components/scenario-report/model';
 import Sidebar from './components/sidebar';
 import { type DumpStoreType, useExecutionDump } from './components/store';
 import { useTaskHashAnchor } from './components/store/use-task-hash-anchor';
@@ -801,14 +804,26 @@ export function App() {
 
   const [reportDump, setReportDump] = useState<PlaywrightTasks[]>([]);
   const [runnerDump, setRunnerDump] = useState<TestRunReportDump | null>(null);
+  const [scenarioDump, setScenarioDump] = useState<ScenarioRunState | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   const dumpsLoadedRef = useRef(false);
 
   useEffect(() => {
+    let disposed = false;
     // Check if document is already loaded
 
     const loadDumpElements = () => {
+      const scenarioElements = document.querySelectorAll(
+        'script[type="midscene_scenario_dump"]',
+      );
+      if (scenarioElements.length > 1)
+        throw new Error('The report contains multiple Studio execution dumps.');
+      const scenario = scenarioElements[0]?.textContent;
+      setScenarioDump(scenario ? parseScenarioReportDump(scenario) : null);
       const currentElements = document.querySelectorAll(
         'script[type="midscene_web_dump"]',
       );
@@ -823,6 +838,7 @@ export function App() {
 
       dumpsLoadedRef.current = true;
       if (
+        !scenario &&
         currentElements.length === 1 &&
         currentElements[0].textContent?.trim() === ''
       ) {
@@ -872,29 +888,39 @@ export function App() {
         );
       }
       try {
+        if (disposed) return;
         loadDumpElements();
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!disposed) setInitialized(true);
       }
       console.timeEnd('loading_dump');
     };
 
     // If DOM is already loaded (React mounts after DOMContentLoaded in most cases)
+    let loadTimer: ReturnType<typeof setTimeout> | undefined;
     if (
       document.readyState === 'complete' ||
       document.readyState === 'interactive'
     ) {
       // Use a small timeout to ensure all scripts are parsed
-      setTimeout(loadDumps, 0);
+      loadTimer = setTimeout(loadDumps, 0);
     } else {
       // Wait for DOM content to be fully loaded
       document.addEventListener('DOMContentLoaded', loadDumps);
     }
 
     return () => {
+      disposed = true;
+      clearTimeout(loadTimer);
       document.removeEventListener('DOMContentLoaded', loadDumps);
     };
   }, []);
+
+  if (!initialized) {
+    return <output>{reportText('Loading report content...')}</output>;
+  }
 
   if (error) {
     return (
@@ -915,7 +941,9 @@ export function App() {
       </div>
     );
   }
-  return runnerDump ? (
+  return scenarioDump ? (
+    <ScenarioReport run={scenarioDump} reports={reportDump} />
+  ) : runnerDump ? (
     <TestRunnerReport
       dump={runnerDump}
       reports={reportDump}

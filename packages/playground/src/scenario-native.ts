@@ -1,6 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { getDebug } from '@midscene/shared/logger';
 import type { MidsceneRecorderNativeLocator } from '@midscene/shared/recorder';
+import {
+  recorderNativeGeneratedTextPattern,
+  recorderNativeTextPattern,
+} from '@midscene/shared/recorder-native';
 import { type Locator, type Page, chromium } from 'playwright-core';
 import type { ScenarioRunStep } from './scenario-contract';
 import {
@@ -143,6 +147,14 @@ export async function connectScenarioPage(iface: unknown, signal: AbortSignal) {
                 : {}),
               waitForAssertionReady: (signal: AbortSignal) =>
                 readiness.wait(signal),
+              waitForEvidenceReady: (
+                signal: AbortSignal,
+                step?: ScenarioRunStep,
+              ) =>
+                readiness.waitForEvidence(
+                  signal,
+                  step?.event?.type === 'navigation' ? 5000 : 1500,
+                ),
               close: async () => {
                 readiness.dispose();
                 signal.removeEventListener('abort', disconnect);
@@ -168,13 +180,19 @@ function locatorFor(page: Page, spec: MidsceneRecorderNativeLocator): Locator {
   let locator = root.locator(spec.selector);
   if (spec.visible) locator = locator.filter({ visible: true });
   if (spec.text) {
-    const pattern = spec.text
-      .split(/\s+/)
-      .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('\\s+');
-    locator = locator.filter({ hasText: new RegExp(`^\\s*${pattern}\\s*$`) });
+    locator = locator.filter({
+      hasText: new RegExp(recorderNativeTextPattern(spec.text)),
+    });
   }
+  if (spec.generatedText)
+    locator = locator.filter({
+      hasText: new RegExp(
+        recorderNativeGeneratedTextPattern(spec.generatedText),
+      ),
+    });
   if (spec.has) locator = locator.filter({ has: locatorFor(page, spec.has) });
+  for (const child of spec.hasAll || [])
+    locator = locator.filter({ has: locatorFor(page, child) });
   return locator;
 }
 

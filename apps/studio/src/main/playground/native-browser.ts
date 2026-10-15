@@ -22,6 +22,7 @@ import {
 } from '../../shared/native-browser';
 import { nativeBrowserUsesSharedTexture } from './native-browser-gpu';
 import { attachNativeBrowserPreview } from './native-browser-preview';
+import { encodeNativeBrowserScreenshot } from './native-browser-screenshot';
 import { nativeRecorderScript } from './native-recorder';
 import {
   createRecorderDelivery,
@@ -385,15 +386,11 @@ export class NativeBrowserHost {
           stayHidden: true,
           stayAwake: true,
         });
-        if (image.isEmpty()) throw new Error('原生浏览器截图为空，请重试。');
         // Normalize high-DPI rendering to the page's CSS coordinate space.
-        return image
-          .resize({
-            width: current.width,
-            height: current.height,
-            quality: 'good',
-          })
-          .toDataURL();
+        return encodeNativeBrowserScreenshot(image, {
+          width: current.width,
+          height: current.height,
+        });
       };
       page.studioNative = {
         activate,
