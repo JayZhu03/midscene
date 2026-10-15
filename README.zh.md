@@ -1,199 +1,99 @@
-<p align="center">
-  <img alt="Midscene.js" width="180" src="https://github.com/user-attachments/assets/f60de3c1-dd6f-4213-97a1-85bf7c6e79e4"><br />
-  <strong>像人一样看懂界面，用自然语言完成 E2E 测试</strong><br />
-  基于视觉的 GUI Agent 与可扩展的测试框架，覆盖 Web、移动端和桌面应用。
-</p>
+# MOM UI 自动化测试工具
 
-<p align="center">
-  <a href="https://midscenejs.com/zh/">官网</a> · <a href="./README.md">English</a> / 简体中文
-</p>
+基于 Midscene Studio 二次开发的桌面测试工具，面向 MOM 业务流程的录制、回放和回归测试。常规网页操作使用 Playwright 执行，视觉判断和补充操作交给 Agent，并通过 HTML 报告保留执行结果与截图证据。
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@midscene/web"><img src="https://img.shields.io/npm/v/@midscene/web?style=flat-square&color=00a8f0" alt="npm version" /></a>
-  <a href="https://npm-compare.com/@midscene/web/#timeRange=THREE_YEARS"><img src="https://img.shields.io/npm/dm/@midscene/web.svg?style=flat-square&color=00a8f0" alt="downloads" /></a>
-  <a href="https://github.com/web-infra-dev/midscene/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square&color=00a8f0" alt="License" /></a>
-  <a href="https://trendshift.io/repositories/12524"><img src="https://img.shields.io/badge/GitHub_Trending-featured-00a8f0?style=flat-square&logo=github" alt="Featured on GitHub Trending" /></a>
-</p>
+[English](./README.md) · [开发指南](./CONTRIBUTING.md) · [MIT 许可证](./LICENSE)
 
-## 用自然语言编写测试
+## 主要功能
 
-Midscene.js 帮助开发者将 AI 引入 E2E 测试。用自然语言描述界面操作和预期结果，视觉 GUI Agent 会执行这些步骤，并验证用户看到的效果。你可以通过 Midscene Test 组织测试，也可以将 Agent API 接入现有测试框架。
-
-### 使用 Midscene Test 编写 YAML 用例
-
-[创建 Midscene Test 项目](https://midscenejs.com/zh/midscene-test/use)，配置好模型和 Web 运行环境后，就可以编写下面这样的用例。请将示例网址替换为你的应用地址：
-
-```yaml
-beforeEach:
-  - gotoUrl: https://your-shop.example
-
-cases:
-  - name: 筛选 100 美元以下的耳机
-    steps:
-      - aiAct: 搜索耳机，然后将结果筛选为价格低于 100 美元
-      - aiWaitFor: 筛选后的搜索结果已显示
-      - aiAssert: 搜索结果中有商品，且每件商品价格都低于 100 美元
-```
-
-### 使用 JavaScript 与 Playwright
-
-你也可以在已有测试中直接使用 Agent。配置好模型，并在 Playwright `page` 中打开应用后，用代码描述同样的步骤：
-
-```javascript
-import { PlaywrightAgent } from '@midscene/web/playwright';
-
-const agent = new PlaywrightAgent(page);
-
-await agent.aiAct('搜索耳机，然后将结果筛选为价格低于 100 美元');
-await agent.aiWaitFor('筛选后的搜索结果已显示');
-await agent.aiAssert('搜索结果中有商品，且每件商品价格都低于 100 美元');
-```
-
-打开生成的 HTML 报告，即可查看截图、操作与断言结果。[Midscene Test 使用指南](https://midscenejs.com/zh/midscene-test/use)和 [Playwright 集成指南](https://midscenejs.com/zh/integrate-with-playwright)提供配置步骤与完整示例。
-
-## 👁️ 视觉驱动，低成本运行测试
-
-Midscene 的操作与断言都仿照人使用软件的方式：**观察屏幕，根据看到的内容操作，再检查界面呈现的结果**。
-
-### 根据截图定位与操作
-
-Midscene 根据元素的外观和位置进行定位，再通过点击、输入、滚动等操作完成你的指令。无需维护选择器或添加语义化标注，就能定位纯图标按钮、自定义控件、`<canvas>` 和跨域 iframe 中的元素。
-
-### 验证用户看到的结果
-
-用自然语言描述预期外观，就能检查颜色、选中高亮、布局和视觉反馈，也适用于 `<canvas>` 绘制的内容和原生应用界面。
-
-```javascript
-await agent.aiAssert('选中的套餐带有蓝色边框和勾选标记');
-await agent.aiAssert('邮箱输入框下方显示了错误提示');
-```
-
-### 按效果与预算选择模型
-
-基于截图的 UI 操作无需向模型发送庞大的 DOM 树。在 AppControlBench 评测中，Midscene 搭配豆包 Seed 2.1 Turbo，**60 项任务通过 58 项，模型调用总费用为 0.59 美元**。[评测报告](https://midscenejs.com/zh/app-control-bench-report)提供了逐任务费用与不同模型的对比。
-
-Midscene 支持 `Qwen3.x`、`Doubao-Seed-2.1`、`DeepSeek V4 Flash`、`GLM-4.6V`、`gemini-3.5-flash`、`UI-TARS` 等模型，也包括可自托管的开源选项。通过[模型策略](https://midscenejs.com/zh/model-strategy)选择适合的模型，再按照[模型配置指南](https://midscenejs.com/zh/model-common-config)完成配置。
-
-## 🌐 一套 API，覆盖不同平台
-
-通过同一套 Agent API，在不同平台上描述操作和断言：
-
-| 平台 | 接入方式 |
+| 功能 | 说明 |
 | --- | --- |
-| Web | [Playwright](https://midscenejs.com/zh/integrate-with-playwright)、[Puppeteer](https://midscenejs.com/zh/integrate-with-puppeteer) 或[桌面 Chrome](https://midscenejs.com/zh/bridge-mode) |
-| Android | [通过 ADB 连接真机或模拟器](https://midscenejs.com/zh/platforms/android) |
-| iOS | [通过 WebDriverAgent 连接真机或模拟器](https://midscenejs.com/zh/platforms/ios) |
-| HarmonyOS | [通过 HDC 连接 HarmonyOS NEXT](https://midscenejs.com/zh/platforms/harmonyos) |
-| 桌面 | [macOS、Windows、Linux，支持远程 RDP](https://midscenejs.com/zh/platforms/desktop) |
-| 自定义界面 | [提供截图与操作能力，即可接入](https://midscenejs.com/zh/integrate-with-any-interface) |
+| 网页管理 | 保存网页地址、窗口尺寸及浏览器会话，支持同站点不同路由分别管理 |
+| 录制脚本 | 录制点击、输入、选择、滚动等操作，过程中可添加自然语言断言 |
+| 混合执行 | 网页操作使用 Playwright；Agent 根据实时画面执行操作、等待和断言 |
+| 脚本编辑 | 查看步骤与录制截图，插入或修改 Agent 操作和断言；已录制的 Playwright 操作保持固定 |
+| 场景管理 | 一个场景包含多个脚本，可调整顺序、设置自动或手动继续，支持整场景或单脚本执行 |
+| 异常接管 | Playwright 操作失败后由 Agent 尝试恢复；无法恢复时判断后续脚本是否具备执行前提 |
+| 测试报告 | 预览和下载 HTML 报告，查看操作流程、步骤证据、原始回放及异常接管记录 |
+| 导入导出 | 以 ZIP 包交换脚本或整个场景，保留步骤、录制截图、脚本顺序和执行设置 |
+| 安卓测试 | 通过 ADB 连接手机或安卓 PDA，使用 Agent 操作与断言，复用场景、脚本和报告管理 |
 
-## 🧩 Midscene Test：用 YAML 组织用例，用 TypeScript 扩展
+本仓库保留上游 SDK 和其他平台代码；本版交付入口以网页和安卓测试为主。
 
-[Midscene Test](https://midscenejs.com/zh/midscene-test/overview)（`@midscene/test`，Beta）帮助你将 GUI 自动化组织为可持续维护的 E2E 测试工程：
+## 安装与首次使用
 
-- **用 YAML 描述测试用例**：组合界面操作、断言与业务节点，表达测试流程和预期结果。
-- **用 TypeScript 节点复用业务能力**：将数据准备、接口调用与清理封装为节点，供不同用例复用。例如，一条退款用例可以先通过 API 准备订单，再通过 UI 申请退款并验证结果。
-- **为开发者和 AI Agent 生成 Node 说明书**：将已注册节点与参数定义导出为 Markdown，让双方都能了解项目能力，共同编写和维护用例。
+普通使用者安装内部提供的 Windows x64 安装包即可，无需安装 Node.js、Git 或自行构建。安装时可选择目录，并创建桌面及开始菜单快捷方式；支持通过安装目录中的卸载程序或 Windows 设置卸载。
 
-从[创建和使用测试项目](https://midscenejs.com/zh/midscene-test/use)开始，再了解如何[编写自定义 Node](https://midscenejs.com/zh/midscene-test/extend)。
+1. 打开 Studio，在「配置模型」中填写模型服务地址、API Key、模型名称及模型系列。视觉操作与断言需要支持图像输入的模型，模型系列与模型名称是不同的配置项。
+2. 确保电脑能访问测试环境和模型服务，然后添加网页。网页尺寸默认填写为 `1920 × 1080`，可以自定义。
+3. 在「场景」中新建场景，填写名称和介绍，进入后点击「录制新脚本」。
+4. 在左侧网页中完成业务操作，需要检查结果时添加断言，例如「页面提示保存成功」或「生产订单总数为 2165」。录制阶段记录需求，执行阶段再判断结果。
+5. 停止录制后查看步骤，可以先在当前页面回放，再保存脚本。后续可在脚本详情中插入 Agent 操作或断言。
+6. 执行单条脚本或整个场景，结束后点击「查看报告」，检查结果并下载需要留存的 HTML 文件。
 
-## 🧰 编写与调试测试的工具链
+模型参数说明参见[上游模型配置文档](https://midscenejs.com/zh/model-common-config.html)。该文档解释通用模型配置；本仓库的场景管理、混合脚本和报告界面以当前 Studio 为准。
 
-### 灵活接入现有测试工程
+## 执行方式
 
-通过 `aiAct` 自主执行流程，通过 `aiTap`、`aiInput` 控制单步操作，通过 `aiAssert` 编写断言，通过 `aiQuery` 提取结构化数据。借助 Playwright、Puppeteer 或 JavaScript SDK，你可以将这些 [Agent API](https://midscenejs.com/zh/reference/#common) 与已有代码、测试夹具和断言组合。
+- **沿用当前会话**：在当前浏览器状态中继续执行，可复用已有登录状态。
+- **全新会话**：使用独立浏览器会话执行，适合从登录页开始的脚本，不清除原会话数据。执行结束后可返回原会话。
+- **手动继续**：到达设置的脚本边界后等待用户点击「下一步」；也可点击「跳过」，跳过项会如实保留在结果中。
 
-### 回放执行，调整指令
+Agent 指令可描述操作、预期结果或等待，例如「点击查询，判断总数为 2165，不符合时记录失败并继续」或「等待三秒后继续」。纯等待由程序计时；确认不符后继续仍会记录失败，证据不足或操作未完成则记录阻塞。
 
-交互式 HTML 报告展示截图、元素定位、AI 决策过程，以及操作和断言结果。Midscene Test 还会记录自定义业务操作的输入、输出、耗时和状态，为开发者和 AI Agent 提供排查失败所需的上下文。通过 [Playground](https://midscenejs.com/zh/quick-start)，可以直接在界面上试验和调整指令。
+Playwright 失败时，Agent 会结合现场尝试恢复，恢复结果留有记录。后续脚本依赖前面未完成的业务数据时会停止执行，并报告阻塞原因。自动接管不能保证所有页面变化都能恢复。
 
-### 让 AI 编程 Agent 操作界面
+安卓需要开启 USB 调试并授权电脑，也可使用已建立的无线 ADB 连接。安卓的「重启应用后执行」需要配置目标应用包名，仅重启应用，不清空应用数据或登录状态。网页和安卓脚本包按平台校验，不能混用。
 
-通过 [Midscene Skills](https://midscenejs.com/zh/skills)，让 AI 编程 Agent 操作应用、验证界面，并查看执行结果。
+## 数据保存与协作
 
-## 📊 Benchmark 与案例
+- 网页、配置、场景和脚本保存在当前电脑；GitHub 保存工具源代码，不会自动同步使用者的本地测试数据。
+- 执行记录仅保留最近 **10 次**，需要留存的报告请及时下载。场景和脚本需单独导出 ZIP 包备份或交给同事。
+- 场景包包含脚本及其执行顺序；脚本包用于交换单条脚本。导入不会覆盖已有内容，重名或重复导入会创建副本。
+- 测试包保留录制输入值（包括测试密码）、网址与截图，不包含登录会话、模型配置和执行报告。换电脑后需重新配置模型与登录，并准备脚本需要的业务数据。
+- 导出包中的 `manifest.json` 和 `README.md` 说明步骤顺序及 Playwright、Agent 操作和视觉断言的执行约定，其他执行助手可据此实现相应运行方式。
+- 开发版与安装版的数据目录独立。迁移时请导出、导入场景；不要直接假定两者共享记录。
 
-| Benchmark | Pass@1 | 对应评测使用的模型 |
-| --- | --- | --- |
-| [AndroidWorld](https://midscenejs.com/zh/android-world-benchmark-report) | 93.1% | Gemini-3.5-Flash |
-| [MobileWorld](https://midscenejs.com/zh/mobile-world-benchmark-report) | 78.6% | Gemini-3.6-Flash |
-| [AppControlBench](https://midscenejs.com/zh/app-control-bench-report) | 96.7% | Doubao Seed 2.1 Turbo |
+**操作执行成功不等于业务校验完整。** 请明确填写预期结果，并人工复核关键断言和报告；只录制操作不会自动产生完整测试用例。
 
-各报告包含运行配置与任务结果；AndroidWorld 报告还说明了环境与校验器的调整。
+## 源码开发
 
-查看[跨平台案例](https://midscenejs.com/zh/showcases)，了解 Web 表单校验、移动端操作流程，以及社区构建的车机测试方案。
+要求 Node.js `^20.19.0 || ^22.12.0 || >=24.0.0`，pnpm `>=9.3.0`。以下命令在仓库根目录执行：
 
-## 🚀 开始使用
-
-- **编写 YAML 测试用例**：先[创建 Midscene Test 项目](https://midscenejs.com/zh/midscene-test/use)。
-- **为现有测试引入视觉能力**：接入 [Playwright](https://midscenejs.com/zh/integrate-with-playwright) 或 [Puppeteer](https://midscenejs.com/zh/integrate-with-puppeteer)。
-- **编写测试前先体验**：使用 [Chrome 插件](https://midscenejs.com/zh/quick-start)，或启动[移动端或桌面端 Playground](https://midscenejs.com/zh/quick-start#在其他平台使用-midscene)。
-- **让 AI Agent 操作界面**：安装 [Midscene Skills](https://midscenejs.com/zh/skills)。
-
-## 📄 资源
-
-* 文档：[https://midscenejs.com/zh](https://midscenejs.com/zh)
-* 示例项目：[midscene-example](https://github.com/web-infra-dev/midscene-example)
-* API 参考：[https://midscenejs.com/zh/reference/#common](https://midscenejs.com/zh/reference/#common)
-
-## 🤝 社区
-
-* [Discord](https://discord.gg/2JyBHxszE4)
-* [关注 X](https://x.com/midscene_ai)
-* [飞书交流群](https://applink.larkoffice.com/client/chat/chatter/add_by_link?link_token=693v0991-a6bb-4b44-b2e1-365ca0d199ba)
-
-## 🌟 Awesome Midscene
-
-扩展 Midscene.js 能力的社区项目：
-
-* [midscene-ios](https://github.com/lhuanyu/midscene-ios) - 面向 Midscene 的 iOS Mirror 自动化支持
-* [midscene-pc](https://github.com/Mofangbao/midscene-pc) - 适配 Windows、macOS、Linux 的 PC 操作设备
-* [midscene-pc-docker](https://github.com/Mofangbao/midscene-pc-docker) - 预装 Midscene-PC 服务端的 Docker 镜像
-* [Midscene-Python](https://github.com/Python51888/Midscene-Python) - Midscene 自动化 Python SDK
-* [midscene-java](https://github.com/Master-Frank/midscene-java) by @Master-Frank - Midscene 自动化 Java SDK
-* [midscene-java](https://github.com/alstafeev/midscene-java) by @alstafeev - Midscene 自动化 Java SDK
-
-
-## 📝 致谢
-
-感谢以下项目：
-
-- [Rsbuild](https://github.com/web-infra-dev/rsbuild) 与 [Rslib](https://github.com/web-infra-dev/rslib) 提供构建工具支持。
-- [UI-TARS](https://github.com/bytedance/ui-tars) 提供开源 Agent 模型 UI-TARS。
-- [Qwen-VL](https://github.com/QwenLM/Qwen-VL) 提供开源多模态模型 Qwen-VL。
-- [scrcpy](https://github.com/Genymobile/scrcpy) 与 [yume-chan](https://github.com/yume-chan) 让我们能在浏览器中控制 Android 设备。
-- [appium-adb](https://github.com/appium/appium-adb) 提供 ADB 的 JavaScript 桥接。
-- [appium-webdriveragent](https://github.com/appium/WebDriverAgent) 提供 JavaScript 操作 XCTest 能力。
-- [YADB](https://github.com/ysbing/YADB) 提供 yadb 工具以提升文本输入性能。
-- [libnut-core](https://github.com/nut-tree/libnut-core) 提供跨平台原生键鼠控制。
-- [Puppeteer](https://github.com/puppeteer/puppeteer) 提供浏览器自动化与控制能力。
-- [Playwright](https://github.com/microsoft/playwright) 提供浏览器自动化、控制与测试能力。
-
-## 📖 引用
-
-如果你在研究或项目中使用了 Midscene.js，请引用：
-
-```bibtex
-@software{Midscene.js,
-  author = {Xiao Zhou, Tao Yu, YiBing Lin},
-  title = {Midscene.js: GUI Agent for E2E Testing.},
-  year = {2025},
-  publisher = {GitHub},
-  url = {https://github.com/web-infra-dev/midscene}
-}
+```powershell
+corepack enable
+pnpm install
+pnpm --filter studio dev
 ```
 
-## ✨ Star 历史
+`pnpm install` 会触发仓库的初始化构建。开发启动与已安装版本使用的本地数据可能不同。
 
-[![Star History Chart](https://api.star-history.com/svg?repos=web-infra-dev/midscene&type=Date)](https://www.star-history.com/#web-infra-dev/midscene&Date)
+Windows 安装包可通过现有打包脚本生成：
 
+```powershell
+pnpm --filter studio package:release -- --platform win32 --arch x64
+```
 
-## 📝 许可协议
+打包时可追加 `--version` 指定交付版本，产物位于 `.release/studio/artifacts/`。安装包、模型配置和本地业务数据不随 Git 源码提交。
 
-Midscene.js 采用 [MIT 许可证](https://github.com/web-infra-dev/midscene/blob/main/LICENSE)。
+代码检查：
 
----
+```powershell
+pnpm run lint
+```
 
-<div align="center">
-  如果这个项目对你有帮助或启发，欢迎点个 Star
-</div>
+| 目录 | 用途 |
+| --- | --- |
+| `apps/studio` | Electron 桌面端、网页预览、录制和场景界面 |
+| `apps/report` | HTML 测试报告与执行证据展示 |
+| `packages/playground` | 场景执行、Agent 接管、断言观察和报告保存 |
+| `packages/shared` | 录制事件、DOM 定位及 Playwright 代码生成 |
+| `packages/core` | Midscene Agent 与模型调用 |
+
+更多开发和构建说明见 [CONTRIBUTING.md](./CONTRIBUTING.md)。涉及报告时先完成 Playground 构建，再构建 Report，最后构建 Studio，避免并行构建产生旧模板。
+
+## 来源与许可证
+
+本项目基于 [web-infra-dev/midscene](https://github.com/web-infra-dev/midscene) 二次开发，保留 Midscene 名称、上游源码及原版权声明。感谢 Midscene、Playwright、Puppeteer、Electron 等项目提供基础能力。
+
+代码采用 [MIT 许可证](./LICENSE)。本仓库的定制功能与上游官方版本不同；本说明面向当前 MOM 测试工具，通用 SDK 使用方式可查阅[上游文档](https://midscenejs.com/zh/)。
