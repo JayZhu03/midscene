@@ -283,6 +283,43 @@ export function parseScenarioReportAnalysis(
   return data;
 }
 
+function validateReportLanguage(
+  analysis: ScenarioReportAnalysis,
+  language: ScenarioRunState['language'],
+) {
+  if (language === 'en') return;
+  const fields: Array<[string, string]> = [
+    ['overview', analysis.overview],
+    ...analysis.findings.flatMap(
+      (finding, index): Array<[string, string]> => [
+        [`findings[${index}].evidence`, finding.evidence],
+        [`findings[${index}].impact`, finding.impact],
+        [`findings[${index}].recommendation`, finding.recommendation],
+      ],
+    ),
+    ...analysis.limitations.map((value, index): [string, string] => [
+      `limitations[${index}]`,
+      value,
+    ]),
+  ];
+  for (const [field, value] of fields) {
+    // Quoted UI labels, code and URLs are evidence literals, not prose.
+    // In particular, an English sentence quoting “总2268条” is still English.
+    const narrative = value.replace(
+      /https?:\/\/\S+|\x60[^\x60]*\x60|"[^"\r\n]*"|'[^'\r\n]*'|“[^”\r\n]*”|‘[^’\r\n]*’/g,
+      '',
+    );
+    const words = narrative.match(/\b[A-Za-z][A-Za-z'-]*\b/g) || [];
+    if (
+      (!/[\u3400-\u9fff]/.test(narrative) && words.length >= 2) ||
+      /(?:\b[A-Za-z][A-Za-z'-]*[ \t]+){3,}[A-Za-z][A-Za-z'-]*/.test(narrative)
+    )
+      throw new Error(
+        `${field} contains English prose. Write all report explanations in Simplified Chinese; preserve quoted evidence, values and verdicts.`,
+      );
+  }
+}
+
 export function basicScenarioSummary(
   run: ScenarioRunState,
 ): NonNullable<ScenarioRunState['summary']> {
@@ -323,6 +360,7 @@ export async function generateScenarioSummary(
         result.content || '',
         evidence,
       );
+      validateReportLanguage(analysis, run.language);
       return {
         status: 'completed',
         format: 'html',

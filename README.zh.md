@@ -2,7 +2,7 @@
 
 基于 Midscene Studio 的桌面自动化测试工具，支持网页和安卓测试。网页操作由 Playwright 执行，视觉断言与补充操作交给 Agent。
 
-**[下载 Windows x64 安装包（v1.14.1）](https://github.com/JayZhu03/midscene/releases/download/v1.14.1/midscene-studio-beta-v1.14.1-win32-x64-setup.exe)** · [版本说明](https://github.com/JayZhu03/midscene/releases/latest)
+**[下载 Windows x64 安装包（v1.14.2）](https://github.com/JayZhu03/midscene/releases/download/v1.14.2/midscene-studio-beta-v1.14.2-win32-x64-setup.exe)** · [版本说明](https://github.com/JayZhu03/midscene/releases/latest)
 
 ## 功能
 

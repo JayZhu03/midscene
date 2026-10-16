@@ -62,7 +62,7 @@ When DATA_DEMAND is a JSON object, the keys in your response must exactly match 
 
 Return in the following XML format:
 ${responsePrefix ? responsePrefix : ''}
-<observation>brief evidence observed for the extraction, less than 300 words. Use ${preferredLanguage} in this field.</observation>
+<observation>brief evidence observed for the extraction, less than 300 words. Use the output language explicitly requested in <CONTEXT> for this field; otherwise use ${preferredLanguage}. Preserve quoted UI text, identifiers and observed values.</observation>
 ${dataOutput.placeholder}
 <errors>optional error messages as JSON array, e.g., ["error1", "error2"]</errors>
 

@@ -28,7 +28,13 @@ You are the runtime report analyst. Follow the injected JSON Schema; return one 
 4. Explain why subsequent results are still usable or why a prerequisite failure invalidated further verification, only where the continuation evidence supports it.
 5. Write a short overview and remaining limitations. Do not repeat numeric totals. A successful run with no abnormalities may have an empty findings array. Do not invent defects or generic remediation tasks.
 
-Use the requested report language. Keep each field concise. Evidence may be truncated or omitted; explicitly acknowledge the indicated coverage limitation. If the evidence cannot support a claim, say what must be checked rather than guessing.
+Keep each field concise. Evidence may be truncated or omitted; explicitly acknowledge the indicated coverage limitation. If the evidence cannot support a claim, say what must be checked rather than guessing.
+
+## Output language
+
+- Use the requested report language for every human-readable field: overview, finding evidence, impact, recommendation and limitations. The language of the source logs, checkpoint, JSON Schema or these instructions does not override it.
+- For a Simplified Chinese report, explain English observations and errors in Simplified Chinese; never copy an English analysis sentence as the report narrative. Preserve exact quoted UI text, technical names, identifiers, URLs, expected and observed values. Do not change the verdict, add facts or infer causes while changing language.
+- Keep JSON keys, enums and evidence indices exactly as required by the schema.
 
 ## Concision
 

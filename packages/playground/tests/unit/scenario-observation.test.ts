@@ -14,7 +14,7 @@ const assertion: ScenarioRunStep = {
   description: '保存成功',
   instruction: '出现保存成功提示，当前订单状态为已提交',
 };
-function setup(settleMs = 0) {
+function setup(settleMs = 0, language: 'zh' | 'en' = 'zh') {
   const calls: string[] = [];
   const observedAssert = rs.fn(async (...args: any[]) => {
     calls.push('assert');
@@ -48,7 +48,12 @@ function setup(settleMs = 0) {
     calls.push('flush');
   });
   return {
-    session: new ScenarioObservation(() => agent as any, flush, settleMs),
+    session: new ScenarioObservation(
+      () => agent as any,
+      flush,
+      settleMs,
+      language,
+    ),
     agent,
     calls,
     observedAssert,
@@ -57,6 +62,47 @@ function setup(settleMs = 0) {
   };
 }
 describe('scenario observation', () => {
+  test('uses the run language for explanations without changing the assertion or verdict', async () => {
+    for (const language of ['zh', 'en'] as const) {
+      const s = setup(0, language);
+      const instruction =
+        language === 'zh'
+          ? 'The production order count is 2233'
+          : '生产订单总数为2233条';
+      const thought =
+        language === 'zh'
+          ? '生产订单页显示“总2268条”，与预期2233条不符。'
+          : 'The page shows 2268 orders, not 2233.';
+      s.agent.aiAssert.mockResolvedValueOnce({ pass: false, thought });
+      const signal = new AbortController().signal;
+      expect(
+        await s.session.assert({ ...assertion, instruction }, signal),
+      ).toEqual({ pass: false, thought });
+      expect(s.agent.aiAssert.mock.calls[0][0].prompt).toBe(instruction);
+      const outputLanguage =
+        language === 'zh' ? 'Simplified Chinese' : 'English';
+      expect(s.agent.aiAssert.mock.calls[0][2].context).toContain(
+        `Output language: ${outputLanguage}`,
+      );
+      const aiAsk = rs.fn(async (...args: any[]) =>
+        JSON.stringify({ verdict: 'failed', reason: thought }),
+      );
+      Object.assign(s.agent, { aiAsk });
+      expect(
+        await s.session.assert(
+          { ...assertion, type: 'agent-task', instruction },
+          signal,
+        ),
+      ).toEqual({ pass: false, thought });
+      expect(aiAsk.mock.calls[0][0].prompt).toContain(
+        `"reason":"concise visible evidence in ${outputLanguage}"`,
+      );
+      expect(aiAsk.mock.calls[0][0].prompt).toContain(
+        `Original checkpoint: ${JSON.stringify(instruction)}`,
+      );
+      expect(aiAsk).toHaveBeenCalledTimes(1);
+    }
+  });
   test('combined tasks use one live visual query and distinguish mismatches from inconclusive evidence', async () => {
     for (const verdict of ['passed', 'failed', 'blocked', 'invalid']) {
       const s = setup();

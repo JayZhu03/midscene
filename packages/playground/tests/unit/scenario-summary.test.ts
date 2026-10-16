@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as fsActual from 'node:fs' with { rstest: 'importActual' };
 import type { ModelRuntime } from '@midscene/core/ai-model';
 import { beforeEach, describe, expect, rs, test } from '@rstest/core';
+import type { ScenarioReportAnalysis } from '../../src/scenario-report';
 import {
   ScenarioRunner,
   executeScenarioAgentStep,
@@ -17,7 +18,7 @@ beforeEach(() => {
   rs.mocked(readFileSync).mockImplementation(fsActual.readFileSync);
 });
 
-const analysis = {
+const analysis: ScenarioReportAnalysis = {
   overview: '订单检查未通过，需人工核实。',
   findings: [
     {
@@ -25,7 +26,7 @@ const analysis = {
       stepIndex: 0,
       category: 'assertion',
       certainty: 'confirmed',
-      evidence: 'Order missing',
+      evidence: '未找到订单。',
       impact: '订单存在性未通过验证。',
       recommendation: '核对创建结果和查询条件。',
     },
@@ -114,6 +115,143 @@ describe('execution evidence', () => {
       generateScenarioSummary(run, {} as ModelRuntime, abort.signal, call),
     ).rejects.toThrow();
     expect(call).toHaveBeenCalledTimes(1);
+  });
+  test('repairs English in every Chinese report field, including sentences quoting Chinese UI text', async () => {
+    const run = await failedRun();
+    const english =
+      'The production orders page shows “总2268条” in the bottom-right pagination area, not 2233. This establishes a count mismatch, but does not establish its underlying cause.';
+    run.scripts[0].steps![0].instruction = '生产订单总数为2233条';
+    run.scripts[0].steps![0].error = english;
+    const before = structuredClone(run);
+    const translated = {
+      ...analysis,
+      overview: '生产订单数量与预期不符，原因尚未确认。',
+      findings: [
+        {
+          ...analysis.findings[0],
+          evidence: '生产订单页右下角显示“总2268条”，与预期2233条不符。',
+          impact: '仅确认数量不符，尚不能确定原因。',
+          recommendation: '',
+        },
+      ],
+    };
+    const bad: Array<[string, typeof translated]> = [
+      ['overview', { ...translated, overview: 'The count does not match.' }],
+      ...(['evidence', 'impact', 'recommendation'] as const).map(
+        (field): [string, typeof translated] => [
+          `findings[0].${field}`,
+          {
+            ...translated,
+            findings: [
+              {
+                ...translated.findings[0],
+                [field]:
+                  field === 'evidence' ? english : 'The count does not match.',
+              },
+            ],
+          },
+        ],
+      ),
+      [
+        'limitations[0]',
+        { ...translated, limitations: ['The cause is not established.'] },
+      ],
+      [
+        'findings[0].evidence',
+        {
+          ...translated,
+          findings: [
+            { ...translated.findings[0], evidence: `数量不符。 ${english}` },
+          ],
+        },
+      ],
+    ];
+    for (const [field, content] of bad) {
+      const call = rs
+        .fn()
+        .mockResolvedValueOnce({ content: JSON.stringify(content) })
+        .mockResolvedValueOnce({ content: JSON.stringify(translated) });
+      const result = await generateScenarioSummary(
+        run,
+        {} as ModelRuntime,
+        new AbortController().signal,
+        call,
+      );
+      expect(result.status).toBe('completed');
+      expect(result.analysis).toEqual(translated);
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(call.mock.calls[1][0][0].content).toContain(
+        `${field} contains English prose`,
+      );
+      expect(call.mock.calls[0][0][0].content).toContain(
+        'Output language: Simplified Chinese',
+      );
+      expect(run).toEqual(before);
+    }
+  });
+  test('preserves quoted English UI text, technical terms, URLs and numbers in Chinese prose', async () => {
+    const run = await failedRun();
+    const content = {
+      ...analysis,
+      findings: [
+        {
+          ...analysis.findings[0],
+          evidence:
+            'Playwright 操作失败，页面显示“Unable to find the order”，接口返回 HTTP 500。',
+          recommendation:
+            '核对 https://example.test/orders?count=2268 的请求结果。',
+        },
+      ],
+    };
+    const call = rs.fn(async () => ({ content: JSON.stringify(content) }));
+    const result = await generateScenarioSummary(
+      run,
+      {} as ModelRuntime,
+      new AbortController().signal,
+      call,
+    );
+    expect(result.analysis).toEqual(content);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+  test('keeps explicit English reports in English and never accepts invalid Chinese analysis as completed', async () => {
+    const run = await failedRun();
+    const content = {
+      overview: 'The order checkpoint failed.',
+      findings: [
+        {
+          ...analysis.findings[0],
+          evidence: 'The order was not found.',
+          impact: 'Order existence was not verified.',
+          recommendation: 'Check the query filters.',
+        },
+      ],
+      limitations: [],
+    };
+    const call = rs.fn(async () => ({ content: JSON.stringify(content) }));
+    const signal = new AbortController().signal;
+    const result = await generateScenarioSummary(
+      { ...run, language: 'en' },
+      {} as ModelRuntime,
+      signal,
+      call,
+    );
+    expect(result.analysis).toEqual(content);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(call.mock.calls[0][0][0].content).toContain(
+      'Output language: English',
+    );
+    call.mockClear();
+    const fallback = await generateScenarioSummary(
+      run,
+      {} as ModelRuntime,
+      signal,
+      call,
+    );
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(fallback.status).toBe('failed');
+    expect(fallback.analysis).toBeUndefined();
+    expect(fallback.text).toContain('Order missing');
+    expect(run.status).toBe('failed');
   });
   test('accepts script-level blockers but does not turn blocked checkpoints into business mismatches', async () => {
     const run = await failedRun();

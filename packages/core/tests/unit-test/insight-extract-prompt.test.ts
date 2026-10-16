@@ -160,6 +160,44 @@ describe('insight extraction prompt assembly', () => {
     });
   });
 
+  it('allows the run context to select Chinese explanations without changing observed values or verdicts', async () => {
+    rs.mocked(callAI).mockResolvedValueOnce({
+      content:
+        '<observation>生产订单页显示“总2268条”，与预期2233条不符。</observation><data-json>{"StatementIsTruthy":false}</data-json>',
+    } as any);
+    const result = await AiExtractElementInfo<{ StatementIsTruthy: boolean }>({
+      context: createFakeContext(),
+      dataQuery: {
+        StatementIsTruthy: 'Boolean, whether the order count is 2233',
+      },
+      extractOption: {
+        context:
+          'Output language: Simplified Chinese. Preserve observed values.',
+      },
+      modelRuntime: getModelRuntime(modelConfig),
+    });
+    const msgs = rs.mocked(callAI).mock.calls[0]?.[0];
+    expect(msgs?.[0]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining(
+        'Use the output language explicitly requested in <CONTEXT> for this field; otherwise use',
+      ),
+    });
+    expect(msgs?.[1]).toMatchObject({
+      content: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringContaining('Output language: Simplified Chinese'),
+        }),
+      ]),
+    });
+    expect(result.parseResult.data).toEqual({ StatementIsTruthy: false });
+    expect(result.parseResult.thought).toBe(
+      '生产订单页显示“总2268条”，与预期2233条不符。',
+    );
+    expect(callAI).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the selected context as one model prompt block', async () => {
     await AiExtractElementInfo<{ result: boolean }>({
       context: createFakeContext(),

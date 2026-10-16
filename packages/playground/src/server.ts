@@ -3821,15 +3821,20 @@ class PlaygroundServer {
           () => connection?.captureScreenshot?.(),
           (signal, step) => connection?.waitForEvidenceReady?.(signal, step),
         );
-        const observation = new ScenarioObservation(currentAgent, async () => {
-          await evidence.flush();
-          if (prepared)
-            await currentAgent()
-              .flushReport?.()
-              .catch(() => {
-                runner.state.evidenceError = '部分原始过程报告未能保存。';
-              });
-        });
+        const observation = new ScenarioObservation(
+          currentAgent,
+          async () => {
+            await evidence.flush();
+            if (prepared)
+              await currentAgent()
+                .flushReport?.()
+                .catch(() => {
+                  runner.state.evidenceError = '部分原始过程报告未能保存。';
+                });
+          },
+          undefined,
+          runner.plan.language,
+        );
         let observationScript = -1;
         try {
           await runner.run(
