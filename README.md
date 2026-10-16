@@ -1,6 +1,6 @@
-# MOM UI 自动化测试工具
+# UI 自动化测试工具
 
-基于 Midscene Studio 二次开发的桌面测试工具，面向 MOM 业务流程的录制、回放和回归测试。常规网页操作使用 Playwright 执行，视觉判断和补充操作交给 Agent，并通过 HTML 报告保留执行结果与截图证据。
+基于 Midscene Studio 二次开发的桌面测试工具，支持业务流程的录制、回放和回归测试。常规网页操作使用 Playwright 执行，视觉判断和补充操作交给 Agent，并通过 HTML 报告保留执行结果与截图证据。
 
 [开发指南](./CONTRIBUTING.md) · [MIT 许可证](./LICENSE)
 
@@ -32,6 +32,11 @@
 6. 执行单条脚本或整个场景，结束后点击「查看报告」，检查结果并下载需要留存的 HTML 文件。
 
 模型参数说明参见[上游模型配置文档](https://midscenejs.com/zh/model-common-config.html)。该文档解释通用模型配置；本仓库的场景管理、混合脚本和报告界面以当前 Studio 为准。
+
+## 录制注意事项
+
+1. **悬浮菜单先点击，再选择。** 对于鼠标悬停后展开的菜单，请先点击对应图标，待二级菜单显示后，再点击具体选项。仅靠悬停展开的过程可能无法完整录制。例如操作左侧导航栏时，应先点击导航图标，再选择二级菜单内容。
+2. **切换表单时，点击目标输入框。** 录制时优先使用鼠标点击，不要用 `Tab` 键代替点击切换输入框。例如登录时，输入用户名后，先点击密码输入框，再输入密码，让脚本明确记录每次输入的目标。
 
 ## 执行方式
 
@@ -96,4 +101,4 @@ pnpm run lint
 
 本项目基于 [web-infra-dev/midscene](https://github.com/web-infra-dev/midscene) 二次开发，保留 Midscene 名称、上游源码及原版权声明。感谢 Midscene、Playwright、Puppeteer、Electron 等项目提供基础能力。
 
-代码采用 [MIT 许可证](./LICENSE)。本仓库的定制功能与上游官方版本不同；本说明面向当前 MOM 测试工具，通用 SDK 使用方式可查阅[上游文档](https://midscenejs.com/zh/)。
+代码采用 [MIT 许可证](./LICENSE)。本说明介绍本仓库的定制版本，通用 SDK 使用方式可查阅[上游文档](https://midscenejs.com/zh/)。
