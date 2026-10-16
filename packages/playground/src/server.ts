@@ -86,6 +86,7 @@ import {
   waitForScenarioNavigation,
 } from './scenario-native';
 import {
+  type ScenarioNavigationEffect,
   isScenarioCheckEntry,
   isScenarioNavigationObservation,
   isScenarioWaitOnly,
@@ -3836,6 +3837,10 @@ class PlaygroundServer {
           runner.plan.language,
         );
         let observationScript = -1;
+        // A scenario owns these bindings for this execution only. Reuse the
+        // same pre-action evidence in native verification and Agent recovery.
+        const navigationEffects = new Map<string, ScenarioNavigationEffect>();
+        const navigationBindings = new Map<string, string>();
         try {
           await runner.run(
             async (step, signal, scriptIndex) => {
@@ -3918,16 +3923,23 @@ class PlaygroundServer {
               try {
                 if (step.type === 'playwright-operation') {
                   try {
+                    const effect = scenarioNavigationEffect(
+                      runner.plan.scripts[scriptIndex].steps,
+                      runner.state.stepIndex,
+                    );
+                    if (effect)
+                      navigationEffects.set(
+                        `${scriptIndex}:${step.id}`,
+                        effect,
+                      );
                     return await executeScenarioNative(
                       connection!.page,
                       step,
                       signal,
                       scriptIndex,
                       {
-                        navigationEffect: scenarioNavigationEffect(
-                          runner.plan.scripts[scriptIndex].steps,
-                          runner.state.stepIndex,
-                        ),
+                        navigationEffect: effect,
+                        navigationBindings,
                         waitReady,
                         beforeAction: (target) =>
                           evidence.beforeNativeAction(
@@ -4035,12 +4047,20 @@ class PlaygroundServer {
             },
             {
               recover: async (context, recoveryEvidence, signal) => {
+                const step =
+                  context.plan.scripts[context.scriptIndex].steps[
+                    context.stepIndex
+                  ];
+                const effect = navigationEffects.get(
+                  `${context.scriptIndex}:${step.id}`,
+                );
                 const recovered = await recoverScenarioStep(
                   currentAgent(),
                   context,
                   recoveryEvidence,
                   waitReady,
                   signal,
+                  effect,
                 );
                 if (!recovered) return false;
                 observation.operationCompleted();
@@ -4051,16 +4071,14 @@ class PlaygroundServer {
                   ],
                   '接管后',
                 );
-                const effect = scenarioNavigationEffect(
-                  context.plan.scripts[context.scriptIndex].steps,
-                  context.stepIndex,
-                );
                 if (effect && connection)
                   await waitForScenarioNavigation(
                     connection!.page,
                     effect,
                     signal,
                     waitReady,
+                    undefined,
+                    navigationBindings,
                   );
                 return true;
               },

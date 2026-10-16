@@ -6,6 +6,11 @@ import {
   executeScenarioNative,
   waitForScenarioNavigation,
 } from '../../src/scenario-native';
+import {
+  type ScenarioNavigationEffect,
+  scenarioNavigationMatches,
+  scenarioRoute,
+} from '../../src/scenario-navigation';
 import { SCENARIO_PAGE_NOT_READY } from '../../src/scenario-readiness';
 import { saveScenarioReport } from '../../src/scenario-report-storage';
 import { generateScenarioSummary } from '../../src/scenario-summary';
@@ -516,6 +521,123 @@ describe('scenario routes', () => {
       expect(status().run.status).toBe('failed');
       expect(status().run.scripts[0].steps[1].recovery.status).toBe('failed');
       expect(status().run.scripts[0].steps[2].status).toBe('pending');
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('retains runtime route evidence through recovery and passes the current-run binding to the next script', async () => {
+    const { server, agent, status } = await setup();
+    const beforeUrl = 'https://example.test/app/#/orders';
+    const afterUrl =
+      'https://example.test/app/#/object-detail/object-detail-1792131578759-56ydmi2o?from=%2Forders';
+    const liveUrl =
+      'https://example.test/app/#/object-detail/object-detail-1792134966120-9x684516?from=%2Forders';
+    const events = [
+      {
+        hashId: 'observed',
+        type: 'navigation' as const,
+        actionType: 'Navigate',
+        url: afterUrl,
+        timestamp: 1,
+        pageInfo: { width: 900, height: 600 },
+        rawPayload: {
+          implicitNavigationState: true,
+          triggerActionType: 'SessionNavigation',
+          beforeUrl,
+          afterUrl,
+        },
+      },
+      {
+        hashId: 'open',
+        type: 'click' as const,
+        actionType: 'Tap',
+        url: beforeUrl,
+        timestamp: 2,
+        pageInfo: { width: 900, height: 600 },
+        nativeTarget: { locator: { selector: '#order-code' } },
+      },
+    ];
+    const toStep = (
+      event: (typeof events)[number],
+      operationIndex: number,
+    ) => ({
+      id: event.hashId,
+      type: 'playwright-operation' as const,
+      description: event.hashId,
+      event,
+      operationIndex,
+      code: compileRecorderNativePlaywright({
+        events: [event],
+        platformId: 'web',
+        format: 'operation',
+        stepOffset: operationIndex,
+        navigationMode: 'scenario',
+      }),
+    });
+    const input = plan();
+    input.scripts[0].steps = events.map(toStep);
+    input.scripts[1].startMode = 'automatic';
+    input.scripts[1].steps = [
+      toStep(
+        {
+          ...events[0],
+          hashId: 'next-start',
+          actionType: 'InitialNavigation',
+          rawPayload: undefined,
+        },
+        2,
+      ),
+    ];
+    let effect: ScenarioNavigationEffect | undefined;
+    let bindings: Map<string, string> | undefined;
+    rs.mocked(executeScenarioNative)
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(
+        async (_page, _step, _signal, _index, options) => {
+          effect = options!.navigationEffect!;
+          bindings = options!.navigationBindings;
+          effect.runtime = { beforeUrl, targetUrl: liveUrl };
+          throw new Error('页面响应超时');
+        },
+      );
+    agent.aiQuery.mockResolvedValueOnce({
+      decision: 'completed',
+      reason: '目标订单详情已显示',
+    } as any);
+    rs.mocked(waitForScenarioNavigation).mockImplementationOnce(
+      async (
+        _page,
+        recoveredEffect,
+        _signal,
+        _ready,
+        _timeout,
+        recoveredBindings,
+      ) => {
+        expect(recoveredEffect).toBe(effect);
+        expect(recoveredBindings).toBe(bindings);
+        expect(scenarioNavigationMatches(recoveredEffect, liveUrl)).toBe(true);
+        recoveredBindings!.set(scenarioRoute(afterUrl), liveUrl);
+        return { detail: 'Route transition verified.' };
+      },
+    );
+    try {
+      handler(server, 'post', '/scenario-runs')({ body: input }, response());
+      await until(() => !status().busy);
+      expect(status().run.status).toBe('completed');
+      expect(status().run.scripts[0].steps[1].recovery.status).toBe(
+        'recovered',
+      );
+      expect(agent.aiAct).not.toHaveBeenCalled();
+      expect(waitForScenarioNavigation).toHaveBeenCalledTimes(1);
+      const options = rs.mocked(executeScenarioNative).mock.calls[2][4]!;
+      expect(options.navigationBindings).toBe(bindings);
+      expect(options.navigationBindings!.get(scenarioRoute(afterUrl))).toBe(
+        liveUrl,
+      );
+      expect(agent.aiQuery.mock.calls[0][0]).toContain(
+        'object-detail-:instance',
+      );
     } finally {
       await server.close();
     }

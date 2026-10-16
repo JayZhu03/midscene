@@ -4,6 +4,8 @@ export interface ScenarioNavigationEffect {
   beforeUrl: string;
   afterUrl: string;
   observationStepId: string;
+  /** Current-run evidence only; never saved back into the recorded script. */
+  runtime?: { beforeUrl: string; targetUrl?: string };
 }
 
 export function isScenarioWaitOnly(step: ScenarioRunStep) {
@@ -73,6 +75,155 @@ export function scenarioRoute(value: string): string {
   } catch {
     return '[unavailable route]';
   }
+}
+
+function routeParts(value: string) {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return;
+    const hash = url.hash.startsWith('#/') ? url.hash.slice(1) : undefined;
+    const [path, query] = (hash ?? `${url.pathname}${url.search}`).split('?');
+    return {
+      origin: url.origin,
+      shell: hash === undefined ? '' : url.pathname,
+      hash: hash !== undefined,
+      path,
+      query: new URLSearchParams(query),
+    };
+  } catch {
+    return;
+  }
+}
+
+// View-instance tokens are not business IDs. Keep the view's name and every
+// other path segment; never turn an arbitrary trailing segment into a wildcard.
+function transientSegment(segment: string) {
+  return /^([a-z][a-z\d-]*)-\d{13}-[a-z\d]{8}$/i.exec(segment)?.[1];
+}
+
+export function isScenarioTransientUrl(value: string): boolean {
+  return Boolean(routeParts(value)?.path.split('/').some(transientSegment));
+}
+
+function sameRouteShape(
+  recorded: string,
+  current: string,
+  liveLink: boolean,
+  depth = 0,
+): boolean {
+  const a = routeParts(recorded);
+  const b = routeParts(current);
+  if (
+    !a ||
+    !b ||
+    a.origin !== b.origin ||
+    a.shell !== b.shell ||
+    a.hash !== b.hash
+  )
+    return false;
+  const left = a.path.split('/');
+  const right = b.path.split('/');
+  if (left.length !== right.length) return false;
+  const identifier = (segment: string) => {
+    if (/^\d+$/.test(segment)) return 'number';
+    if (/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(segment))
+      return 'uuid';
+    if (/^[a-f\d]{16,}$/i.test(segment)) return 'hex';
+    return undefined;
+  };
+  if (
+    !left.every((segment, index) => {
+      if (segment === right[index]) return true;
+      const type = transientSegment(segment);
+      if (type && type === transientSegment(right[index])) return true;
+      // A business ID can change only with a current, uniquely located link as
+      // independent evidence. A number/UUID alone does not authorize rebinding.
+      const id = liveLink && identifier(segment);
+      return Boolean(id && id === identifier(right[index]));
+    })
+  )
+    return false;
+  // Shared detail hosts can render different modules. Preserve their source
+  // route when recorded, instead of accepting any detail page on this host.
+  const from = a.query.get('from');
+  const currentFrom = b.query.get('from');
+  if (!from || from === currentFrom) return true;
+  if (!currentFrom || depth >= 4) return false;
+  try {
+    return sameRouteShape(
+      new URL(from, a.origin).href,
+      new URL(currentFrom, b.origin).href,
+      false,
+      depth + 1,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Readiness/locator context, not proof of an action or a business assertion. */
+export function sameScenarioPage(recorded: string, current: string): boolean {
+  const route = scenarioRoute(recorded);
+  return (
+    route !== '[unavailable route]' &&
+    (isScenarioTransientUrl(recorded)
+      ? sameRouteShape(recorded, current, false)
+      : route === scenarioRoute(current))
+  );
+}
+
+/** A live anchor may bind typed data IDs; it must still point to the same page
+ * structure, origin and app as the recorded destination. */
+export function scenarioLiveNavigationTarget(
+  effect: ScenarioNavigationEffect,
+  href: string | undefined,
+): string | undefined {
+  if (href && sameRouteShape(effect.afterUrl, href, true)) return href;
+}
+
+/** Both native execution and recovery must use this predicate. */
+export function scenarioNavigationMatches(
+  effect: ScenarioNavigationEffect,
+  currentUrl: string,
+): boolean {
+  const destination = effect.runtime?.targetUrl;
+  if (
+    destination
+      ? scenarioRoute(destination) !== scenarioRoute(currentUrl) ||
+        !sameScenarioPage(destination, currentUrl)
+      : !sameScenarioPage(effect.afterUrl, currentUrl)
+  )
+    return false;
+  // A new temporary token must not certify an ineffective click on an already
+  // open detail page. Compare against this run's pre-action URL, not its history.
+  const beforeUrl = effect.runtime?.beforeUrl ?? effect.beforeUrl;
+  return (
+    !isScenarioTransientUrl(effect.afterUrl) ||
+    scenarioRoute(beforeUrl) !== scenarioRoute(currentUrl)
+  );
+}
+
+/** The Agent sees the stable route contract, not an obsolete view token. */
+export function scenarioNavigationExpectation(
+  effect: ScenarioNavigationEffect,
+) {
+  const parts = routeParts(effect.afterUrl);
+  const expectedRoute = scenarioRoute(effect.afterUrl);
+  return {
+    beforeRoute: scenarioRoute(effect.runtime?.beforeUrl ?? effect.beforeUrl),
+    expectedRoute: isScenarioTransientUrl(effect.afterUrl)
+      ? expectedRoute.replace(
+          /([a-z][a-z\d-]*)-\d{13}-[a-z\d]{8}(?=\/|$)/gi,
+          '$1-:instance',
+        )
+      : expectedRoute,
+    sourceRoute: parts?.query.get('from') || undefined,
+    liveTargetRoute: effect.runtime?.targetUrl
+      ? scenarioRoute(effect.runtime.targetUrl)
+      : undefined,
+    observationStepId: effect.observationStepId,
+    transientInstance: isScenarioTransientUrl(effect.afterUrl),
+  };
 }
 
 /**

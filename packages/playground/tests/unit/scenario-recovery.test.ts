@@ -407,6 +407,48 @@ describe('visual recovery protocol', () => {
     expect(f.evidence.observation).toContain('ID visible');
     expect(f.agent.aiQuery.mock.calls[0][0]).toContain('failedCode');
   });
+  test('uses the current-run navigation contract without demanding the historical detail token', async () => {
+    const f = fixture();
+    const effect = {
+      beforeUrl: 'https://example.test/app/#/orders',
+      afterUrl:
+        'https://example.test/app/#/object-detail/object-detail-1792131578759-56ydmi2o?from=%2Forders',
+      observationStepId: 'detail',
+      runtime: {
+        beforeUrl: 'https://example.test/app/#/orders?run=current',
+        targetUrl:
+          'https://example.test/app/#/object-detail/object-detail-1792134966120-9x684516?from=%2Forders',
+      },
+    };
+    f.agent.aiQuery.mockResolvedValue({
+      decision: 'completed',
+      reason: '目标订单详情已显示',
+    });
+    expect(
+      await recoverScenarioStep(
+        f.agent,
+        f.context,
+        f.evidence,
+        f.waitReady,
+        f.signal,
+        effect,
+      ),
+    ).toBe(true);
+    const [prompt, options] = f.agent.aiQuery.mock.calls[0];
+    const facts = JSON.parse(prompt.split('Test context: ')[1]);
+    expect(facts.navigationEffect).toMatchObject({
+      expectedRoute:
+        'https://example.test/app/#/object-detail/object-detail-:instance',
+      beforeRoute: 'https://example.test/app/#/orders',
+      liveTargetRoute: effect.runtime.targetUrl.split('?')[0],
+      sourceRoute: '/orders',
+      transientInstance: true,
+    });
+    expect(options.context).toContain(
+      'Do not treat opening a different business object as success',
+    );
+    expect(f.agent.aiAct).not.toHaveBeenCalled();
+  });
   test('acts once then checks fresh evidence before marking recovery successful', async () => {
     const f = fixture();
     f.agent.aiQuery

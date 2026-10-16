@@ -7,8 +7,15 @@ import {
 } from '@midscene/shared/recorder-native';
 import { type Locator, type Page, chromium } from 'playwright-core';
 import type { ScenarioRunStep } from './scenario-contract';
+import { ScenarioBlockedError } from './scenario-errors';
+import { rebindScenarioFilterLocator } from './scenario-native-locator';
 import {
   type ScenarioNavigationEffect,
+  isScenarioTransientUrl,
+  sameScenarioPage,
+  scenarioLiveNavigationTarget,
+  scenarioNavigationExpectation,
+  scenarioNavigationMatches,
   scenarioRoute,
 } from './scenario-navigation';
 import { observeScenarioReadiness } from './scenario-readiness';
@@ -45,10 +52,11 @@ export async function waitForScenarioNavigation(
   signal: AbortSignal,
   waitReady?: (signal: AbortSignal) => Promise<void>,
   timeoutMs = 10000,
+  navigationBindings?: Map<string, string>,
 ) {
-  const expectedRoute = scenarioRoute(effect.afterUrl);
+  const expectedRoute = scenarioNavigationExpectation(effect).expectedRoute;
   const deadline = Date.now() + timeoutMs;
-  while (scenarioRoute(page.url()) !== expectedRoute) {
+  while (!scenarioNavigationMatches(effect, page.url())) {
     signal.throwIfAborted();
     if (Date.now() >= deadline) {
       debugScenario('Recorded navigation did not take effect: %o', {
@@ -58,7 +66,7 @@ export async function waitForScenarioNavigation(
         actualRoute: scenarioRoute(page.url()),
         ...(await pageDiagnostics(page)),
       });
-      throw new Error('菜单点击后未切换到录制页面。');
+      throw new Error('操作后未切换到预期页面。');
     }
     await delay(100, undefined, { signal });
   }
@@ -67,7 +75,7 @@ export async function waitForScenarioNavigation(
   await waitReady?.(signal);
   signal.throwIfAborted();
   // Readiness can outlive another redirect. It must not certify the old route.
-  if (scenarioRoute(page.url()) !== expectedRoute) {
+  if (!scenarioNavigationMatches(effect, page.url())) {
     debugScenario('Route changed while settling: %o', {
       expectedRoute,
       actualRoute: scenarioRoute(page.url()),
@@ -79,8 +87,13 @@ export async function waitForScenarioNavigation(
     expectedRoute,
     actualRoute: scenarioRoute(page.url()),
   });
+  if (
+    isScenarioTransientUrl(effect.afterUrl) ||
+    scenarioRoute(effect.afterUrl) !== scenarioRoute(page.url())
+  )
+    navigationBindings?.set(scenarioRoute(effect.afterUrl), page.url());
   return {
-    detail: `Route transition verified: ${expectedRoute}. Query values and business results require their recorded checkpoints.`,
+    detail: `Route transition verified: ${scenarioRoute(page.url())}. Query values and business results require their recorded checkpoints.`,
   };
 }
 
@@ -218,12 +231,15 @@ export async function executeScenarioNative(
   _scriptIndex: number,
   options?: {
     navigationEffect?: ScenarioNavigationEffect;
+    navigationBindings?: Map<string, string>;
     waitReady?: (signal: AbortSignal) => Promise<void>;
     beforeAction?: (target: Locator) => Promise<void>;
   },
 ) {
   const event = step.event!;
   signal.throwIfAborted();
+  if (options?.navigationEffect)
+    options.navigationEffect.runtime = { beforeUrl: page.url() };
   // Older native recordings included Windows IME composition notifications.
   // They are not physical keys; the following Input carries committed text.
   if (
@@ -253,14 +269,32 @@ export async function executeScenarioNative(
         detail:
           'Observed URL is recording context; no navigation outcome was verified.',
       };
-    } else if (
-      action !== 'InitialNavigation' ||
-      page.url() !== new URL(event.url!).href
-    ) {
+    } else {
+      const recordedUrl = new URL(event.url!).href;
+      const binding = options?.navigationBindings?.get(
+        scenarioRoute(recordedUrl),
+      );
+      const url =
+        binding &&
+        (!isScenarioTransientUrl(recordedUrl) ||
+          sameScenarioPage(recordedUrl, binding))
+          ? binding
+          : recordedUrl;
       // Every script can start independently. Preserve the current document
       // when already at its start; otherwise actively open it instead of waiting
       // for a navigation that no preceding action will perform.
-      await page.goto(event.url!, { waitUntil: 'domcontentloaded' });
+      const atStart =
+        page.url() === url ||
+        (isScenarioTransientUrl(url) &&
+          scenarioRoute(page.url()) === scenarioRoute(url) &&
+          sameScenarioPage(url, page.url()));
+      if (action !== 'InitialNavigation' || !atStart) {
+        if (isScenarioTransientUrl(url) && url === recordedUrl)
+          throw new ScenarioBlockedError(
+            '录制地址属于临时详情页，请先执行打开该详情页的前置脚本。',
+          );
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
+      }
     }
     return;
   }
@@ -281,10 +315,33 @@ export async function executeScenarioNative(
       );
   };
   await guard(native.guards);
-  const target = locatorFor(page, native.locator!);
+  let target = locatorFor(page, native.locator!);
+  let reboundDialog: string | undefined;
   try {
     await waitFor(
-      async () => (await target.count()) === 1,
+      async () => {
+        const count = await target.count();
+        if (count === 1) return true;
+        // An ambiguous original locator must stay ambiguous. Only a missing
+        // legacy generated scope can be adapted, with a unique corroborated
+        // dialog and the unchanged recorded leaf/field constraints.
+        if (count === 0 && !reboundDialog) {
+          const rebound = await rebindScenarioFilterLocator(page, step);
+          if (rebound) {
+            const candidate = locatorFor(page, rebound.locator);
+            if ((await candidate.count()) === 1) {
+              target = candidate;
+              reboundDialog = rebound.dialogTitle;
+              debugScenario('Recorded temporary filter scope rebound: %o', {
+                stepId: step.id,
+                dialogTitle: reboundDialog,
+              });
+              return true;
+            }
+          }
+        }
+        return false;
+      },
       signal,
       'The recorded target is missing or is not unique.',
     );
@@ -302,6 +359,16 @@ export async function executeScenarioNative(
   }
   await options?.beforeAction?.(target);
   signal.throwIfAborted();
+  if (options?.navigationEffect) {
+    const href = await target.evaluate((element) => {
+      const anchor = element.closest('a[href]') as HTMLAnchorElement | null;
+      return anchor?.href;
+    });
+    options.navigationEffect.runtime!.targetUrl = scenarioLiveNavigationTarget(
+      options.navigationEffect,
+      href,
+    );
+  }
   switch (event.type) {
     case 'click':
       if (event.actionType === 'DoubleClick') await target.dblclick();
@@ -435,10 +502,13 @@ export async function executeScenarioNative(
       options.navigationEffect,
       signal,
       options.waitReady,
+      undefined,
+      options.navigationBindings,
     );
   }
   return {
-    detail:
-      'Native action dispatched; its business outcome was not independently verified.',
+    detail: reboundDialog
+      ? `已按弹窗“${reboundDialog}”匹配当前筛选区，保留原操作与输入。操作已执行，业务结果仍由检查点验证。`
+      : 'Native action dispatched; its business outcome was not independently verified.',
   };
 }

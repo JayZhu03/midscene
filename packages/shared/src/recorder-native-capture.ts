@@ -249,7 +249,9 @@ export function captureRecorderNativeTarget(
   ];
   const stableId = (id: string) =>
     id.length < 120 &&
-    !/^(rc_|react|:r|headlessui|radix)|[a-f\d]{16,}|\d{8,}/i.test(id);
+    !/^(rc_|react|:r|headlessui|radix)|^filter-form-[a-z\d]{6}$|[a-f\d]{16,}|\d{8,}/i.test(
+      id,
+    );
   const simple = (node: Element, includeText: boolean): Locator[] => {
     const tag = node.tagName.toLowerCase();
     const candidates: Locator[] = [];

@@ -20,7 +20,9 @@ const script = (id: string) =>
     id,
     name: id,
     session: scenarioSession({
-      events: [scenarioEvent({ actionType: 'Click' })],
+      events: [
+        scenarioEvent({ actionType: 'Click', source: 'studio-preview' }),
+      ],
     }),
   });
 beforeEach(() => localStorage.clear());
@@ -67,6 +69,7 @@ describe('scenario sequence', () => {
     expect(plan.scripts[0].steps[0].type).toBe('playwright-operation');
     expect(plan.scripts[0].steps[0].operationIndex).toBe(0);
     expect(plan.scripts[0].steps[0].code).toBe(scripts[0].steps[0].code);
+    expect(plan.scripts[0].steps[0].event?.source).toBe('studio-preview');
     expect(plan.scripts[0].steps[0].event).not.toHaveProperty(
       'screenshotBefore',
     );

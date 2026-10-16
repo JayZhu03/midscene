@@ -5,13 +5,17 @@ import {
   recorderNativeLocatorExpression,
 } from '@midscene/shared/recorder-native';
 import puppeteer from 'puppeteer';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   connectScenarioPage,
   executeScenarioNative,
   waitForScenarioNavigation,
 } from '../../../packages/playground/src/scenario-native';
-import { scenarioNavigationEffect } from '../../../packages/playground/src/scenario-navigation';
+import {
+  scenarioNavigationEffect,
+  scenarioNavigationMatches,
+  scenarioRoute,
+} from '../../../packages/playground/src/scenario-navigation';
 import {
   ScenarioRunner,
   executeScenarioAgentStep,
@@ -24,6 +28,13 @@ let server;
 let url;
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url?.startsWith('/detail-fixture')) {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(
+        `<button id="open-detail" onclick="window.opens++;setTimeout(()=>{location.hash=window.detailRoute;document.body.innerHTML='<main aria-busy=true>Loading</main>';setTimeout(()=>{document.title='订单详情-ORDER-003';document.body.innerHTML='<main><h1>ORDER-003</h1><input id=comment></main>';},200);},100)"><span title="ORDER-003">ORDER-003</span></button><script>window.opens=0;window.detailRoute='/object-detail/object-detail-1792134966120-9x684516?from=%2Forders';</script>`,
+      );
+      return;
+    }
     if (req.url?.startsWith('/spa')) {
       res.setHeader('Content-Type', 'text/html');
       res.end(
@@ -74,6 +85,332 @@ function step(type, extra = {}, index = 0) {
 }
 
 describe('shared Studio browser execution', () => {
+  it('replays a generated detail route without Agent takeover and preserves the live detail for the next script', async () => {
+    const page = await browser.newPage();
+    const beforeUrl = `${url}detail-fixture#/orders`;
+    const recorded = `${url}detail-fixture#/object-detail/object-detail-1792131578759-56ydmi2o?from=%2Forders`;
+    const current = `${url}detail-fixture#/object-detail/object-detail-1792134966120-9x684516?from=%2Forders`;
+    await page.goto(beforeUrl);
+    const signal = new AbortController().signal;
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      signal,
+    );
+    try {
+      const steps = [
+        step('navigation', {
+          actionType: 'Navigate',
+          url: recorded,
+          rawPayload: {
+            implicitNavigationState: true,
+            triggerActionType: 'SessionNavigation',
+            beforeUrl,
+            afterUrl: recorded,
+          },
+        }),
+        step(
+          'click',
+          {
+            actionType: 'Tap',
+            url: beforeUrl,
+            nativeTarget: {
+              locator: { selector: 'span[title="ORDER-003"]', visible: true },
+            },
+          },
+          1,
+        ),
+      ];
+      const input = validateScenarioRun({
+        scenarioId: 'details',
+        scripts: [
+          { id: 'a', name: '打开订单详情', startMode: 'automatic', steps },
+          {
+            id: 'b',
+            name: '在详情中继续',
+            startMode: 'automatic',
+            steps: [
+              step(
+                'navigation',
+                {
+                  actionType: 'InitialNavigation',
+                  url: `${recorded}&tab=properties`,
+                },
+                2,
+              ),
+              step(
+                'input',
+                {
+                  value: 'same detail',
+                  nativeTarget: {
+                    editable: true,
+                    locator: { selector: '#comment' },
+                  },
+                },
+                3,
+              ),
+            ],
+          },
+        ],
+      });
+      const before = structuredClone(input);
+      const bindings = new Map();
+      const runner = new ScenarioRunner(input);
+      const recover = vi.fn(async () => false);
+      await runner.run(
+        async (s, signal, index) => {
+          if (s.event.actionType === 'InitialNavigation')
+            await page.evaluate(() => {
+              window.preservedDocument = true;
+              location.hash += '&tab=execution';
+            });
+          return executeScenarioNative(connection.page, s, signal, index, {
+            navigationEffect: scenarioNavigationEffect(
+              input.scripts[index].steps,
+              runner.state.stepIndex,
+            ),
+            navigationBindings: bindings,
+            waitReady: connection.waitForAssertionReady,
+          });
+        },
+        { recover },
+      );
+      expect(runner.state.status).toBe('completed');
+      expect(recover).not.toHaveBeenCalled();
+      expect(page.url()).toBe(`${current}&tab=execution`);
+      expect(await page.evaluate(() => window.preservedDocument)).toBe(true);
+      expect(await page.evaluate(() => window.opens)).toBe(1);
+      expect(await connection.page.locator('#comment').inputValue()).toBe(
+        'same detail',
+      );
+      expect(bindings.get(scenarioRoute(recorded))).toBe(current);
+      expect(input).toEqual(before);
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  }, 20000);
+
+  it('uses a uniquely located live link for changed data IDs while keeping static route segments', async () => {
+    const page = await browser.newPage();
+    const beforeUrl = `${url}detail-fixture#/orders`;
+    await page.goto(beforeUrl);
+    await page.setContent(
+      '<a href="#/orders/456/detail"><span id="live-order">Order</span></a>',
+    );
+    const signal = new AbortController().signal;
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      signal,
+    );
+    try {
+      const effect = {
+        beforeUrl,
+        afterUrl: `${url}detail-fixture#/orders/123/detail`,
+        observationStepId: 'data-detail',
+      };
+      await executeScenarioNative(
+        connection.page,
+        step('click', {
+          actionType: 'Tap',
+          nativeTarget: { locator: { selector: '#live-order' } },
+        }),
+        signal,
+        0,
+        { navigationEffect: effect },
+      );
+      expect(page.url()).toBe(`${url}detail-fixture#/orders/456/detail`);
+      // The recovery recheck retains the SAME current-run link evidence.
+      await expect(
+        waitForScenarioNavigation(
+          connection.page,
+          effect,
+          signal,
+          undefined,
+          150,
+        ),
+      ).resolves.toBeDefined();
+      await page.evaluate(() => {
+        location.hash = '/orders/789/detail';
+      });
+      // The Puppeteer action and Playwright observer have separate CDP queues.
+      // Establish the fixture state before checking that this route is rejected.
+      await connection.page.waitForURL(
+        `${url}detail-fixture#/orders/789/detail`,
+      );
+      await expect(
+        waitForScenarioNavigation(
+          connection.page,
+          effect,
+          signal,
+          undefined,
+          150,
+        ),
+      ).rejects.toThrow('未切换');
+    } finally {
+      await connection.close();
+      await page.close();
+    }
+  });
+
+  it.each(['unchanged', 'wrong-module', 'redirect-after-ready'])(
+    'does not accept a detail navigation for %s',
+    async (variant) => {
+      const page = await browser.newPage();
+      const current = `${url}detail-fixture#/object-detail/object-detail-1792134966120-9x684516?from=%2Forders`;
+      await page.goto(current);
+      const signal = new AbortController().signal;
+      const connection = await connectScenarioPage(
+        { underlyingPage: page },
+        signal,
+      );
+      try {
+        const effect = {
+          beforeUrl: `${url}detail-fixture#/orders`,
+          afterUrl: `${url}detail-fixture#/object-detail/object-detail-1792131578759-56ydmi2o?from=%2Forders`,
+          observationStepId: 'detail',
+          runtime: {
+            beforeUrl:
+              variant === 'unchanged'
+                ? current
+                : `${url}detail-fixture#/orders`,
+          },
+        };
+        if (variant === 'wrong-module') {
+          await page.evaluate(() => {
+            location.hash = location.hash.replace('%2Forders', '%2Ftasks');
+          });
+          await connection.page.waitForURL(
+            current.replace('%2Forders', '%2Ftasks'),
+          );
+        }
+        const waitReady =
+          variant === 'redirect-after-ready'
+            ? async () => {
+                await page.evaluate(() => {
+                  location.hash = '/workbench';
+                });
+                await connection.page.waitForURL(
+                  `${url}detail-fixture#/workbench`,
+                );
+              }
+            : undefined;
+        await expect(
+          waitForScenarioNavigation(
+            connection.page,
+            effect,
+            signal,
+            waitReady,
+            150,
+          ),
+        ).rejects.toThrow(/未切换|离开/);
+      } finally {
+        await connection.close();
+        await page.close();
+      }
+    },
+  );
+
+  it.each(['unbound', 'wrong-module-binding'])(
+    'blocks an invalid temporary start (%s) without navigating to a stale session',
+    async (variant) => {
+      const page = await browser.newPage();
+      await page.goto(`${url}detail-fixture#/orders`);
+      const signal = new AbortController().signal;
+      const connection = await connectScenarioPage(
+        { underlyingPage: page },
+        signal,
+      );
+      try {
+        const before = page.url();
+        const recorded = `${url}detail-fixture#/object-detail/object-detail-1792131578759-56ydmi2o?from=%2Forders`;
+        const bindings = new Map();
+        if (variant === 'wrong-module-binding')
+          bindings.set(
+            scenarioRoute(recorded),
+            recorded
+              .replace('1792131578759-56ydmi2o', '1792134966120-9x684516')
+              .replace('from=%2Forders', 'from=%2Ftasks'),
+          );
+        const start = step('navigation', {
+          actionType: 'InitialNavigation',
+          url: recorded,
+        });
+        await expect(
+          executeScenarioNative(connection.page, start, signal, 0, {
+            navigationBindings: bindings,
+          }),
+        ).rejects.toThrow('临时详情页');
+        const runner = new ScenarioRunner({
+          scenarioId: 'missing-prerequisite',
+          scripts: [
+            {
+              id: 'detail',
+              name: '详情操作',
+              startMode: 'automatic',
+              steps: [start],
+            },
+          ],
+        });
+        const recover = vi.fn(async () => true);
+        await runner.run(
+          (s, signal, index) =>
+            executeScenarioNative(connection.page, s, signal, index, {
+              navigationBindings: bindings,
+            }),
+          { recover },
+        );
+        expect(runner.state.status).toBe('blocked');
+        expect(recover).not.toHaveBeenCalled();
+        expect(page.url()).toBe(before);
+      } finally {
+        await connection.close();
+        await page.close();
+      }
+    },
+  );
+
+  it('preserves the actual starting detail when target lookup fails before recovery', async () => {
+    const page = await browser.newPage();
+    const current = `${url}detail-fixture#/object-detail/object-detail-1792134966120-9x684516?from=%2Forders`;
+    await page.goto(current);
+    const abort = new AbortController();
+    const connection = await connectScenarioPage(
+      { underlyingPage: page },
+      abort.signal,
+    );
+    const effect = {
+      beforeUrl: `${url}detail-fixture#/orders`,
+      afterUrl: current.replace(
+        '1792134966120-9x684516',
+        '1792131578759-56ydmi2o',
+      ),
+      observationStepId: 'detail',
+    };
+    const timer = setTimeout(
+      () => abort.abort(new Error('Stopped missing-target check')),
+      350,
+    );
+    try {
+      await expect(
+        executeScenarioNative(
+          connection.page,
+          step('click', {
+            nativeTarget: { locator: { selector: '#missing-order' } },
+          }),
+          abort.signal,
+          0,
+          { navigationEffect: effect },
+        ),
+      ).rejects.toThrow();
+      expect(effect.runtime.beforeUrl).toBe(current);
+      expect(scenarioNavigationMatches(effect, current)).toBe(false);
+    } finally {
+      clearTimeout(timer);
+      await connection.close();
+      await page.close();
+    }
+  });
+
   it.each(['link', 'nested'])(
     'replays regenerated virtual-table task selections with %s codes using native Playwright and exported locators',
     async (codeMarkup) => {

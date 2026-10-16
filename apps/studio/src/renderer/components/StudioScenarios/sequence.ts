@@ -108,6 +108,9 @@ export function buildScenarioRun(
             event: {
               hashId: source.hashId,
               type: source.type,
+              // Native replay needs the origin for legacy locator adaptation
+              // and input-method handling, not just for report presentation.
+              source: source.source,
               actionType: source.actionType,
               timestamp: source.timestamp,
               pageInfo: source.pageInfo,
