@@ -2,7 +2,7 @@
 
 基于 Midscene Studio 二次开发的桌面测试工具，面向 MOM 业务流程的录制、回放和回归测试。常规网页操作使用 Playwright 执行，视觉判断和补充操作交给 Agent，并通过 HTML 报告保留执行结果与截图证据。
 
-[English](./README.md) · [开发指南](./CONTRIBUTING.md) · [MIT 许可证](./LICENSE)
+[开发指南](./CONTRIBUTING.md) · [MIT 许可证](./LICENSE)
 
 ## 主要功能
 

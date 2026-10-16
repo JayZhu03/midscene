@@ -1,64 +1,64 @@
-# MOM UI Test Studio
+# MOM UI 自动化测试工具
 
-A desktop tool built on Midscene Studio for recording, replaying and regression testing MOM workflows. Recorded web operations run through Playwright; Agent handles visual checks and additional actions. HTML reports preserve execution results and screenshot evidence.
+基于 Midscene Studio 二次开发的桌面测试工具，面向 MOM 业务流程的录制、回放和回归测试。常规网页操作使用 Playwright 执行，视觉判断和补充操作交给 Agent，并通过 HTML 报告保留执行结果与截图证据。
 
-[简体中文使用说明](./README.zh.md) · [Development guide](./CONTRIBUTING.md) · [MIT license](./LICENSE)
+[开发指南](./CONTRIBUTING.md) · [MIT 许可证](./LICENSE)
 
-## Features
+## 主要功能
 
-| Feature | Description |
+| 功能 | 说明 |
 | --- | --- |
-| Webpage management | Persist URLs, viewport settings and browser sessions; manage different routes on the same site separately |
-| Recording | Capture clicks, input, selection and scrolling; insert natural-language assertions while recording |
-| Hybrid execution | Run web operations through Playwright, with Agent operations, waits and assertions based on live evidence |
-| Script editing | Inspect steps and recording screenshots; insert or edit Agent instructions while keeping recorded Playwright operations fixed |
-| Scenarios | Group scripts, reorder them, configure automatic or manual continuation, and run a scenario or one script |
-| Recovery | Let Agent attempt recovery after a Playwright failure, then check prerequisites before continuing with later scripts |
-| Reports | Preview and download HTML reports with readable actions, step evidence, original replay and recovery records |
-| Import and export | Exchange scripts or scenarios as ZIP packages, including recording screenshots, script order and execution settings |
-| Android | Connect phones or Android PDAs through ADB and use Agent actions and assertions with the same scenario, script and report management |
+| 网页管理 | 保存网页地址、窗口尺寸及浏览器会话，支持同站点不同路由分别管理 |
+| 录制脚本 | 录制点击、输入、选择、滚动等操作，过程中可添加自然语言断言 |
+| 混合执行 | 网页操作使用 Playwright；Agent 根据实时画面执行操作、等待和断言 |
+| 脚本编辑 | 查看步骤与录制截图，插入或修改 Agent 操作和断言；已录制的 Playwright 操作保持固定 |
+| 场景管理 | 一个场景包含多个脚本，可调整顺序、设置自动或手动继续，支持整场景或单脚本执行 |
+| 异常接管 | Playwright 操作失败后由 Agent 尝试恢复；无法恢复时判断后续脚本是否具备执行前提 |
+| 测试报告 | 预览和下载 HTML 报告，查看操作流程、步骤证据、原始回放及异常接管记录 |
+| 导入导出 | 以 ZIP 包交换脚本或整个场景，保留步骤、录制截图、脚本顺序和执行设置 |
+| 安卓测试 | 通过 ADB 连接手机或安卓 PDA，使用 Agent 操作与断言，复用场景、脚本和报告管理 |
 
-Upstream SDKs and other platform code remain in this repository. This delivery focuses on the Web and Android entry points.
+本仓库保留上游 SDK 和其他平台代码；本版交付入口以网页和安卓测试为主。
 
-## Install and get started
+## 安装与首次使用
 
-Regular users can install the internally distributed Windows x64 installer without Node.js, Git or a source build. The installer supports a custom installation directory, desktop and Start menu shortcuts, and uninstallation through Windows settings or the uninstaller in the installation directory.
+普通使用者安装内部提供的 Windows x64 安装包即可，无需安装 Node.js、Git 或自行构建。安装时可选择目录，并创建桌面及开始菜单快捷方式；支持通过安装目录中的卸载程序或 Windows 设置卸载。
 
-1. Open Studio and configure the model service URL, API key, model name and model family. Visual actions and assertions require an image-capable model; model name and model family are separate settings.
-2. Make sure the computer can reach the test environment and model service. Add a webpage; the default viewport is `1920 × 1080` and can be customized.
-3. Create a scenario with a name and description, then choose **Record new script**.
-4. Perform the workflow in the left-hand browser and insert assertions where needed, such as “The save-success message appears” or “There are 2165 production orders.” Recording saves the expectation; execution evaluates it.
-5. Stop recording and review the steps. Replay in the current view before saving if needed. Agent operations and assertions can be inserted later from script details.
-6. Run one script or the entire scenario. Choose **View report** afterward, inspect the results and download the HTML file for retention.
+1. 打开 Studio，在「配置模型」中填写模型服务地址、API Key、模型名称及模型系列。视觉操作与断言需要支持图像输入的模型，模型系列与模型名称是不同的配置项。
+2. 确保电脑能访问测试环境和模型服务，然后添加网页。网页尺寸默认填写为 `1920 × 1080`，可以自定义。
+3. 在「场景」中新建场景，填写名称和介绍，进入后点击「录制新脚本」。
+4. 在左侧网页中完成业务操作，需要检查结果时添加断言，例如「页面提示保存成功」或「生产订单总数为 2165」。录制阶段记录需求，执行阶段再判断结果。
+5. 停止录制后查看步骤，可以先在当前页面回放，再保存脚本。后续可在脚本详情中插入 Agent 操作或断言。
+6. 执行单条脚本或整个场景，结束后点击「查看报告」，检查结果并下载需要留存的 HTML 文件。
 
-See the [upstream model configuration guide](https://midscenejs.com/model-common-config.html) for model parameters. Custom scenario, hybrid-script and report workflows follow this Studio implementation.
+模型参数说明参见[上游模型配置文档](https://midscenejs.com/zh/model-common-config.html)。该文档解释通用模型配置；本仓库的场景管理、混合脚本和报告界面以当前 Studio 为准。
 
-## Execution behavior
+## 执行方式
 
-- **Use current session** continues with the browser's current state, including an existing login.
-- **Fresh session** runs in an isolated browser session without clearing the original session. Return to the original session afterward if needed.
-- **Manual continuation** waits at a configured script boundary for **Next step**. **Skip** skips that script and preserves its skipped status in the results.
+- **沿用当前会话**：在当前浏览器状态中继续执行，可复用已有登录状态。
+- **全新会话**：使用独立浏览器会话执行，适合从登录页开始的脚本，不清除原会话数据。执行结束后可返回原会话。
+- **手动继续**：到达设置的脚本边界后等待用户点击「下一步」；也可点击「跳过」，跳过项会如实保留在结果中。
 
-An Agent instruction can combine an operation, expectation and wait, for example “Click Search, verify the total is 2165, and record a mismatch but continue” or “Wait three seconds before continuing.” Pure waits use a programmatic timer. Continuing after a confirmed mismatch preserves the failure; insufficient evidence or an incomplete operation is blocked.
+Agent 指令可描述操作、预期结果或等待，例如「点击查询，判断总数为 2165，不符合时记录失败并继续」或「等待三秒后继续」。纯等待由程序计时；确认不符后继续仍会记录失败，证据不足或操作未完成则记录阻塞。
 
-When Playwright fails, Agent attempts recovery using the live page and records the outcome. Execution stops if a later script depends on business data that earlier steps did not produce. Recovery does not guarantee adaptation to every UI change.
+Playwright 失败时，Agent 会结合现场尝试恢复，恢复结果留有记录。后续脚本依赖前面未完成的业务数据时会停止执行，并报告阻塞原因。自动接管不能保证所有页面变化都能恢复。
 
-Android requires USB debugging authorization or an established wireless ADB connection. **Restart application then run** requires a target package name and restarts the application without clearing app data or login state. Web and Android packages are validated by platform and cannot be mixed.
+安卓需要开启 USB 调试并授权电脑，也可使用已建立的无线 ADB 连接。安卓的「重启应用后执行」需要配置目标应用包名，仅重启应用，不清空应用数据或登录状态。网页和安卓脚本包按平台校验，不能混用。
 
-## Local data and collaboration
+## 数据保存与协作
 
-- Webpages, configuration, scenarios and scripts are local to each computer. GitHub stores tool source code and does not synchronize users' local test data.
-- Only the latest **10 execution records** are retained. Download reports that need to be kept, and export scenarios or scripts separately for backup or sharing.
-- A scenario package contains scripts and execution order; a script package contains one script. Imports create copies rather than overwriting existing content.
-- Packages preserve recorded input values, including test passwords, URLs and screenshots. They exclude login sessions, model configuration and execution reports. Configure the model, log in and prepare required business data on the destination computer.
-- Exported `manifest.json` and `README.md` document step order and execution rules for Playwright, Agent operations and visual assertions. Other execution assistants can implement the corresponding runtime.
-- Development and installed builds use separate data directories. Migrate scenarios through export and import rather than assuming the builds share records.
+- 网页、配置、场景和脚本保存在当前电脑；GitHub 保存工具源代码，不会自动同步使用者的本地测试数据。
+- 执行记录仅保留最近 **10 次**，需要留存的报告请及时下载。场景和脚本需单独导出 ZIP 包备份或交给同事。
+- 场景包包含脚本及其执行顺序；脚本包用于交换单条脚本。导入不会覆盖已有内容，重名或重复导入会创建副本。
+- 测试包保留录制输入值（包括测试密码）、网址与截图，不包含登录会话、模型配置和执行报告。换电脑后需重新配置模型与登录，并准备脚本需要的业务数据。
+- 导出包中的 `manifest.json` 和 `README.md` 说明步骤顺序及 Playwright、Agent 操作和视觉断言的执行约定，其他执行助手可据此实现相应运行方式。
+- 开发版与安装版的数据目录独立。迁移时请导出、导入场景；不要直接假定两者共享记录。
 
-**Successful operations do not establish complete business correctness.** Define expected results and manually review important assertions and reports. Recording actions alone does not create a complete test specification.
+**操作执行成功不等于业务校验完整。** 请明确填写预期结果，并人工复核关键断言和报告；只录制操作不会自动产生完整测试用例。
 
-## Develop from source
+## 源码开发
 
-Requires Node.js `^20.19.0 || ^22.12.0 || >=24.0.0` and pnpm `>=9.3.0`. Run from the repository root:
+要求 Node.js `^20.19.0 || ^22.12.0 || >=24.0.0`，pnpm `>=9.3.0`。以下命令在仓库根目录执行：
 
 ```powershell
 corepack enable
@@ -66,34 +66,34 @@ pnpm install
 pnpm --filter studio dev
 ```
 
-Installation triggers the repository's initial build. Development startup may use different local data from an installed build.
+`pnpm install` 会触发仓库的初始化构建。开发启动与已安装版本使用的本地数据可能不同。
 
-Build a Windows installer with the existing packaging script:
+Windows 安装包可通过现有打包脚本生成：
 
 ```powershell
 pnpm --filter studio package:release -- --platform win32 --arch x64
 ```
 
-Append `--version` with the desired delivery version when packaging. Outputs are written to `.release/studio/artifacts/`. Installers, model configuration and local business data are not included in Git source commits.
+打包时可追加 `--version` 指定交付版本，产物位于 `.release/studio/artifacts/`。安装包、模型配置和本地业务数据不随 Git 源码提交。
 
-Run code checks:
+代码检查：
 
 ```powershell
 pnpm run lint
 ```
 
-| Directory | Purpose |
+| 目录 | 用途 |
 | --- | --- |
-| `apps/studio` | Electron shell, browser preview, recording and scenario UI |
-| `apps/report` | HTML reports and execution evidence |
-| `packages/playground` | Scenario runner, Agent recovery, assertion observation and report persistence |
-| `packages/shared` | Recording events, DOM locators and Playwright code generation |
-| `packages/core` | Midscene Agent and model integration |
+| `apps/studio` | Electron 桌面端、网页预览、录制和场景界面 |
+| `apps/report` | HTML 测试报告与执行证据展示 |
+| `packages/playground` | 场景执行、Agent 接管、断言观察和报告保存 |
+| `packages/shared` | 录制事件、DOM 定位及 Playwright 代码生成 |
+| `packages/core` | Midscene Agent 与模型调用 |
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development and build details. When rebuilding reports, finish Playground first, then Report, then Studio. Do not build Playground and Report concurrently, which can leave stale templates.
+更多开发和构建说明见 [CONTRIBUTING.md](./CONTRIBUTING.md)。涉及报告时先完成 Playground 构建，再构建 Report，最后构建 Studio，避免并行构建产生旧模板。
 
-## Upstream and license
+## 来源与许可证
 
-This project is derived from [web-infra-dev/midscene](https://github.com/web-infra-dev/midscene). It retains the Midscene name, upstream source and original copyright notice. Thanks to Midscene, Playwright, Puppeteer and Electron for the underlying capabilities.
+本项目基于 [web-infra-dev/midscene](https://github.com/web-infra-dev/midscene) 二次开发，保留 Midscene 名称、上游源码及原版权声明。感谢 Midscene、Playwright、Puppeteer、Electron 等项目提供基础能力。
 
-The code is [MIT licensed](./LICENSE). Custom features differ from upstream Midscene; this README describes the MOM testing tool. Consult the [upstream documentation](https://midscenejs.com/) for general SDK usage.
+代码采用 [MIT 许可证](./LICENSE)。本仓库的定制功能与上游官方版本不同；本说明面向当前 MOM 测试工具，通用 SDK 使用方式可查阅[上游文档](https://midscenejs.com/zh/)。
